@@ -2,19 +2,16 @@ using UnityEngine;
 
 public class Goal : MonoBehaviour
 {
-    private int score = 0;
+    [SerializeField] private string goalName = "Goal"; // e.g. "Left" or "Right"
 
     void OnTriggerEnter2D(Collider2D other)
     {
-        // only count it if the thing that entered is the ball
         if (other.CompareTag("Ball"))
         {
-            score++;
-            Debug.Log("GOAL! Score: " + score);
+            Debug.Log("GOAL scored in the " + goalName + " net!");
 
-            // reset the ball to the middle of the pool
             other.attachedRigidbody.linearVelocity = Vector2.zero;
-            other.attachedRigidbody.position = Vector2.zero;
+            other.attachedRigidbody.position = Vector2.zero; // reset ball to center
         }
     }
 }
