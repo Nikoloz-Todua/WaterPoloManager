@@ -79,10 +79,11 @@ public class PlayerMovement : MonoBehaviour
     }
 
     void FixedUpdate()
-    {
-        float speed = isHolding ? holdMoveSpeed : moveSpeed;
-        rb.linearVelocity = input * speed;
-    }
+{
+    if (!IsActive) return; // when not controlled, let the AI drive this player
+    float speed = isHolding ? holdMoveSpeed : moveSpeed;
+    rb.linearVelocity = input * speed;
+}
 
     void LateUpdate()
     {
