@@ -21,7 +21,7 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private Color inactiveColor = Color.gray;
 
     [Header("Aim line")]
-    [SerializeField] private LineRenderer aimLine;   // drag the child LineRenderer here
+    [SerializeField] private LineRenderer aimLine;
     [SerializeField] private float aimLineLength = 2.5f;
 
     public bool IsActive = false;
@@ -76,7 +76,6 @@ public class PlayerMovement : MonoBehaviour
             input = Vector2.zero;
         }
 
-        // colour feedback
         if (sprite != null)
         {
             if (isHolding) sprite.color = holdingColor;
@@ -97,7 +96,6 @@ public class PlayerMovement : MonoBehaviour
     {
         if (aimLine == null) return;
 
-        // show the aim line only while this player holds the ball
         bool show = isHolding;
         aimLine.enabled = show;
         if (!show) return;
@@ -111,6 +109,9 @@ public class PlayerMovement : MonoBehaviour
     void TryGrabBall()
     {
         if (ball == null) return;
+        // can only grab a LOOSE ball (cannot steal from a holder)
+        if (MatchContext.Instance != null && !MatchContext.Instance.BallIsLoose) return;
+
         if (Vector2.Distance(transform.position, ball.position) <= grabDistance)
         {
             GrabBall();
@@ -122,9 +123,11 @@ public class PlayerMovement : MonoBehaviour
         isHolding = true;
         ball.simulated = false;
         ball.linearVelocity = Vector2.zero;
-        // lock the ball to the player so nothing else can move it
         ball.transform.SetParent(transform);
         ball.transform.localPosition = (Vector3)(lastDirection * holdOffset);
+
+        if (MatchContext.Instance != null)
+            MatchContext.Instance.SetPossession(MatchContext.Instance.PlayerTeam);
     }
 
     void DropBall()
@@ -134,6 +137,9 @@ public class PlayerMovement : MonoBehaviour
         ball.transform.SetParent(null);
         ball.simulated = true;
         ball.linearVelocity = Vector2.zero;
+
+        if (MatchContext.Instance != null)
+            MatchContext.Instance.SetPossession(null);
     }
 
     void Shoot()
@@ -144,6 +150,9 @@ public class PlayerMovement : MonoBehaviour
         ball.simulated = true;
         ball.linearVelocity = Vector2.zero;
         ball.AddForce(lastDirection * currentPower, ForceMode2D.Impulse);
+
+        if (MatchContext.Instance != null)
+            MatchContext.Instance.SetPossession(null);
     }
 
     public void ReleaseBall()
@@ -154,9 +163,11 @@ public class PlayerMovement : MonoBehaviour
             ball.transform.SetParent(null);
             ball.simulated = true;
         }
+
+        if (MatchContext.Instance != null)
+            MatchContext.Instance.SetPossession(null);
     }
 
-    // keep the held ball in front while turning
     void LateUpdate()
     {
         if (isHolding && ball != null)

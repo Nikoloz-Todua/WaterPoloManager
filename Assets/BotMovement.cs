@@ -3,61 +3,125 @@ using UnityEngine;
 public class BotMovement : MonoBehaviour
 {
     [Header("References")]
-    [SerializeField] private Rigidbody2D ball;          // drag Ball here
-    [SerializeField] private Transform defendGoal;      // drag the Goal here (the net the bot protects)
-    [SerializeField] private PlayerMovement[] myOpponents; // drag Player and Player2 here (your team)
+    [SerializeField] private TeamSide myTeam;
 
     [Header("Speeds")]
-    [SerializeField] private float chaseSpeed = 3f;
-    [SerializeField] private float defendSpeed = 3.5f;
+    [SerializeField] private float chaseSpeed = 3.5f;
+    [SerializeField] private float carrySpeed = 2.5f;
+    [SerializeField] private float supportSpeed = 3f;
 
-    [Header("Defending")]
-    [SerializeField] private float guardDistance = 2f;  // how far in front of its goal it sits
+    [Header("Ball handling")]
+    [SerializeField] private float grabDistance = 1.2f;
+    [SerializeField] private float holdOffset = 0.6f;
+    [SerializeField] private float shootRange = 4f;
+    [SerializeField] private float shootPower = 11f;
+
+    [Header("Formation")]
+    [SerializeField] private Vector2 homeSpot;
 
     private Rigidbody2D rb;
+    private bool isHolding = false;
+    private Vector2 lastDirection = Vector2.left;
 
-    void Awake()
-    {
-        rb = GetComponent<Rigidbody2D>();
-    }
+    void Awake() { rb = GetComponent<Rigidbody2D>(); }
 
     void FixedUpdate()
     {
-        if (ball == null) return;
+        var ctx = MatchContext.Instance;
+        if (ctx == null || myTeam == null) return;
 
-        if (OpponentHasBall())
-            Defend();
-        else
-            ChaseBall();
-    }
+        if (isHolding) { Attack(ctx); return; }
 
-    bool OpponentHasBall()
-    {
-        // true if any of your players is currently holding the ball
-        if (myOpponents == null) return false;
-        foreach (PlayerMovement p in myOpponents)
+        if (ctx.BallIsLoose &&
+            Vector2.Distance(rb.position, ctx.BallPosition) <= grabDistance)
         {
-            if (p != null && p.IsHolding) return true;
+            GrabBall(ctx);
+            return;
         }
-        return false;
+
+        bool weHaveBall = ctx.TeamHasBall(myTeam);
+
+        if (weHaveBall)
+        {
+            MoveTo(SupportSpot(ctx), supportSpeed);
+        }
+        else
+        {
+            Transform closest = myTeam.ClosestMemberTo(ctx.BallPosition);
+            if (closest == transform)
+            {
+                Vector2 dir = (ctx.BallPosition - rb.position).normalized;
+                if (dir != Vector2.zero) lastDirection = dir;
+                rb.linearVelocity = dir * chaseSpeed;
+            }
+            else
+            {
+                MoveTo(homeSpot, supportSpeed);
+            }
+        }
     }
 
-    void ChaseBall()
+    void GrabBall(MatchContext ctx)
     {
-        Vector2 dir = ((Vector2)ball.position - rb.position).normalized;
-        rb.linearVelocity = dir * chaseSpeed;
+        isHolding = true;
+        Rigidbody2D ball = ctx.Ball;
+        ball.simulated = false;
+        ball.linearVelocity = Vector2.zero;
+        // parent the ball to the bot (same proven method the player uses)
+        ball.transform.SetParent(transform);
+        ball.transform.localPosition = (Vector3)(lastDirection * holdOffset);
+        ctx.SetPossession(myTeam);
     }
 
-    void Defend()
+    void Attack(MatchContext ctx)
     {
-        if (defendGoal == null) { ChaseBall(); return; }
+        if (myTeam.attackGoal == null) { Release(ctx); return; }
+        Vector2 toGoal = (Vector2)myTeam.attackGoal.position - rb.position;
+        lastDirection = toGoal.normalized;
+        rb.linearVelocity = lastDirection * carrySpeed;
 
-        // stand a little in front of its own goal, on the line between the goal and the ball
-        Vector2 goalPos = defendGoal.position;
-        Vector2 fromGoalToBall = ((Vector2)ball.position - goalPos).normalized;
-        Vector2 guardSpot = goalPos + fromGoalToBall * guardDistance;
+        if (toGoal.magnitude <= shootRange) Shoot(ctx);
+    }
 
-        Vector2 dir = (guardSpot - rb.position).normalized;
-        rb.linearVelocity = dir * defendSpeed;
+    Vector2 SupportSpot(MatchContext ctx)
+    {
+        if (myTeam.attackGoal == null) return rb.position;
+        Vector2 g = myTeam.attackGoal.position;
+        return Vector2.Lerp(rb.position, g, 0.4f);
+    }
+
+    void MoveTo(Vector2 target, float speed)
+    {
+        Vector2 dir = (target - rb.position);
+        if (dir.magnitude < 0.25f) { rb.linearVelocity = Vector2.zero; return; }
+        rb.linearVelocity = dir.normalized * speed;
+    }
+
+    void Shoot(MatchContext ctx)
+    {
+        isHolding = false;
+        Rigidbody2D ball = ctx.Ball;
+        ball.transform.SetParent(null);
+        ball.simulated = true;
+        ball.linearVelocity = Vector2.zero;
+        ball.AddForce(lastDirection * shootPower, ForceMode2D.Impulse);
+        ctx.SetPossession(null);
+    }
+
+    void Release(MatchContext ctx)
+    {
+        isHolding = false;
+        ctx.Ball.transform.SetParent(null);
+        ctx.Ball.simulated = true;
+        ctx.SetPossession(null);
+    }
+
+    void LateUpdate()
+    {
+        // keep the held ball in front while turning (it's parented, so this just sets the offset)
+        if (isHolding && MatchContext.Instance != null)
+        {
+            MatchContext.Instance.Ball.transform.localPosition = (Vector3)(lastDirection * holdOffset);
+        }
     }
 }
