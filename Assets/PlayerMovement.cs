@@ -17,11 +17,12 @@ public class PlayerMovement : MonoBehaviour
 
     [Header("Visual Feedback")]
     [SerializeField] private Color holdingColor = Color.green;
-    [SerializeField] private Color activeColor = Color.red;     // this player, when controlled
-    [SerializeField] private Color inactiveColor = Color.gray;  // teammate, not controlled
+    [SerializeField] private Color activeColor = Color.red;
+    [SerializeField] private Color inactiveColor = Color.gray;
 
-    public bool IsActive = false;        // the manager turns this on/off
-    public bool IsHolding => isHolding;  // lets the manager read who has the ball
+    public bool IsActive = false;
+    public bool IsHolding => isHolding;
+    public Vector2 Facing => lastDirection;
 
     private Rigidbody2D rb;
     private SpriteRenderer sprite;
@@ -38,7 +39,6 @@ public class PlayerMovement : MonoBehaviour
 
     void Update()
     {
-        // only the active player reads input
         if (IsActive)
         {
             float x = Input.GetAxisRaw("Horizontal");
@@ -68,10 +68,9 @@ public class PlayerMovement : MonoBehaviour
         }
         else
         {
-            input = Vector2.zero; // not controlled, so don't move from input
+            input = Vector2.zero;
         }
 
-        // colour: green if holding, red if active, gray if idle teammate
         if (sprite != null)
         {
             if (isHolding) sprite.color = holdingColor;
@@ -119,5 +118,11 @@ public class PlayerMovement : MonoBehaviour
         ball.simulated = true;
         ball.linearVelocity = Vector2.zero;
         ball.AddForce(lastDirection * currentPower, ForceMode2D.Impulse);
+    }
+
+    public void ReleaseBall()
+    {
+        isHolding = false;
+        if (ball != null) ball.simulated = true;
     }
 }
