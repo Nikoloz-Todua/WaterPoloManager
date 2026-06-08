@@ -4,7 +4,7 @@ public class PlayerMovement : MonoBehaviour
 {
     [Header("Movement")]
     [SerializeField] private float moveSpeed = 5f;
-    [SerializeField] private float holdMoveSpeed = 1.5f;
+    [SerializeField] private float holdMoveSpeed = 2f;
 
     [Header("Ball")]
     [SerializeField] private Rigidbody2D ball;
@@ -19,6 +19,10 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private Color holdingColor = Color.green;
     [SerializeField] private Color activeColor = Color.red;
     [SerializeField] private Color inactiveColor = Color.gray;
+
+    [Header("Aim line")]
+    [SerializeField] private LineRenderer aimLine;   // drag the child LineRenderer here
+    [SerializeField] private float aimLineLength = 2.5f;
 
     public bool IsActive = false;
     public bool IsHolding => isHolding;
@@ -35,6 +39,7 @@ public class PlayerMovement : MonoBehaviour
     {
         rb = GetComponent<Rigidbody2D>();
         sprite = GetComponent<SpriteRenderer>();
+        if (aimLine != null) aimLine.enabled = false;
     }
 
     void Update()
@@ -71,27 +76,36 @@ public class PlayerMovement : MonoBehaviour
             input = Vector2.zero;
         }
 
+        // colour feedback
         if (sprite != null)
         {
             if (isHolding) sprite.color = holdingColor;
             else sprite.color = IsActive ? activeColor : inactiveColor;
         }
+
+        UpdateAimLine();
     }
 
     void FixedUpdate()
-{
-    if (!IsActive) return; // when not controlled, let the AI drive this player
-    float speed = isHolding ? holdMoveSpeed : moveSpeed;
-    rb.linearVelocity = input * speed;
-}
-
-    void LateUpdate()
     {
-        if (isHolding && ball != null)
-        {
-            ball.position = (Vector2)transform.position + lastDirection * holdOffset;
-            ball.linearVelocity = Vector2.zero;
-        }
+        if (!IsActive) return;
+        float speed = isHolding ? holdMoveSpeed : moveSpeed;
+        rb.linearVelocity = input * speed;
+    }
+
+    void UpdateAimLine()
+    {
+        if (aimLine == null) return;
+
+        // show the aim line only while this player holds the ball
+        bool show = isHolding;
+        aimLine.enabled = show;
+        if (!show) return;
+
+        Vector3 start = transform.position;
+        Vector3 end = start + (Vector3)(lastDirection * aimLineLength);
+        aimLine.SetPosition(0, start);
+        aimLine.SetPosition(1, end);
     }
 
     void TryGrabBall()
@@ -99,15 +113,25 @@ public class PlayerMovement : MonoBehaviour
         if (ball == null) return;
         if (Vector2.Distance(transform.position, ball.position) <= grabDistance)
         {
-            isHolding = true;
-            ball.simulated = false;
+            GrabBall();
         }
+    }
+
+    void GrabBall()
+    {
+        isHolding = true;
+        ball.simulated = false;
+        ball.linearVelocity = Vector2.zero;
+        // lock the ball to the player so nothing else can move it
+        ball.transform.SetParent(transform);
+        ball.transform.localPosition = (Vector3)(lastDirection * holdOffset);
     }
 
     void DropBall()
     {
         if (ball == null) return;
         isHolding = false;
+        ball.transform.SetParent(null);
         ball.simulated = true;
         ball.linearVelocity = Vector2.zero;
     }
@@ -116,6 +140,7 @@ public class PlayerMovement : MonoBehaviour
     {
         if (ball == null) return;
         isHolding = false;
+        ball.transform.SetParent(null);
         ball.simulated = true;
         ball.linearVelocity = Vector2.zero;
         ball.AddForce(lastDirection * currentPower, ForceMode2D.Impulse);
@@ -124,6 +149,19 @@ public class PlayerMovement : MonoBehaviour
     public void ReleaseBall()
     {
         isHolding = false;
-        if (ball != null) ball.simulated = true;
+        if (ball != null)
+        {
+            ball.transform.SetParent(null);
+            ball.simulated = true;
+        }
+    }
+
+    // keep the held ball in front while turning
+    void LateUpdate()
+    {
+        if (isHolding && ball != null)
+        {
+            ball.transform.localPosition = (Vector3)(lastDirection * holdOffset);
+        }
     }
 }
