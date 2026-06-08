@@ -57,9 +57,16 @@ public class TeamManager : MonoBehaviour
     }
 
     void SetActive(int index)
+{
+    for (int i = 0; i < players.Length; i++)
     {
-        for (int i = 0; i < players.Length; i++)
-            players[i].IsActive = (i == index);
-        activeIndex = index;
+        bool willBeActive = (i == index);
+        // if a player is losing control while holding the ball, make it drop the ball
+        if (!willBeActive && players[i].IsHolding)
+            players[i].ReleaseBall();
+
+        players[i].IsActive = willBeActive;
     }
+    activeIndex = index;
+}
 }
