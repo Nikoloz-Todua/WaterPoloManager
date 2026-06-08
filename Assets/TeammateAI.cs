@@ -3,22 +3,27 @@ using UnityEngine;
 [RequireComponent(typeof(PlayerMovement))]
 public class TeammateAI : MonoBehaviour
 {
-    [Header("Who/what this teammate reads")]
-    [SerializeField] private Rigidbody2D ball;
-    [SerializeField] private Transform enemyGoal;      // the goal you attack (GoalRight)
-    [SerializeField] private Transform ownGoal;        // the goal you defend (GoalLeft)
-    [SerializeField] private PlayerMovement teammate;  // the OTHER player (the one you usually control)
-    [SerializeField] private Transform opponent;       // the Bot
+    [Header("Team")]
+    [SerializeField] private TeamSide myTeam;   // drag PlayerTeam here
 
-    [Header("Tuning")]
-    [SerializeField] private float moveSpeed = 4f;
-    [SerializeField] private float aheadDistance = 3f;   // how far toward enemy goal it gets open
-    [SerializeField] private float spreadDistance = 2f;  // how far it steps off the ball-carrier's line
-    [SerializeField] private float avoidOpponent = 1.5f; // pushes its target away from the bot
-    [SerializeField] private float arriveDeadzone = 0.3f;// stop jittering when basically arrived
+    [Header("Speeds")]
+    [SerializeField] private float chaseSpeed = 4f;
+    [SerializeField] private float carrySpeed = 2.5f;
+    [SerializeField] private float supportSpeed = 3.5f;
+
+    [Header("Ball handling")]
+    [SerializeField] private float grabDistance = 1.2f;
+    [SerializeField] private float holdOffset = 0.6f;
+    [SerializeField] private float shootRange = 4f;
+    [SerializeField] private float shootPower = 11f;
+
+    [Header("Formation")]
+    [SerializeField] private Vector2 homeSpot;
 
     private Rigidbody2D rb;
     private PlayerMovement self;
+    private bool isHolding = false;
+    private Vector2 lastDirection = Vector2.right;
 
     void Awake()
     {
@@ -28,56 +33,108 @@ public class TeammateAI : MonoBehaviour
 
     void FixedUpdate()
     {
-        // If the human is controlling THIS player, do nothing — let them drive.
-        if (self.IsActive) return;
-        if (ball == null) return;
-
-        Vector2 target = DecideTarget();
-
-        Vector2 toTarget = target - rb.position;
-        if (toTarget.magnitude <= arriveDeadzone)
+        // If the human is controlling THIS player, do nothing — PlayerMovement drives it.
+        if (self.IsActive)
         {
-            rb.linearVelocity = Vector2.zero; // arrived: hold position
+            // safety: if I was AI-holding and the human just took over, drop my AI hold
+            if (isHolding) ReleaseAIHold();
             return;
         }
 
-        rb.linearVelocity = toTarget.normalized * moveSpeed;
+        var ctx = MatchContext.Instance;
+        if (ctx == null || myTeam == null) return;
+
+        if (isHolding) { Attack(ctx); return; }
+
+        if (ctx.BallIsLoose &&
+            Vector2.Distance(rb.position, ctx.BallPosition) <= grabDistance)
+        {
+            GrabBall(ctx);
+            return;
+        }
+
+        bool weHaveBall = ctx.TeamHasBall(myTeam);
+
+        if (weHaveBall)
+        {
+            MoveTo(SupportSpot(ctx), supportSpeed);
+        }
+        else
+        {
+            Transform closest = myTeam.ClosestMemberTo(ctx.BallPosition);
+            if (closest == transform)
+            {
+                Vector2 dir = (ctx.BallPosition - rb.position).normalized;
+                if (dir != Vector2.zero) lastDirection = dir;
+                rb.linearVelocity = dir * chaseSpeed;
+            }
+            else
+            {
+                MoveTo(homeSpot, supportSpeed);
+            }
+        }
     }
 
-    Vector2 DecideTarget()
+    void GrabBall(MatchContext ctx)
     {
-        bool weHaveBall = (teammate != null && teammate.IsHolding);
+        isHolding = true;
+        Rigidbody2D ball = ctx.Ball;
+        ball.simulated = false;
+        ball.linearVelocity = Vector2.zero;
+        ball.transform.SetParent(transform);
+        ball.transform.localPosition = (Vector3)(lastDirection * holdOffset);
+        ctx.SetPossession(myTeam);
+    }
 
-        if (weHaveBall && enemyGoal != null && teammate != null)
+    void Attack(MatchContext ctx)
+    {
+        if (myTeam.attackGoal == null) { ReleaseAIHold(); return; }
+        Vector2 toGoal = (Vector2)myTeam.attackGoal.position - rb.position;
+        lastDirection = toGoal.normalized;
+        rb.linearVelocity = lastDirection * carrySpeed;
+
+        if (toGoal.magnitude <= shootRange) Shoot(ctx);
+    }
+
+    Vector2 SupportSpot(MatchContext ctx)
+    {
+        if (myTeam.attackGoal == null) return rb.position;
+        return Vector2.Lerp(rb.position, (Vector2)myTeam.attackGoal.position, 0.4f);
+    }
+
+    void MoveTo(Vector2 target, float speed)
+    {
+        Vector2 dir = (target - rb.position);
+        if (dir.magnitude < 0.25f) { rb.linearVelocity = Vector2.zero; return; }
+        rb.linearVelocity = dir.normalized * speed;
+    }
+
+    void Shoot(MatchContext ctx)
+    {
+        isHolding = false;
+        Rigidbody2D ball = ctx.Ball;
+        ball.transform.SetParent(null);
+        ball.simulated = true;
+        ball.linearVelocity = Vector2.zero;
+        ball.AddForce(lastDirection * shootPower, ForceMode2D.Impulse);
+        ctx.SetPossession(null);
+    }
+
+    void ReleaseAIHold()
+    {
+        isHolding = false;
+        var ctx = MatchContext.Instance;
+        if (ctx != null && ctx.Ball != null)
         {
-            // ATTACK: get open ahead of the ball carrier, toward the enemy goal
-            Vector2 carrier = teammate.transform.position;
-            Vector2 toGoal = ((Vector2)enemyGoal.position - carrier).normalized;
-
-            // a spot ahead of the carrier toward goal...
-            Vector2 spot = carrier + toGoal * aheadDistance;
-
-            // ...stepped sideways so we're not directly in line (easier pass lane)
-            Vector2 sideways = new Vector2(-toGoal.y, toGoal.x); // perpendicular
-            spot += sideways * spreadDistance;
-
-            // ...nudged away from the opponent so we're actually open
-            if (opponent != null)
-            {
-                Vector2 awayFromBot = (spot - (Vector2)opponent.position).normalized;
-                spot += awayFromBot * avoidOpponent;
-            }
-
-            return spot;
+            ctx.Ball.transform.SetParent(null);
+            ctx.Ball.simulated = true;
+            ctx.SetPossession(null);
         }
-        else if (ownGoal != null)
-        {
-            // DEFEND/SUPPORT: drop back between our goal and the ball
-            Vector2 goalPos = ownGoal.position;
-            Vector2 toBall = ((Vector2)ball.position - goalPos).normalized;
-            return goalPos + toBall * (aheadDistance); // sit in front of own goal, ball side
-        }
+    }
 
-        return rb.position; // fallback: stay put
+    void LateUpdate()
+    {
+        if (isHolding && MatchContext.Instance != null)
+            MatchContext.Instance.Ball.transform.localPosition = (Vector3)(lastDirection * holdOffset);
     }
 }

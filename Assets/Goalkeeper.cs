@@ -1,24 +1,33 @@
 using UnityEngine;
 
+[RequireComponent(typeof(Rigidbody2D))]
 public class Goalkeeper : MonoBehaviour
 {
     [Header("References")]
     [SerializeField] private Rigidbody2D ball;
 
     [Header("Movement")]
-    [SerializeField] private float trackSpeed = 4f;   // how fast it slides
-    [SerializeField] private float minY = -2f;        // top/bottom limit of the goal mouth
+    [SerializeField] private float trackSpeed = 4f;
+    [SerializeField] private float minY = -2f;
     [SerializeField] private float maxY = 2f;
 
-    void Update()
+    private Rigidbody2D rb;
+
+    void Awake()
+    {
+        rb = GetComponent<Rigidbody2D>();
+    }
+
+    void FixedUpdate()
     {
         if (ball == null) return;
 
-        // the keeper stays on its own X; it only slides up/down to match the ball's Y
         float targetY = Mathf.Clamp(ball.position.y, minY, maxY);
 
-        Vector3 pos = transform.position;
-        pos.y = Mathf.MoveTowards(pos.y, targetY, trackSpeed * Time.deltaTime);
-        transform.position = pos;
+        Vector2 pos = rb.position;
+        pos.y = Mathf.MoveTowards(pos.y, targetY, trackSpeed * Time.fixedDeltaTime);
+
+        // move via physics so it actually blocks/pushes the ball
+        rb.MovePosition(pos);
     }
 }
