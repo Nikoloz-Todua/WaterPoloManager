@@ -152,10 +152,10 @@ MonoBehaviour:
   players:
   - {fileID: 945807556}
   - {fileID: 1227050015}
-  ball: {fileID: 650185484}
-  passSpeedFactor: 3
-  minPassSpeed: 5
-  maxPassSpeed: 14
+  teammateAIs:
+  - {fileID: 945807559}
+  - {fileID: 1227050020}
+  playerTeam: {fileID: 1812404639}
 --- !u!4 &140903094
 Transform:
   m_ObjectHideFlags: 0
@@ -186,6 +186,7 @@ MonoBehaviour:
   ball: {fileID: 650185484}
   playerTeam: {fileID: 1812404639}
   botTeam: {fileID: 896660540}
+  releaseGrabDelay: 0.35
 --- !u!1 &358453738
 GameObject:
   m_ObjectHideFlags: 0
@@ -1143,6 +1144,16 @@ MonoBehaviour:
   laneHeight: 3.5
   attackPush: 3
   defendPull: 2.5
+  supportLead: 3
+  supportWidth: 2.5
+  defendDepth: 2.5
+  defendWidth: 2.5
+  pressDistance: 1.8
+  openRadius: 1.6
+  passLaneRadius: 0.7
+  shotLaneRadius: 0.6
+  aimCornerOffset: 1.1
+  forwardPassMin: 0.5
 --- !u!4 &896660541
 Transform:
   m_ObjectHideFlags: 0
@@ -1404,8 +1415,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d1380f42816648546aff1c492230ae0f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerMovement
-  moveSpeed: 2
-  holdMoveSpeed: 1
+  moveSpeed: 3
+  holdMoveSpeed: 1.5
   ball: {fileID: 650185484}
   grabDistance: 1
   holdOffset: 0.6
@@ -1492,14 +1503,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2ed0eea79a425f74cb82b08bd616e8cd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TeammateAI
-  myTeam: {fileID: 0}
-  chaseSpeed: 4
-  carrySpeed: 2.5
-  supportSpeed: 3.5
+  myTeam: {fileID: 1812404639}
+  chaseSpeed: 3
+  carrySpeed: 1.8
+  supportSpeed: 2.5
   grabDistance: 1.2
   holdOffset: 0.6
-  shootRange: 4
-  shootPower: 11
+  shootRange: 20
+  shootPower: 20
 --- !u!1 &950693081
 GameObject:
   m_ObjectHideFlags: 0
@@ -1774,8 +1785,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d1380f42816648546aff1c492230ae0f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerMovement
-  moveSpeed: 2
-  holdMoveSpeed: 1
+  moveSpeed: 3
+  holdMoveSpeed: 1.5
   ball: {fileID: 650185484}
   grabDistance: 1
   holdOffset: 0.6
@@ -1938,13 +1949,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TeammateAI
   myTeam: {fileID: 1812404639}
-  chaseSpeed: 4
-  carrySpeed: 2.5
-  supportSpeed: 3.5
+  chaseSpeed: 3
+  carrySpeed: 1.8
+  supportSpeed: 2.5
   grabDistance: 1.2
   holdOffset: 0.6
-  shootRange: 4
-  shootPower: 11
+  shootRange: 20
+  shootPower: 20
 --- !u!1 &1296226206
 GameObject:
   m_ObjectHideFlags: 0
@@ -2587,13 +2598,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BotMovement
   myTeam: {fileID: 896660540}
-  chaseSpeed: 2
-  carrySpeed: 1
-  supportSpeed: 2
+  chaseSpeed: 3
+  carrySpeed: 1.8
+  supportSpeed: 0.5
   grabDistance: 1.6
   holdOffset: 0.6
-  shootRange: 4
-  shootPower: 11
+  shootRange: 20
+  shootPower: 20
 --- !u!58 &1601739695
 CircleCollider2D:
   m_ObjectHideFlags: 0
@@ -3101,13 +3112,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BotMovement
   myTeam: {fileID: 896660540}
-  chaseSpeed: 2
-  carrySpeed: 1
-  supportSpeed: 2
+  chaseSpeed: 3
+  carrySpeed: 1.8
+  supportSpeed: 2.5
   grabDistance: 1.6
   holdOffset: 0.6
-  shootRange: 4
-  shootPower: 11
+  shootRange: 20
+  shootPower: 20
 --- !u!58 &1805958865
 CircleCollider2D:
   m_ObjectHideFlags: 0
@@ -3284,6 +3295,16 @@ MonoBehaviour:
   laneHeight: 3.5
   attackPush: 3
   defendPull: 2.5
+  supportLead: 3
+  supportWidth: 2.5
+  defendDepth: 2.5
+  defendWidth: 2.5
+  pressDistance: 1.8
+  openRadius: 1.6
+  passLaneRadius: 0.7
+  shotLaneRadius: 0.6
+  aimCornerOffset: 1.1
+  forwardPassMin: 0.5
 --- !u!4 &1812404640
 Transform:
   m_ObjectHideFlags: 0

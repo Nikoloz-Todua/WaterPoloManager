@@ -9,6 +9,10 @@ public class ScoreManager : MonoBehaviour
     private int homeScore = 0; // YOU (attack the RIGHT goal)
     private int awayScore = 0; // BOT (attacks the LEFT goal)
 
+    // public read-only access for other systems (e.g. MatchTimer's win condition)
+    public int HomeScore => homeScore;
+    public int AwayScore => awayScore;
+
     void Start()
     {
         UpdateText();

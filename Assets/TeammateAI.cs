@@ -15,11 +15,14 @@ public class TeammateAI : MonoBehaviour, IAgentBody
     [SerializeField] private float holdOffset = 0.6f;
     [SerializeField] private float shootRange = 4f;
     [SerializeField] private float shootPower = 11f;
+    [SerializeField] private float stealChance = 0.2f;
 
     private Rigidbody2D rb;
     private PlayerMovement self;
     private bool isHolding = false;
     private Vector2 lastDirection = Vector2.right;
+    private float holdStartTime;
+    private float nextStealTime;
 
     void Awake()
     {
@@ -43,5 +46,8 @@ public class TeammateAI : MonoBehaviour, IAgentBody
     public float HoldOffset => holdOffset;
     public float ShootRange => shootRange;
     public float ShootPower => shootPower;
+    public float StealChance => stealChance;
+    public float HoldStartTime { get => holdStartTime; set => holdStartTime = value; }
+    public float NextStealTime { get => nextStealTime; set => nextStealTime = value; }
     public bool Suppressed => self != null && self.IsActive; // human is driving this one
 }

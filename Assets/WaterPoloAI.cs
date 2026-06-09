@@ -18,6 +18,10 @@ public interface IAgentBody
     float ShootRange { get; }
     float ShootPower { get; }   // used as a deterministic shot SPEED (units/sec)
 
+    float StealChance { get; }
+    float HoldStartTime { get; set; }
+    float NextStealTime { get; set; }
+
     // true while a human controls this swimmer; the brain then stands down.
     bool Suppressed { get; }
 }
@@ -35,10 +39,18 @@ public static class WaterPoloBrain
     const float MinPassSpeed = 6f;
     const float MaxPassSpeed = 13f;
     const float SteerAwayWeight = 0.8f; // how hard the carrier veers off a defender
+    const float SettleDelay = 0.4f;     // must hold the ball this long before shooting
+    const float StealCooldown = 0.6f;   // min time between steal attempts
 
     public static void Tick(IAgentBody a, MatchContext ctx)
     {
         if (ctx == null || a.Team == null || ctx.Ball == null) return;
+
+        // Safety net for EVERY agent: if we think we're holding but the ball isn't
+        // actually parented to us, drop the illusion. (A stale "holding" flag is what
+        // left agents green/aiming with no ball and pinned/snapped the ball in place.)
+        if (a.IsHolding && ctx.Ball.transform.parent != a.Tf)
+            a.IsHolding = false;
 
         // A human just took control of this swimmer → drop the ball, stop steering.
         if (a.Suppressed)
@@ -46,12 +58,6 @@ public static class WaterPoloBrain
             if (a.IsHolding) Release(a, ctx);
             return;
         }
-
-        // Safety net: if we think we're holding but the ball isn't actually parented
-        // to us, drop the illusion. (A stale "holding" flag is what used to pin and
-        // freeze the ball in LateUpdate.)
-        if (a.IsHolding && ctx.Ball.transform.parent != a.Tf)
-            a.IsHolding = false;
 
         if (a.IsHolding) { Carry(a, ctx); return; }
 
@@ -74,7 +80,10 @@ public static class WaterPoloBrain
 
         // Ball is loose or the enemy has it: the nearest swimmer presses, rest defend.
         if (a.Team.ClosestMemberTo(ctx.BallPosition) == a.Tf)
+        {
+            if (TryStealAI(a, ctx, enemy)) return;
             ChaseBall(a, ctx);
+        }
         else
             MoveTo(a, a.Team.DefendSpot(a.Tf, ctx.BallPosition), a.SupportSpeed);
     }
@@ -104,11 +113,18 @@ public static class WaterPoloBrain
         Vector2 aim = team.ShotAimPoint(pos);                 // a corner, not the keeper
         float goalDist = Vector2.Distance(pos, goal);
 
-        // 1) In range with a clear lane → shoot at the open corner.
+        // 1) In range with a clear lane → square up, then shoot once settled.
         if (goalDist <= a.ShootRange && team.LaneClear(pos, aim, enemy, team.shotLaneRadius))
         {
             a.LastDirection = (aim - pos).normalized;
-            Shoot(a, ctx);
+            if (Time.time - a.HoldStartTime >= SettleDelay)
+            {
+                Shoot(a, ctx);
+            }
+            else
+            {
+                a.Body.linearVelocity = Vector2.zero; // square up and wait
+            }
             return;
         }
 
@@ -162,6 +178,30 @@ public static class WaterPoloBrain
         ctx.Ball.transform.SetParent(a.Tf);
         ctx.Ball.transform.localPosition = (Vector3)(a.LastDirection * a.HoldOffset);
         ctx.SetPossession(a.Team);
+        a.HoldStartTime = Time.time;
+    }
+
+    // The presser tries to rip the ball off the enemy carrier when in range.
+    static bool TryStealAI(IAgentBody a, MatchContext ctx, TeamSide enemy)
+    {
+        if (enemy == null || !ctx.TeamHasBall(enemy)) return false;
+        if (Time.time < a.NextStealTime) return false;
+        Transform carrier = ctx.Ball.transform.parent;
+        if (carrier == null) return false;
+        if (Vector2.Distance(a.Body.position, ctx.BallPosition) > a.GrabDistance) return false;
+        a.NextStealTime = Time.time + StealCooldown;
+        if (Random.value > a.StealChance) return false;
+        IAgentBody holder = carrier.GetComponent<IAgentBody>();
+        if (holder != null) holder.IsHolding = false;
+        else { PlayerMovement pm = carrier.GetComponent<PlayerMovement>(); if (pm != null) pm.ReleaseBall(); }
+        a.IsHolding = true;
+        a.HoldStartTime = Time.time;
+        ctx.Ball.simulated = false;
+        ctx.Ball.linearVelocity = Vector2.zero;
+        ctx.Ball.transform.SetParent(a.Tf);
+        ctx.Ball.transform.localPosition = (Vector3)(a.LastDirection * a.HoldOffset);
+        ctx.SetPossession(a.Team);
+        return true;
     }
 
     static void Shoot(IAgentBody a, MatchContext ctx)
