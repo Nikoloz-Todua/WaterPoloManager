@@ -33,7 +33,20 @@ public class PlayerMovement : MonoBehaviour
 
     [Header("Aim line")]
     [SerializeField] private LineRenderer aimLine;
-    [SerializeField] private float aimLineLength = 2.5f;
+    [SerializeField] private float aimLineLength = 2.5f; // (legacy; triangle uses the fields below)
+
+    [Header("Aim triangle")]
+    [SerializeField] private float aimTriangleLength = 0.7f; // tip distance from the base
+    [SerializeField] private float aimTriangleWidth = 0.5f;  // base width
+    [SerializeField] private float aimTriangleGap = 0.5f;    // gap from player centre to base
+    [SerializeField] private float aimTriangleLineWidth = 0.08f;
+
+    [Header("Power bar")]
+    [SerializeField] private float powerBarWidth = 1.0f;
+    [SerializeField] private float powerBarHeight = 0.12f;
+    [SerializeField] private float powerBarYOffset = 0.9f;
+
+    private LineRenderer powerBar; // built in code, no Inspector wiring needed
 
     public bool IsActive = false;
     public bool IsHolding => isHolding;
@@ -52,7 +65,35 @@ public class PlayerMovement : MonoBehaviour
     {
         rb = GetComponent<Rigidbody2D>();
         sprite = GetComponent<SpriteRenderer>();
-        if (aimLine != null) aimLine.enabled = false;
+
+        // Configure the existing LineRenderer to draw a closed triangle.
+        if (aimLine != null)
+        {
+            aimLine.useWorldSpace = true;
+            aimLine.positionCount = 3;
+            aimLine.loop = false; // open chevron ">" — no base line between the tails
+            aimLine.startWidth = aimLine.endWidth = aimTriangleLineWidth;
+            aimLine.enabled = false;
+        }
+
+        BuildPowerBar();
+    }
+
+    // Create a self-contained power bar (a thick LineRenderer) above the player.
+    // useWorldSpace=false → positions are local, so it follows the player automatically.
+    void BuildPowerBar()
+    {
+        GameObject go = new GameObject("PowerBar");
+        go.transform.SetParent(transform, false);
+
+        powerBar = go.AddComponent<LineRenderer>();
+        powerBar.useWorldSpace = false;
+        powerBar.positionCount = 2;
+        powerBar.numCapVertices = 0;
+        powerBar.startWidth = powerBar.endWidth = powerBarHeight;
+        powerBar.material = new Material(Shader.Find("Sprites/Default"));
+        powerBar.sortingOrder = 50;
+        powerBar.enabled = false;
     }
 
     void Update()
@@ -119,6 +160,7 @@ public class PlayerMovement : MonoBehaviour
         }
 
         UpdateAimLine();
+        UpdatePowerBar();
     }
 
     void FixedUpdate()
@@ -128,6 +170,7 @@ public class PlayerMovement : MonoBehaviour
         rb.linearVelocity = input * speed;
     }
 
+    // Short triangle that points along lastDirection, sitting just in front of the player.
     void UpdateAimLine()
     {
         if (aimLine == null) return;
@@ -136,10 +179,36 @@ public class PlayerMovement : MonoBehaviour
         aimLine.enabled = show;
         if (!show) return;
 
-        Vector3 start = transform.position;
-        Vector3 end = start + (Vector3)(lastDirection * aimLineLength);
-        aimLine.SetPosition(0, start);
-        aimLine.SetPosition(1, end);
+        Vector2 f = lastDirection.sqrMagnitude > 1e-4f ? lastDirection.normalized : Vector2.up;
+        Vector2 perp = new Vector2(-f.y, f.x);
+        Vector3 c = transform.position;
+
+        Vector3 baseCenter = c + (Vector3)(f * aimTriangleGap);
+        Vector3 tip   = baseCenter + (Vector3)(f * aimTriangleLength);
+        Vector3 baseL = baseCenter + (Vector3)(perp * (aimTriangleWidth * 0.5f));
+        Vector3 baseR = baseCenter - (Vector3)(perp * (aimTriangleWidth * 0.5f));
+
+        aimLine.SetPosition(0, baseL);
+        aimLine.SetPosition(1, tip);
+        aimLine.SetPosition(2, baseR); // tail → tip → tail draws an open ">"
+    }
+
+    // Fills 0..1 with currentPower/maxShootPower while charging; hidden otherwise.
+    void UpdatePowerBar()
+    {
+        if (powerBar == null) return;
+
+        bool charging = IsActive && isHolding && currentPower > 0.01f && !stealConsumedSpace;
+        powerBar.enabled = charging;
+        if (!charging) return;
+
+        float fill = Mathf.Clamp01(currentPower / Mathf.Max(maxShootPower, 0.0001f));
+        float half = powerBarWidth * 0.5f;
+        powerBar.SetPosition(0, new Vector3(-half, powerBarYOffset, 0f));
+        powerBar.SetPosition(1, new Vector3(-half + powerBarWidth * fill, powerBarYOffset, 0f));
+
+        Color col = Color.Lerp(Color.green, Color.red, fill);
+        powerBar.startColor = powerBar.endColor = col;
     }
 
     void TryGrabBall()

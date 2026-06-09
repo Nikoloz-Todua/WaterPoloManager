@@ -42,6 +42,9 @@ public static class WaterPoloBrain
     const float SettleDelay = 0.4f;     // must hold the ball this long before shooting
     const float StealCooldown = 0.6f;   // min time between steal attempts
     const float StealFacingDot = 0.3f;  // stealer must be within ~70° of the carrier's front
+    const float IdleDriftFraction = 0.2f; // idle float speed as a fraction of move speed
+    const float IdleRadius = 0.35f;       // how far the idle bob point sits from the spot
+    const float IdleFreq = 1.2f;          // idle bob speed (rad/s)
 
     public static void Tick(IAgentBody a, MatchContext ctx)
     {
@@ -170,10 +173,26 @@ public static class WaterPoloBrain
     static void MoveTo(IAgentBody a, Vector2 target, float speed)
     {
         Vector2 delta = target - a.Body.position;
-        if (delta.magnitude < ArriveDistance) { a.Body.linearVelocity = Vector2.zero; return; }
+        if (delta.magnitude < ArriveDistance) { IdleDrift(a, target, speed); return; }
         Vector2 dir = delta.normalized;
         a.LastDirection = dir;
         a.Body.linearVelocity = dir * speed;
+    }
+
+    // Arrived at our spot: instead of freezing, gently float around it. Each agent
+    // gets a phase offset seeded from its instance id so they don't bob in sync, and
+    // the drift always steers back toward the spot so it can't wander off-assignment.
+    static void IdleDrift(IAgentBody a, Vector2 spot, float speed)
+    {
+        float seed = (a.Tf.GetInstanceID() & 0xFFFF) * 0.137f;
+        float t = Time.time * IdleFreq + seed;
+        Vector2 bob = spot + new Vector2(Mathf.Cos(t), Mathf.Sin(t * 0.8f + seed)) * IdleRadius;
+
+        Vector2 toBob = bob - a.Body.position;
+        // ClampMagnitude(...,1) eases the speed down as we near the bob point (no jitter)
+        Vector2 vel = Vector2.ClampMagnitude(toBob, 1f) * (speed * IdleDriftFraction);
+        a.Body.linearVelocity = vel;
+        if (vel.sqrMagnitude > 1e-4f) a.LastDirection = vel.normalized;
     }
 
     // ---- ball handling ----
