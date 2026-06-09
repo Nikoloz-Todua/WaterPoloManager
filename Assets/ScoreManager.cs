@@ -5,6 +5,8 @@ public class ScoreManager : MonoBehaviour
 {
     [SerializeField] private Rigidbody2D ball;
     [SerializeField] private TMP_Text scoreText;
+    [SerializeField] private TeamSide playerTeam;
+    [SerializeField] private TeamSide botTeam;
 
     private int homeScore = 0; // YOU (attack the RIGHT goal)
     private int awayScore = 0; // BOT (attacks the LEFT goal)
@@ -16,6 +18,7 @@ public class ScoreManager : MonoBehaviour
     void Start()
     {
         UpdateText();
+        ResetKickoff(); // clean opening shape
     }
 
     // called by a goal when the ball enters it
@@ -27,7 +30,16 @@ public class ScoreManager : MonoBehaviour
             awayScore++;
 
         UpdateText();
+        ResetKickoff();
+    }
+
+    // Reset the ball to centre AND spread both teams back to their home shapes,
+    // so players don't stay bunched after a goal.
+    void ResetKickoff()
+    {
         ResetBall();
+        if (playerTeam != null) playerTeam.SnapToKickoffFormation();
+        if (botTeam != null) botTeam.SnapToKickoffFormation();
     }
 
     void ResetBall()

@@ -24,6 +24,7 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private float stealDistance = 1.2f;
     [SerializeField] private float stealChance = 0.4f;
     [SerializeField] private float stealCooldown = 0.6f;
+    private const float StealFacingDot = 0.3f; // stealer must be within ~70° of the carrier's front
 
     [Header("Visual Feedback")]
     [SerializeField] private Color holdingColor = Color.green;
@@ -179,6 +180,17 @@ public class PlayerMovement : MonoBehaviour
         if (carrier == null) return;
 
         if (Vector2.Distance(transform.position, ball.position) > stealDistance) return;
+
+        // Must approach the carrier from its front, not from behind.
+        Vector2 carrierFacing = Vector2.zero;
+        IAgentBody carrierBody = carrier.GetComponent<IAgentBody>();
+        if (carrierBody != null) carrierFacing = carrierBody.LastDirection;
+        else { PlayerMovement cpm = carrier.GetComponent<PlayerMovement>(); if (cpm != null) carrierFacing = cpm.Facing; }
+        Vector2 dirToCarrier = (Vector2)carrier.position - (Vector2)transform.position;
+        if (dirToCarrier.sqrMagnitude > 1e-4f) dirToCarrier.Normalize();
+        if (carrierFacing.sqrMagnitude > 1e-4f &&
+            Vector2.Dot(carrierFacing.normalized, -dirToCarrier) < StealFacingDot)
+            return;
 
         lastStealTime = Time.time;
 

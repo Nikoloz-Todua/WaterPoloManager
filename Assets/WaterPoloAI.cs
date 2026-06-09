@@ -41,6 +41,7 @@ public static class WaterPoloBrain
     const float SteerAwayWeight = 0.8f; // how hard the carrier veers off a defender
     const float SettleDelay = 0.4f;     // must hold the ball this long before shooting
     const float StealCooldown = 0.6f;   // min time between steal attempts
+    const float StealFacingDot = 0.3f;  // stealer must be within ~70° of the carrier's front
 
     public static void Tick(IAgentBody a, MatchContext ctx)
     {
@@ -73,19 +74,25 @@ public static class WaterPoloBrain
 
         if (ctx.TeamHasBall(a.Team))
         {
-            // A teammate is carrying → get open ahead of them for a pass.
-            MoveTo(a, a.Team.SupportSpot(a.Tf, ctx.BallPosition, enemy), a.SupportSpeed);
+            // A teammate is carrying → hold our role's attacking spot (fixed spacing).
+            MoveTo(a, a.Team.AttackPositionFor(a.Tf, ctx.BallPosition), a.SupportSpeed);
             return;
         }
 
-        // Ball is loose or the enemy has it: the nearest swimmer presses, rest defend.
+        // Ball is loose or the enemy has it: the single nearest swimmer presses; every
+        // other swimmer marks its own man (different role each → no clustering).
         if (a.Team.ClosestMemberTo(ctx.BallPosition) == a.Tf)
         {
             if (TryStealAI(a, ctx, enemy)) return;
             ChaseBall(a, ctx);
         }
         else
-            MoveTo(a, a.Team.DefendSpot(a.Tf, ctx.BallPosition), a.SupportSpeed);
+        {
+            Transform mark = a.Team.MarkAssignmentFor(a.Tf, enemy);
+            Vector2 spot = mark != null ? a.Team.MarkSpot(a.Tf, mark)
+                                        : a.Team.DefendSpot(a.Tf, ctx.BallPosition);
+            MoveTo(a, spot, a.SupportSpeed);
+        }
     }
 
     // Keep the held ball glued in front of us (called from LateUpdate).
@@ -189,6 +196,15 @@ public static class WaterPoloBrain
         Transform carrier = ctx.Ball.transform.parent;
         if (carrier == null) return false;
         if (Vector2.Distance(a.Body.position, ctx.BallPosition) > a.GrabDistance) return false;
+
+        // Must come at the carrier from the front, not from behind.
+        Vector2 dirToCarrier = (Vector2)carrier.position - a.Body.position;
+        if (dirToCarrier.sqrMagnitude > 1e-4f) dirToCarrier.Normalize();
+        Vector2 carrierFacing = CarrierFacing(carrier);
+        if (carrierFacing.sqrMagnitude > 1e-4f &&
+            Vector2.Dot(carrierFacing.normalized, -dirToCarrier) < StealFacingDot)
+            return false;
+
         a.NextStealTime = Time.time + StealCooldown;
         if (Random.value > a.StealChance) return false;
         IAgentBody holder = carrier.GetComponent<IAgentBody>();
@@ -202,6 +218,18 @@ public static class WaterPoloBrain
         ctx.Ball.transform.localPosition = (Vector3)(a.LastDirection * a.HoldOffset);
         ctx.SetPossession(a.Team);
         return true;
+    }
+
+    // The direction the carrier is facing. A human-controlled carrier reports its
+    // live facing; otherwise we read the AI body's LastDirection.
+    static Vector2 CarrierFacing(Transform carrier)
+    {
+        PlayerMovement pm = carrier.GetComponent<PlayerMovement>();
+        if (pm != null && pm.IsActive) return pm.Facing;
+        IAgentBody body = carrier.GetComponent<IAgentBody>();
+        if (body != null) return body.LastDirection;
+        if (pm != null) return pm.Facing;
+        return Vector2.zero;
     }
 
     static void Shoot(IAgentBody a, MatchContext ctx)
