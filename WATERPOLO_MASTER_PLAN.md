@@ -131,6 +131,13 @@ Also now DONE:
 - **4-quarter match timer** (30s/quarter, tunable) with **win/lose/draw at full time**.
 - **Scaled from 2v2 → 4v4 → 6v6** (formation + AI scale with no code change).
 - **Player/ball/keeper sprites scaled down** to reduce crowding.
+- **Role-based positioning** — Center, Center-Back, Wings, Flats assigned by roster index; each role holds a distinct depth + lane.
+- **1-to-1 marking** — each non-presser defender marks its counterpart on the enemy team; the single nearest player still presses the ball.
+- **Facing-gated steal** — can't strip the ball from behind; the stealer must be in the carrier's frontal arc (both human and AI).
+- **Kickoff formation reset** — both teams snap to a spread home shape on every goal and at match start (no more bunching).
+- **Idle drift** — players that reach their spot gently float instead of freezing.
+- **Shot/pass power bar** for the active player (fills while charging).
+- **Chevron aim indicator** under the active player, replacing the old long aim line.
 
 ## A9. Known issues / tuning notes
 
@@ -140,9 +147,9 @@ Also now DONE:
 - Graphics are placeholder circles/squares on purpose — **art is a later phase, after gameplay is locked.**
 
 **KNOWN ISSUES / NEXT:**
-- Bots/teammates **skew defensive** — tactics tuning needed (push more players forward when attacking).
-- A ball can be **struck without a settled hold** (quick deflection); this should be made a **weaker shot** than a settled one.
-- **Side-switch at halftime deferred** (timer + win condition exist, but teams don't swap ends).
+- Residual **clustering only when the ball + multiple players + an opponent genuinely converge** on the same spot — acceptable/realistic, not the old "everyone bunches" bug.
+- **Next AI bricks:** dynamic mark-switching (coverage handoff when a marker leaves its man), then a press-vs-zone defensive-mode toggle.
+- **Deferred:** tactical substitution / exclusion adaptation; halftime side-switch (teams don't swap ends yet); weak no-hold deflection shot (a ball struck without a settled hold should be a weaker shot than a settled one).
 
 ## A10. Immediate roadmap (next bricks, rough order)
 
@@ -225,16 +232,16 @@ Also now DONE:
 ### B16.2 Match Start — Sprint Duel ⬜
 - Ball center, held by mechanism; whistle → mechanism drops, ball spins. Two sprinters race; tap a button rapidly to swim faster; a bar shows tap speed. Winner passes to a teammate; match begins.
 
-### B16.3 Match Controls 🟡 PARTIAL (shoot, B-pass to nearest teammate, E=grab, Space-steal all built on keyboard; full A/B/C touch scheme not built)
-- **A** — with ball: shoot (hold = power bar, directional arrow); without ball: aggressive defensive press.
+### B16.3 Match Controls 🟡 PARTIAL (shoot + power-bar feedback, B-pass to nearest teammate, E=grab, Space-steal all built on keyboard; full A/B/C touch scheme not built)
+- **A** — with ball: shoot (hold = power bar, directional arrow); without ball: aggressive defensive press. *(Charged-shot power bar for the active player is built ✅.)*
 - **B** — with ball: regular pass (short=slow, long=fast, fast risks bad catch); without ball: pressure (not aggressive).
 - **C** — with ball: high/long lob, late-game penalty-style lob (easier for keeper); without ball: manual player switch (auto-switch exists ✅; manual override).
 - **Hand button ✋** — tap: pick ball up to hands; hold: water-polo hand movements; then A to shoot; single tap: release.
 - **Joystick (bottom-right)** — 360° move; directs pass/shot aim via under-player arrow.
 - **Swipes** — up = special evasion (pump fake/shoulder turn); down = different (reverse pivot); success = attacker rating vs defender rating; fail risks losing ball.
 
-### B16.4 Camera & Visibility 🟡 PARTIAL (2D top-down done; names/arrows not yet)
-- Dream-League-style overhead angled; faces not clear in play. Name above each player; directional arrow below showing heading.
+### B16.4 Camera & Visibility 🟡 PARTIAL (2D top-down + directional chevron done; player names not yet)
+- Dream-League-style overhead angled; faces not clear in play. Name above each player; directional arrow below showing heading. *(A directional chevron indicator under the active player is built ✅; player-name labels still TODO.)*
 
 ### B16.5 Match Structure 🟡 PARTIAL (basic 4-quarter timer + win condition exist; no halftime side-switch, no shot clock yet)
 - 4 quarters, 2 real-minutes each (8 total, adjustable). 30-second shot clock per possession. Halftime (after Q2): switch sides.
@@ -251,8 +258,10 @@ Also now DONE:
 ### B16.9 Exclusion System ⬜
 - Exclusion foul → exclusion zone, 20s timer. 3rd exclusion on a player → permanent removal (notify to sub via Pause, or auto-sub). AI adjusts for 6-v-7 (down a man) and 7-v-6 (man up).
 
-### B16.10 AI Behaviour 🟡 PARTIAL (attack/defend/press/support/pass + AI stealing DONE in C#; exclusion-based repositioning NOT yet)
+### B16.10 AI Behaviour 🟡 PARTIAL (attack/defend/press/support/pass + AI stealing + role-based marking + facing-gated steal DONE in C#; exclusion-based repositioning NOT yet)
 - With ball → attack positions; lose ball → defensive positions; players hold assigned positions; opponent excluded → exploit extra man; own exclusion → shorthanded defense.
+- **Built:** role-based positioning + 1-to-1 marking (nearest presses, others mark their counterpart); facing-gated steal (no stealing from behind).
+- **TODO:** dynamic mark-switching (coverage handoff when a marker leaves its man); selectable press-vs-zone defensive modes.
 - **AI is C# state-machine logic (`WaterPoloBrain`), scaled by player stats.** The original "LLM-driven bots (LM Studio/llama.cpp/Claude API)" idea is **ABANDONED** — do not implement it; it's wrong for a real-time game.
 
 ### B16.11 Fouls & Rules ⬜ (goal walls/keeper collisions done; foul logic not)
