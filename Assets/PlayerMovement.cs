@@ -109,8 +109,9 @@ public class PlayerMovement : MonoBehaviour
     void TryGrabBall()
     {
         if (ball == null) return;
-        // can only grab a LOOSE ball (cannot steal from a holder)
-        if (MatchContext.Instance != null && !MatchContext.Instance.BallIsLoose) return;
+        // can only grab a ball that's loose AND past the post-release cooldown
+        // (cannot steal from a holder, nor instantly re-catch your own shot/pass)
+        if (MatchContext.Instance != null && !MatchContext.Instance.BallGrabbable) return;
 
         if (Vector2.Distance(transform.position, ball.position) <= grabDistance)
         {

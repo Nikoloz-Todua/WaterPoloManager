@@ -1,7 +1,11 @@
 using UnityEngine;
 
+// A player-team swimmer that the AI controls *unless* the human is actively
+// controlling it (PlayerMovement.IsActive). Same brain as the bots — it just
+// stands down when the human takes over.
+[RequireComponent(typeof(Rigidbody2D))]
 [RequireComponent(typeof(PlayerMovement))]
-public class TeammateAI : MonoBehaviour
+public class TeammateAI : MonoBehaviour, IAgentBody
 {
     [SerializeField] private TeamSide myTeam;
     [SerializeField] private float chaseSpeed = 3f;
@@ -23,91 +27,21 @@ public class TeammateAI : MonoBehaviour
         self = GetComponent<PlayerMovement>();
     }
 
-    void FixedUpdate()
-    {
-        if (self.IsActive) { if (isHolding) ReleaseAIHold(); return; }
+    void FixedUpdate() { WaterPoloBrain.Tick(this, MatchContext.Instance); }
+    void LateUpdate()  { WaterPoloBrain.KeepHeldBall(this, MatchContext.Instance); }
 
-        var ctx = MatchContext.Instance;
-        if (ctx == null || myTeam == null) return;
-
-        if (isHolding) { Attack(ctx); return; }
-
-        if (ctx.BallIsLoose &&
-            Vector2.Distance(rb.position, ctx.BallPosition) <= grabDistance)
-        {
-            GrabBall(ctx);
-            return;
-        }
-
-        bool weHaveBall = ctx.TeamHasBall(myTeam);
-        Transform closest = myTeam.ClosestMemberTo(ctx.BallPosition);
-
-        // the closest player chases the ball (only when ball is loose or enemy has it)
-        if (!weHaveBall && closest == transform)
-        {
-            Vector2 dir = (ctx.BallPosition - rb.position).normalized;
-            if (dir != Vector2.zero) lastDirection = dir;
-            rb.linearVelocity = dir * chaseSpeed;
-            return;
-        }
-
-        // everyone else goes to their formation spot
-        int role = myTeam.RoleIndexOf(transform);
-        Vector2 spot = myTeam.FormationSpot(role, weHaveBall, ctx.BallPosition);
-        MoveTo(spot, supportSpeed);
-    }
-
-    void GrabBall(MatchContext ctx)
-    {
-        isHolding = true;
-        ctx.Ball.simulated = false;
-        ctx.Ball.linearVelocity = Vector2.zero;
-        ctx.Ball.transform.SetParent(transform);
-        ctx.Ball.transform.localPosition = (Vector3)(lastDirection * holdOffset);
-        ctx.SetPossession(myTeam);
-    }
-
-    void Attack(MatchContext ctx)
-    {
-        if (myTeam.attackGoal == null) { ReleaseAIHold(); return; }
-        Vector2 toGoal = (Vector2)myTeam.attackGoal.position - rb.position;
-        lastDirection = toGoal.normalized;
-        rb.linearVelocity = lastDirection * carrySpeed;
-        if (toGoal.magnitude <= shootRange) Shoot(ctx);
-    }
-
-    void MoveTo(Vector2 target, float speed)
-    {
-        Vector2 dir = (target - rb.position);
-        if (dir.magnitude < 0.3f) { rb.linearVelocity = Vector2.zero; return; }
-        rb.linearVelocity = dir.normalized * speed;
-    }
-
-    void Shoot(MatchContext ctx)
-    {
-        isHolding = false;
-        ctx.Ball.transform.SetParent(null);
-        ctx.Ball.simulated = true;
-        ctx.Ball.linearVelocity = Vector2.zero;
-        ctx.Ball.AddForce(lastDirection * shootPower, ForceMode2D.Impulse);
-        ctx.SetPossession(null);
-    }
-
-    void ReleaseAIHold()
-    {
-        isHolding = false;
-        var ctx = MatchContext.Instance;
-        if (ctx != null && ctx.Ball != null)
-        {
-            ctx.Ball.transform.SetParent(null);
-            ctx.Ball.simulated = true;
-            ctx.SetPossession(null);
-        }
-    }
-
-    void LateUpdate()
-    {
-        if (isHolding && MatchContext.Instance != null)
-            MatchContext.Instance.Ball.transform.localPosition = (Vector3)(lastDirection * holdOffset);
-    }
+    // ---- IAgentBody ----
+    public Rigidbody2D Body => rb;
+    public Transform Tf => transform;
+    public TeamSide Team => myTeam;
+    public bool IsHolding { get => isHolding; set => isHolding = value; }
+    public Vector2 LastDirection { get => lastDirection; set => lastDirection = value; }
+    public float ChaseSpeed => chaseSpeed;
+    public float CarrySpeed => carrySpeed;
+    public float SupportSpeed => supportSpeed;
+    public float GrabDistance => grabDistance;
+    public float HoldOffset => holdOffset;
+    public float ShootRange => shootRange;
+    public float ShootPower => shootPower;
+    public bool Suppressed => self != null && self.IsActive; // human is driving this one
 }

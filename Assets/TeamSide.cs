@@ -1,5 +1,8 @@
 using UnityEngine;
 
+// One per team. Owns the team's goals + roster and all the spatial reasoning
+// the AI needs (where to support, where to defend, who's open to pass to).
+// Everything here is roster-size agnostic, so it scales from 2v2 to 6v6.
 public class TeamSide : MonoBehaviour
 {
     public string teamName = "Team";
@@ -12,6 +15,18 @@ public class TeamSide : MonoBehaviour
     public float laneHeight = 3.5f;  // how tall the spread is (y spread)
     public float attackPush = 3f;    // how far forward players push when attacking
     public float defendPull = 2.5f;  // how far back they sit when defending
+
+    [Header("AI tuning")]
+    public float supportLead = 3f;       // how far ahead of the carrier support players push
+    public float supportWidth = 2.5f;    // lateral spread of supporting players
+    public float defendDepth = 2.5f;     // how far off our own goal defenders sit
+    public float defendWidth = 2.5f;     // lateral spread of defenders
+    public float pressDistance = 1.8f;   // the carrier feels "pressured" with an enemy this close
+    public float openRadius = 1.6f;      // a teammate is "open" if no enemy is within this
+    public float passLaneRadius = 0.7f;  // a pass lane is blocked if an enemy is this close to it
+    public float shotLaneRadius = 0.6f;  // a shot lane is blocked if an enemy is this close to it
+    public float aimCornerOffset = 1.1f; // aim this far off goal-centre to beat the keeper
+    public float forwardPassMin = 0.5f;  // min forward progress required to pass when not pressured
 
     public Transform ClosestMemberTo(Vector2 point)
     {
@@ -36,31 +51,169 @@ public class TeamSide : MonoBehaviour
         return 0;
     }
 
-    // computes where a role should stand, given whether we're attacking and where the ball is
+    // role spread in [-1, 1] so players fan out across the pool by their slot
+    float RoleSpread(Transform member)
+    {
+        int count = (members != null && members.Length > 0) ? members.Length : 1;
+        int idx = RoleIndexOf(member);
+        return count > 1 ? ((float)idx / (count - 1)) * 2f - 1f : 0f;
+    }
+
+    // "forward" axis: from our own goal toward the enemy goal
+    Vector2 Forward()
+    {
+        if (attackGoal == null || defendGoal == null) return Vector2.right;
+        return ((Vector2)attackGoal.position - (Vector2)defendGoal.position).normalized;
+    }
+
+    // ---- attacking support: get open, ahead of the carrier, in space ----
+    public Vector2 SupportSpot(Transform me, Vector2 ballPos, TeamSide enemy)
+    {
+        if (attackGoal == null || defendGoal == null) return ballPos;
+
+        Vector2 fwd = Forward();
+        Vector2 across = new Vector2(-fwd.y, fwd.x);
+
+        Transform carrierT = ClosestMemberTo(ballPos);     // the ball sits on the carrier
+        Vector2 carrier = carrierT != null ? (Vector2)carrierT.position : ballPos;
+
+        Vector2 basePos = carrier + fwd * supportLead;      // push ahead toward goal
+        float t = RoleSpread(me);
+        if (Mathf.Abs(t) < 0.01f) t = 1f;                   // 2-player teams: pick a side
+
+        // offer two lanes and take whichever is more open
+        Vector2 spot = basePos + across * (t * supportWidth);
+        Vector2 alt = basePos - across * (t * supportWidth);
+        if (NearestDistance(alt, enemy) > NearestDistance(spot, enemy) + 0.5f) spot = alt;
+
+        return ClampToField(spot);
+    }
+
+    // ---- defending: sit goal-side of the ball in a spread line ----
+    public Vector2 DefendSpot(Transform me, Vector2 ballPos)
+    {
+        if (defendGoal == null) return ballPos;
+
+        Vector2 g = defendGoal.position;
+        Vector2 toBall = ballPos - g;
+        Vector2 dir = toBall.sqrMagnitude > 1e-3f ? toBall.normalized : Forward();
+        Vector2 basePos = g + dir * defendDepth;            // between our goal and the ball
+
+        Vector2 across = new Vector2(-Forward().y, Forward().x);
+        float t = RoleSpread(me);
+
+        return ClampToField(basePos + across * (t * defendWidth));
+    }
+
+    // Aim at the goal corner away from the shooter. The keeper tracks the ball's
+    // y, so the corner opposite the shooter is the open one.
+    public Vector2 ShotAimPoint(Vector2 from)
+    {
+        if (attackGoal == null) return from;
+        Vector2 c = attackGoal.position;
+        float aimY = c.y + (from.y >= c.y ? -aimCornerOffset : aimCornerOffset);
+        return new Vector2(c.x, aimY);
+    }
+
+    // Best open teammate to pass to. Prefers forward progress; when the carrier is
+    // pressured it will accept any open mate (incl. lateral/back) to keep possession.
+    // Returns null when keeping the ball is better.
+    public Transform BestPassTarget(Transform carrier, TeamSide enemy, bool pressured)
+    {
+        if (members == null || attackGoal == null || carrier == null) return null;
+
+        Vector2 goal = attackGoal.position;
+        float carrierGoalDist = Vector2.Distance(carrier.position, goal);
+
+        Transform best = null;
+        float bestScore = float.NegativeInfinity;
+
+        foreach (Transform mate in members)
+        {
+            if (mate == null || mate == carrier) continue;
+
+            // must be open (not tightly marked)
+            float openness = NearestDistance(mate.position, enemy);
+            if (openness < openRadius) continue;
+
+            // the passing lane must be clear of defenders
+            if (!LaneClear(carrier.position, mate.position, enemy, passLaneRadius)) continue;
+
+            float mateGoalDist = Vector2.Distance(mate.position, goal);
+            float forwardGain = carrierGoalDist - mateGoalDist;
+
+            // when not under pressure, only pass if it actually advances the ball
+            if (!pressured && forwardGain < forwardPassMin) continue;
+
+            // prefer forward + open + closer to goal
+            float score = forwardGain * 1.5f + openness - mateGoalDist * 0.1f;
+            if (score > bestScore) { bestScore = score; best = mate; }
+        }
+        return best;
+    }
+
+    // true if no enemy sits within `radius` of the segment a→b (line of sight)
+    public bool LaneClear(Vector2 a, Vector2 b, TeamSide enemy, float radius)
+    {
+        if (enemy == null || enemy.members == null) return true;
+        foreach (Transform e in enemy.members)
+        {
+            if (e == null) continue;
+            if (DistancePointToSegment(e.position, a, b) < radius) return false;
+        }
+        return true;
+    }
+
+    // distance from the nearest member of `team` to a point (Infinity if none)
+    public static float NearestDistance(Vector2 point, TeamSide team)
+    {
+        if (team == null || team.members == null) return Mathf.Infinity;
+        float best = Mathf.Infinity;
+        foreach (Transform m in team.members)
+        {
+            if (m == null) continue;
+            float d = Vector2.Distance(point, m.position);
+            if (d < best) best = d;
+        }
+        return best;
+    }
+
+    static float DistancePointToSegment(Vector2 p, Vector2 a, Vector2 b)
+    {
+        Vector2 ab = b - a;
+        float t = Vector2.Dot(p - a, ab) / Mathf.Max(ab.sqrMagnitude, 1e-4f);
+        t = Mathf.Clamp01(t);
+        return Vector2.Distance(p, a + ab * t);
+    }
+
+    // keep a target spot inside the pool and out of the goals
+    Vector2 ClampToField(Vector2 p)
+    {
+        if (attackGoal == null || defendGoal == null) return p;
+        float minX = Mathf.Min(attackGoal.position.x, defendGoal.position.x);
+        float maxX = Mathf.Max(attackGoal.position.x, defendGoal.position.x);
+        float midY = (attackGoal.position.y + defendGoal.position.y) * 0.5f;
+        p.x = Mathf.Clamp(p.x, minX + 0.5f, maxX - 0.5f);
+        p.y = Mathf.Clamp(p.y, midY - laneHeight, midY + laneHeight);
+        return p;
+    }
+
+    // Kept for compatibility / future use (static formation anchor).
     public Vector2 FormationSpot(int roleIndex, bool attacking, Vector2 ballPos)
     {
         if (attackGoal == null || defendGoal == null) return Vector2.zero;
 
-        // direction from our goal toward the enemy goal (the "forward" axis)
-        Vector2 forward = ((Vector2)attackGoal.position - (Vector2)defendGoal.position).normalized;
-
-        // base anchor: midpoint between the two goals, shifted forward (attack) or back (defend)
+        Vector2 forward = Forward();
         Vector2 midfield = ((Vector2)attackGoal.position + (Vector2)defendGoal.position) * 0.5f;
         float push = attacking ? attackPush : -defendPull;
         Vector2 anchor = midfield + forward * push;
 
-        // spread players vertically by role index so they never stack
         int count = members != null && members.Length > 0 ? members.Length : 1;
-        // spread roles across [-1, 1] then scale by laneHeight
         float t = count > 1 ? ((float)roleIndex / (count - 1)) * 2f - 1f : 0f;
 
-        // perpendicular axis (across the pool) to offset each role
         Vector2 across = new Vector2(-forward.y, forward.x);
         Vector2 spot = anchor + across * (t * laneHeight);
-
-        // nudge the whole shape slightly toward the ball's vertical position so they react to play
         spot.y = Mathf.Lerp(spot.y, ballPos.y, 0.25f);
-
         return spot;
     }
 }
