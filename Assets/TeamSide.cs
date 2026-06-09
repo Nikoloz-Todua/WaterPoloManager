@@ -31,6 +31,11 @@ public class TeamSide : MonoBehaviour
     // Fixed tactical roles, assigned by slot index in `members` (0..5).
     public enum Role { Center, CenterBack, LeftWing, RightWing, LeftFlat, RightFlat }
 
+    // Defensive scheme for this team. Press = threat-based 1-to-1 marking;
+    // Zone = everyone holds a goal-side spread. Runtime state (not serialized).
+    public enum DefenseMode { Press, Zone }
+    [System.NonSerialized] public DefenseMode defenseMode = DefenseMode.Press;
+
     public Transform ClosestMemberTo(Vector2 point)
     {
         Transform best = null;
@@ -190,6 +195,27 @@ public class TeamSide : MonoBehaviour
         if (fromGoal < defendDepth) fromGoal = Mathf.Min(defendDepth, dist); // floor, never past him
 
         return ClampToField(g + dir * fromGoal);
+    }
+
+    // How dangerous `attacker` (a member of enemyOfDefender) is to OUR defendGoal.
+    // Higher = mark first. `this` is the DEFENDING team.
+    public float ThreatScore(Transform attacker, Vector2 ballPos, TeamSide enemyOfDefender)
+    {
+        if (attacker == null || defendGoal == null) return 0f;
+
+        // base: the closer to our goal, the more dangerous
+        float goalDist = Vector2.Distance(attacker.position, defendGoal.position);
+        float score = 10f / (goalDist + 1f);
+
+        // the ball carrier is the prime threat
+        if (enemyOfDefender != null && enemyOfDefender.ClosestMemberTo(ballPos) == attacker)
+            score += 5f;
+
+        // an open attacker (no defender of ours nearby) is a bigger threat
+        if (NearestDistance(attacker.position, this) > openRadius)
+            score += 2f;
+
+        return score;
     }
 
     // Aim at the goal corner away from the shooter. The keeper tracks the ball's

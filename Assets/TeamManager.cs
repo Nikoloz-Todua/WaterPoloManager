@@ -1,20 +1,32 @@
 using UnityEngine;
+using TMPro;
 
 public class TeamManager : MonoBehaviour
 {
     [SerializeField] private PlayerMovement[] players;
     [SerializeField] private TeammateAI[] teammateAIs; // same order as players
     [SerializeField] private TeamSide playerTeam;
+    [SerializeField] private TMP_Text defenseModeText; // shows "DEFENSE: PRESS"/"ZONE"
 
     private int activeIndex = 0;
 
     void Start()
     {
         SetActive(0);
+        UpdateDefenseModeText();
     }
 
     void Update()
     {
+        // Toggle the PLAYER team's defensive scheme (bots always Press).
+        if (Input.GetKeyDown(KeyCode.Z) && playerTeam != null)
+        {
+            playerTeam.defenseMode = playerTeam.defenseMode == TeamSide.DefenseMode.Press
+                ? TeamSide.DefenseMode.Zone
+                : TeamSide.DefenseMode.Press;
+            UpdateDefenseModeText();
+        }
+
         // 1) If one of my players holds the ball, control auto-follows to them.
         int holder = HolderIndex();
         if (holder != -1 && holder != activeIndex)
@@ -29,6 +41,12 @@ public class TeamManager : MonoBehaviour
             int next = (activeIndex + 1) % players.Length;
             SetActive(next);
         }
+    }
+
+    void UpdateDefenseModeText()
+    {
+        if (defenseModeText == null || playerTeam == null) return;
+        defenseModeText.text = "DEFENSE: " + (playerTeam.defenseMode == TeamSide.DefenseMode.Zone ? "ZONE" : "PRESS");
     }
 
     // returns the index of the player currently holding the ball, or -1

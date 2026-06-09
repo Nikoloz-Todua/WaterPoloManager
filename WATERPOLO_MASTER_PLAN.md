@@ -23,7 +23,7 @@
 
 A **2D top-down water polo game** in **Unity 6 (6000.4.7f1), C#**, targeting **Android + iOS** (later). Originally conceived as a 3D Dream-League-style game; **retargeted to 2D** for solo-dev scope and hardware. Built brick-by-brick with step-by-step guidance.
 
-**Current state: a working 6v6 match.** Core gameplay works; menus/economy/career are not built yet.
+**Current state: a working 6v6 match with full defensive AI.** Core gameplay works (role-based positioning, marking, dynamic mark-switching, and a press/zone toggle); menus/economy/career are not built yet.
 
 ## A2. Developer & environment
 
@@ -114,9 +114,12 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 ## A7. Controls (keyboard — for PC testing; touch comes later)
 
 - **WASD / arrows** — move active player.
-- **E** — grab loose ball / drop.
-- **Hold Space** — charge shot; release to shoot.
-- **C** — manual switch (mostly redundant now: control auto-follows the ball-carrier).
+- **E** — grab / drop a loose ball.
+- **Hold Space** — charge & shoot (release to fire).
+- **Hold B** — charge & pass; auto-targets the teammate you're facing (nearest teammate as fallback).
+- **Space (when NOT holding)** — attempt steal (chance-based; must be in front of the carrier).
+- **C** — manual player switch (mostly redundant: control auto-follows the ball-carrier).
+- **Z** — toggle team defense between **Press** and **Zone**.
 
 ## A8. What's working today (DONE)
 
@@ -138,6 +141,10 @@ Also now DONE:
 - **Idle drift** — players that reach their spot gently float instead of freezing.
 - **Shot/pass power bar** for the active player (fills while charging).
 - **Chevron aim indicator** under the active player, replacing the old long aim line.
+- **Dynamic threat-based mark-switching** — defenders re-pick the most dangerous man with hysteresis (no oscillation); coverage hands off automatically.
+- **Charged passing** — hold B to charge, auto-targets the teammate you're facing (nearest fallback), reusing the power bar.
+- **Selectable PRESS vs ZONE defense (player team)** — toggle with **Z**, shown on screen as "DEFENSE: PRESS/ZONE". Press = threat-based 1-to-1 marking with dynamic switching; Zone = goal-side spread, no man-chasing. Bots always use Press.
+- **Defensive-AI spec COMPLETE:** role-based positioning + 1-to-1 marking + dynamic threat-based mark-switching (with hysteresis) + press/zone toggle.
 
 ## A9. Known issues / tuning notes
 
@@ -148,8 +155,12 @@ Also now DONE:
 
 **KNOWN ISSUES / NEXT:**
 - Residual **clustering only when the ball + multiple players + an opponent genuinely converge** on the same spot — acceptable/realistic, not the old "everyone bunches" bug.
-- **Next AI bricks:** dynamic mark-switching (coverage handoff when a marker leaves its man), then a press-vs-zone defensive-mode toggle.
-- **Deferred:** tactical substitution / exclusion adaptation; halftime side-switch (teams don't swap ends yet); weak no-hold deflection shot (a ball struck without a settled hold should be a weaker shot than a settled one).
+- **Done since last update:** dynamic mark-switching; charged passing; press/zone toggle. (Defensive AI spec is now complete.)
+- **Next brick (pick one):**
+  - **Match-start Sprint Duel** (B16.2) — ball drops at center, teams start on their goal lines, rapid-tap to win first possession.
+  - **Foul / exclusion system** (B16.9) — foul detection, ~20s exclusion zone, man-up / man-down AI, penalties.
+- **Deferred visuals** (secondary per dev priority): keeper art/animation; pool zone lines; crowd/stadium; camera zoom-out; water-flow effects.
+- **Other deferred:** per-player stamina system; halftime side-switch (teams don't swap ends yet); weak no-hold deflection shot (a ball struck without a settled hold should be weaker than a settled one).
 
 ## A10. Immediate roadmap (next bricks, rough order)
 
@@ -258,10 +269,10 @@ Also now DONE:
 ### B16.9 Exclusion System ⬜
 - Exclusion foul → exclusion zone, 20s timer. 3rd exclusion on a player → permanent removal (notify to sub via Pause, or auto-sub). AI adjusts for 6-v-7 (down a man) and 7-v-6 (man up).
 
-### B16.10 AI Behaviour 🟡 PARTIAL (attack/defend/press/support/pass + AI stealing + role-based marking + facing-gated steal DONE in C#; exclusion-based repositioning NOT yet)
+### B16.10 AI Behaviour 🟡 PARTIAL (full defensive AI DONE in C#; only exclusion-based repositioning NOT yet)
 - With ball → attack positions; lose ball → defensive positions; players hold assigned positions; opponent excluded → exploit extra man; own exclusion → shorthanded defense.
-- **Built:** role-based positioning + 1-to-1 marking (nearest presses, others mark their counterpart); facing-gated steal (no stealing from behind).
-- **TODO:** dynamic mark-switching (coverage handoff when a marker leaves its man); selectable press-vs-zone defensive modes.
+- **Built (defensive AI spec COMPLETE):** role-based positioning + 1-to-1 marking (nearest presses, others mark their man); facing-gated steal (no stealing from behind); dynamic threat-based mark-switching with hysteresis (coverage hands off automatically, no oscillation); selectable **Press vs Zone** defense for the player team (toggle **Z**, on-screen label) — Press = man-marking with switching, Zone = goal-side spread; bots always use Press.
+- **TODO:** exclusion-based repositioning (man-up / man-down) — waits on the exclusion system (B16.9).
 - **AI is C# state-machine logic (`WaterPoloBrain`), scaled by player stats.** The original "LLM-driven bots (LM Studio/llama.cpp/Claude API)" idea is **ABANDONED** — do not implement it; it's wrong for a real-time game.
 
 ### B16.11 Fouls & Rules ⬜ (goal walls/keeper collisions done; foul logic not)

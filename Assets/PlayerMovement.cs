@@ -16,9 +16,11 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private float chargeRate = 8f;
 
     [Header("Passing")]
-    [SerializeField] private float passFactor = 2.5f;
+    [SerializeField] private float passFactor = 2.5f; // (legacy; pass speed is charge-based now)
     [SerializeField] private float minPassSpeed = 6f;
     [SerializeField] private float maxPassSpeed = 13f;
+    [SerializeField] private float passChargeRate = 1.5f; // pass charge gained per second (0..1)
+    private const float PassConeDot = 0.3f;               // teammate must be within this forward cone
 
     [Header("Stealing")]
     [SerializeField] private float stealDistance = 1.2f;
@@ -56,10 +58,15 @@ public class PlayerMovement : MonoBehaviour
     private SpriteRenderer sprite;
     private Vector2 input;
     private Vector2 lastDirection = Vector2.up;
-    private float currentPower = 0f;
+    private float currentPower = 0f;        // shoot charge (0..maxShootPower)
+    private float passPower = 0f;           // pass charge (0..1)
     private bool isHolding = false;
     private float lastStealTime = -10f;
     private bool stealConsumedSpace = false;
+
+    // Only one action charges at a time; whichever key was pressed first wins until released.
+    private enum Charging { None, Shoot, Pass }
+    private Charging chargeMode = Charging.None;
 
     void Awake()
     {
@@ -103,6 +110,9 @@ public class PlayerMovement : MonoBehaviour
         if (isHolding && ball != null && ball.transform.parent != transform)
             isHolding = false;
 
+        // No ball → nothing can be charging.
+        if (!isHolding) { chargeMode = Charging.None; currentPower = 0f; passPower = 0f; }
+
         if (IsActive)
         {
             float x = Input.GetAxisRaw("Horizontal");
@@ -128,10 +138,14 @@ public class PlayerMovement : MonoBehaviour
 
             if (isHolding)
             {
-                if (Input.GetKeyDown(KeyCode.B))
-                    PassToNearestTeammate();
+                // Start a charge on key-down only if nothing else is already charging.
+                // Space is blocked while a steal consumed this press.
+                if (chargeMode == Charging.None && !stealConsumedSpace && Input.GetKeyDown(KeyCode.Space))
+                    chargeMode = Charging.Shoot;
+                else if (chargeMode == Charging.None && Input.GetKeyDown(KeyCode.B))
+                    chargeMode = Charging.Pass;
 
-                if (!stealConsumedSpace)
+                if (chargeMode == Charging.Shoot)
                 {
                     if (Input.GetKey(KeyCode.Space))
                         currentPower = Mathf.Min(currentPower + chargeRate * Time.deltaTime, maxShootPower);
@@ -140,6 +154,19 @@ public class PlayerMovement : MonoBehaviour
                     {
                         Shoot();
                         currentPower = 0f;
+                        chargeMode = Charging.None;
+                    }
+                }
+                else if (chargeMode == Charging.Pass)
+                {
+                    if (Input.GetKey(KeyCode.B))
+                        passPower = Mathf.Min(passPower + passChargeRate * Time.deltaTime, 1f);
+
+                    if (Input.GetKeyUp(KeyCode.B))
+                    {
+                        ChargedPass(passPower);
+                        passPower = 0f;
+                        chargeMode = Charging.None;
                     }
                 }
             }
@@ -193,16 +220,19 @@ public class PlayerMovement : MonoBehaviour
         aimLine.SetPosition(2, baseR); // tail → tip → tail draws an open ">"
     }
 
-    // Fills 0..1 with currentPower/maxShootPower while charging; hidden otherwise.
+    // Fills 0..1 while EITHER a shot (Space) or a pass (B) is charging; hidden otherwise.
     void UpdatePowerBar()
     {
         if (powerBar == null) return;
 
-        bool charging = IsActive && isHolding && currentPower > 0.01f && !stealConsumedSpace;
+        bool charging = IsActive && isHolding && chargeMode != Charging.None;
         powerBar.enabled = charging;
         if (!charging) return;
 
-        float fill = Mathf.Clamp01(currentPower / Mathf.Max(maxShootPower, 0.0001f));
+        float fill = chargeMode == Charging.Shoot
+            ? currentPower / Mathf.Max(maxShootPower, 0.0001f)
+            : passPower;
+        fill = Mathf.Clamp01(fill);
         float half = powerBarWidth * 0.5f;
         powerBar.SetPosition(0, new Vector3(-half, powerBarYOffset, 0f));
         powerBar.SetPosition(1, new Vector3(-half + powerBarWidth * fill, powerBarYOffset, 0f));
@@ -302,7 +332,9 @@ public class PlayerMovement : MonoBehaviour
             MatchContext.Instance.SetPossession(null);
     }
 
-    void PassToNearestTeammate()
+    // Charged pass: speed scales with charge (0..1) between min/max, aimed at the
+    // teammate the player is facing.
+    void ChargedPass(float charge)
     {
         if (ball == null || !isHolding) return;
         if (MatchContext.Instance == null) return;
@@ -310,27 +342,46 @@ public class PlayerMovement : MonoBehaviour
         TeamSide myTeam = MatchContext.Instance.PlayerTeam;
         if (myTeam == null || myTeam.members == null) return;
 
-        Transform target = null;
-        float bestDist = Mathf.Infinity;
-        foreach (Transform m in myTeam.members)
-        {
-            if (m == null || m == transform) continue;
-            float d = Vector2.Distance(transform.position, m.position);
-            if (d < bestDist) { bestDist = d; target = m; }
-        }
+        Transform target = FindPassTarget(myTeam);
         if (target == null) return;
 
         Vector2 dir = ((Vector2)target.position - (Vector2)transform.position).normalized;
-        lastDirection = dir;
+        if (dir.sqrMagnitude > 1e-6f) lastDirection = dir;
 
         isHolding = false;
         ball.transform.SetParent(null);
         ball.simulated = true;
-        float dist = Vector2.Distance(transform.position, target.position);
-        ball.linearVelocity = dir * Mathf.Clamp(dist * passFactor, minPassSpeed, maxPassSpeed);
+        float speed = Mathf.Clamp(Mathf.Lerp(minPassSpeed, maxPassSpeed, Mathf.Clamp01(charge)),
+                                  minPassSpeed, maxPassSpeed);
+        ball.linearVelocity = dir * speed;
 
-        if (MatchContext.Instance != null)
-            MatchContext.Instance.SetPossession(null);
+        MatchContext.Instance.SetPossession(null);
+    }
+
+    // Teammate best aligned with our facing (within a forward cone); else the nearest,
+    // so a pass never fails silently.
+    Transform FindPassTarget(TeamSide myTeam)
+    {
+        Vector2 facing = lastDirection.sqrMagnitude > 1e-4f ? lastDirection.normalized : Vector2.up;
+        Vector2 myPos = transform.position;
+
+        Transform best = null;       // best within the forward cone
+        float bestDot = PassConeDot; // require dot above the cone threshold
+        Transform nearest = null;    // fallback
+        float nearestDist = Mathf.Infinity;
+
+        foreach (Transform m in myTeam.members)
+        {
+            if (m == null || m == transform) continue;
+            Vector2 to = (Vector2)m.position - myPos;
+            float dist = to.magnitude;
+            if (dist < 1e-4f) continue;
+
+            float dot = Vector2.Dot(facing, to / dist);
+            if (dot > bestDot) { bestDot = dot; best = m; }
+            if (dist < nearestDist) { nearestDist = dist; nearest = m; }
+        }
+        return best != null ? best : nearest;
     }
 
     public void ReleaseBall()

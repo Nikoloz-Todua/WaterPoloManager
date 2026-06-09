@@ -23,6 +23,8 @@ public class TeammateAI : MonoBehaviour, IAgentBody
     private Vector2 lastDirection = Vector2.right;
     private float holdStartTime;
     private float nextStealTime;
+    private Transform currentMark;
+    private float nextMarkSwitchTime;
 
     void Awake()
     {
@@ -49,5 +51,7 @@ public class TeammateAI : MonoBehaviour, IAgentBody
     public float StealChance => stealChance;
     public float HoldStartTime { get => holdStartTime; set => holdStartTime = value; }
     public float NextStealTime { get => nextStealTime; set => nextStealTime = value; }
+    public Transform CurrentMark { get => currentMark; set => currentMark = value; }
+    public float NextMarkSwitchTime { get => nextMarkSwitchTime; set => nextMarkSwitchTime = value; }
     public bool Suppressed => self != null && self.IsActive; // human is driving this one
 }

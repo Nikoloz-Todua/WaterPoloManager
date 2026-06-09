@@ -20,6 +20,8 @@ public class BotMovement : MonoBehaviour, IAgentBody
     private Vector2 lastDirection = Vector2.left;
     private float holdStartTime;
     private float nextStealTime;
+    private Transform currentMark;
+    private float nextMarkSwitchTime;
 
     void Awake() { rb = GetComponent<Rigidbody2D>(); }
 
@@ -42,5 +44,7 @@ public class BotMovement : MonoBehaviour, IAgentBody
     public float StealChance => stealChance;
     public float HoldStartTime { get => holdStartTime; set => holdStartTime = value; }
     public float NextStealTime { get => nextStealTime; set => nextStealTime = value; }
+    public Transform CurrentMark { get => currentMark; set => currentMark = value; }
+    public float NextMarkSwitchTime { get => nextMarkSwitchTime; set => nextMarkSwitchTime = value; }
     public bool Suppressed => false; // bots are never human-controlled
 }

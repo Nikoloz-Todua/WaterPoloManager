@@ -22,6 +22,11 @@ public interface IAgentBody
     float HoldStartTime { get; set; }
     float NextStealTime { get; set; }
 
+    // Dynamic-marking state (anti-oscillation): who we're currently marking and the
+    // earliest time we're allowed to switch to a different man.
+    Transform CurrentMark { get; set; }
+    float NextMarkSwitchTime { get; set; }
+
     // true while a human controls this swimmer; the brain then stands down.
     bool Suppressed { get; }
 }
@@ -45,6 +50,7 @@ public static class WaterPoloBrain
     const float IdleDriftFraction = 0.2f; // idle float speed as a fraction of move speed
     const float IdleRadius = 0.35f;       // how far the idle bob point sits from the spot
     const float IdleFreq = 1.2f;          // idle bob speed (rad/s)
+    const float MarkSwitchCooldown = 0.6f; // min time before a defender may switch its man
 
     public static void Tick(IAgentBody a, MatchContext ctx)
     {
@@ -77,25 +83,122 @@ public static class WaterPoloBrain
 
         if (ctx.TeamHasBall(a.Team))
         {
+            // We attack → drop any defensive mark so it recomputes fresh next phase.
+            a.CurrentMark = null;
             // A teammate is carrying → hold our role's attacking spot (fixed spacing).
             MoveTo(a, a.Team.AttackPositionFor(a.Tf, ctx.BallPosition), a.SupportSpeed);
             return;
         }
 
-        // Ball is loose or the enemy has it: the single nearest swimmer presses; every
-        // other swimmer marks its own man (different role each → no clustering).
-        if (a.Team.ClosestMemberTo(ctx.BallPosition) == a.Tf)
+        // Ball is loose or the enemy has it: the single nearest swimmer presses (and is
+        // excluded from marking); every other swimmer dynamically marks the most
+        // dangerous still-unmarked attacker.
+        Transform presser = a.Team.ClosestMemberTo(ctx.BallPosition);
+        if (presser == a.Tf)
         {
             if (TryStealAI(a, ctx, enemy)) return;
             ChaseBall(a, ctx);
         }
-        else
+        else if (a.Team.defenseMode == TeamSide.DefenseMode.Zone)
         {
-            Transform mark = a.Team.MarkAssignmentFor(a.Tf, enemy);
+            // Zone: forget individual marks, protect the space in front of our goal.
+            a.CurrentMark = null;
+            MoveTo(a, a.Team.DefendSpot(a.Tf, ctx.BallPosition), a.SupportSpeed);
+        }
+        else // Press: threat-based 1-to-1 marking with dynamic switching (unchanged)
+        {
+            Transform mark = ResolveMark(a, ctx, enemy, presser);
             Vector2 spot = mark != null ? a.Team.MarkSpot(a.Tf, mark)
                                         : a.Team.DefendSpot(a.Tf, ctx.BallPosition);
             MoveTo(a, spot, a.SupportSpeed);
         }
+    }
+
+    // ---- dynamic marking: pick the best man with hysteresis so we don't oscillate ----
+    // Every defender runs the SAME deterministic greedy plan this tick (they all read
+    // identical positions), so the team agrees on coverage without shared state.
+    static Transform ResolveMark(IAgentBody a, MatchContext ctx, TeamSide enemy, Transform presser)
+    {
+        if (enemy == null) { a.CurrentMark = null; return null; }
+
+        Transform carrier = ctx.Ball.transform.parent; // pressed by the presser → not a mark target
+        Transform ideal = ComputeGreedyMark(a, ctx, a.Team, enemy, presser, carrier);
+        if (ideal == null) ideal = a.Team.MarkAssignmentFor(a.Tf, enemy); // index fallback
+
+        Transform current = a.CurrentMark;
+        bool currentValid = current != null && current != carrier && IsMemberOf(current, enemy);
+
+        if (!currentValid)
+        {
+            // lost our man (gone, or he's now the pressed carrier) → reassign immediately
+            a.CurrentMark = ideal;
+            a.NextMarkSwitchTime = Time.time + MarkSwitchCooldown;
+        }
+        else if (ideal != null && ideal != current && Time.time >= a.NextMarkSwitchTime)
+        {
+            // cooldown elapsed and the plan wants a different man → switch
+            a.CurrentMark = ideal;
+            a.NextMarkSwitchTime = Time.time + MarkSwitchCooldown;
+        }
+        // else: keep CurrentMark (hysteresis prevents per-frame flipping)
+
+        return a.CurrentMark;
+    }
+
+    // Greedy assignment: rank attackers by threat, give each the closest still-free
+    // defender. Returns the man assigned to `a` (or null if `a` got none). The pressed
+    // carrier and the presser are excluded so nobody is double-marked while a man is free.
+    static Transform ComputeGreedyMark(IAgentBody a, MatchContext ctx, TeamSide team,
+                                       TeamSide enemy, Transform presser, Transform carrier)
+    {
+        Transform[] mates = team.members;
+        Transform[] foes = enemy.members;
+        if (mates == null || foes == null) return null;
+
+        Vector2 ballPos = ctx.BallPosition;
+        bool[] foeDone = new bool[foes.Length];
+        bool[] mateUsed = new bool[mates.Length];
+        Transform result = null;
+
+        for (int picked = 0; picked < foes.Length; picked++)
+        {
+            // highest-threat unhandled attacker (skip nulls + the pressed carrier)
+            int bestFoe = -1;
+            float bestThreat = float.NegativeInfinity;
+            for (int i = 0; i < foes.Length; i++)
+            {
+                if (foeDone[i] || foes[i] == null || foes[i] == carrier) continue;
+                float th = team.ThreatScore(foes[i], ballPos, enemy);
+                if (th > bestThreat) { bestThreat = th; bestFoe = i; }
+            }
+            if (bestFoe < 0) break;
+            foeDone[bestFoe] = true;
+
+            // closest unused defender (never the presser) covers this attacker
+            Vector2 foePos = foes[bestFoe].position;
+            int bestMate = -1;
+            float bestDist = float.PositiveInfinity;
+            for (int j = 0; j < mates.Length; j++)
+            {
+                Transform m = mates[j];
+                if (m == null || mateUsed[j] || m == presser) continue;
+                float d = Vector2.Distance(foePos, m.position);
+                if (d < bestDist) { bestDist = d; bestMate = j; }
+            }
+            if (bestMate < 0) continue; // no defender left for this attacker
+
+            mateUsed[bestMate] = true;
+            if (mates[bestMate] == a.Tf) result = foes[bestFoe]; // this is OUR man
+        }
+
+        return result;
+    }
+
+    static bool IsMemberOf(Transform t, TeamSide team)
+    {
+        if (t == null || team == null || team.members == null) return false;
+        foreach (Transform m in team.members) if (m == t) return true;
+        return false;
     }
 
     // Keep the held ball glued in front of us (called from LateUpdate).
@@ -114,6 +217,7 @@ public static class WaterPoloBrain
     // ---- carrier: shoot, pass, or dribble ----
     static void Carry(IAgentBody a, MatchContext ctx)
     {
+        a.CurrentMark = null; // we hold the ball → no defensive assignment
         TeamSide team = a.Team;
         if (team.attackGoal == null) { Release(a, ctx); return; }
 
