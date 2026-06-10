@@ -277,6 +277,24 @@ public class TeamSide : MonoBehaviour
         return true;
     }
 
+    // The available teammate (excluding `carrier`) nearest OUR defended goal — the
+    // "deepest" outlet for a kickoff pass. Excluded members are null here so they're
+    // skipped automatically (picks the next deepest). null if no valid teammate.
+    public Transform DeepestMember(Transform carrier)
+    {
+        if (members == null || defendGoal == null) return null;
+        Vector2 g = defendGoal.position;
+        Transform best = null;
+        float bestDist = Mathf.Infinity;
+        foreach (Transform m in members)
+        {
+            if (m == null || m == carrier) continue;
+            float d = Vector2.Distance(m.position, g);
+            if (d < bestDist) { bestDist = d; best = m; }
+        }
+        return best;
+    }
+
     // distance from the nearest member of `team` to a point (Infinity if none)
     public static float NearestDistance(Vector2 point, TeamSide team)
     {

@@ -146,6 +146,13 @@ public class PlayerMovement : MonoBehaviour
             if (input != Vector2.zero)
                 lastDirection = input;
 
+            // A human carrier isn't forced to kickoff-pass: their first move voids the
+            // pending flag (shooting/passing already clears it via the possession change).
+            if (isHolding && input != Vector2.zero && MatchContext.Instance != null &&
+                MatchContext.Instance.KickoffPassPending &&
+                MatchContext.Instance.KickoffPassTeam == MatchContext.Instance.PlayerTeam)
+                MatchContext.Instance.ClearKickoffPass();
+
             if (Input.GetKeyDown(KeyCode.E))
             {
                 if (isHolding) DropBall();

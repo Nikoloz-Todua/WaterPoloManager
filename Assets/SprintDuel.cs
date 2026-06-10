@@ -130,6 +130,7 @@ public class SprintDuel : MonoBehaviour
     {
         ctx.GiveBallTo(winner, team);
         ctx.Unfreeze();
+        ctx.SetKickoffPass(team); // winner's AI center passes back to its deepest teammate first
         if (ShotClock.Instance != null) ShotClock.Instance.ResetClock();
         if (duelText != null) duelText.enabled = false;
         state = State.Idle;

@@ -51,6 +51,7 @@ public static class WaterPoloBrain
     const float IdleRadius = 0.35f;       // how far the idle bob point sits from the spot
     const float IdleFreq = 1.2f;          // idle bob speed (rad/s)
     const float MarkSwitchCooldown = 0.6f; // min time before a defender may switch its man
+    const float KickoffPassSettle = 0.4f;  // AI carrier settles this long before the kickoff pass
 
     public static void Tick(IAgentBody a, MatchContext ctx)
     {
@@ -219,6 +220,22 @@ public static class WaterPoloBrain
     static void Carry(IAgentBody a, MatchContext ctx)
     {
         a.CurrentMark = null; // we hold the ball → no defensive assignment
+
+        // Kickoff pass: an AI carrier's first action is one pass back to its deepest
+        // teammate, then normal play. (Human carriers never reach here — suppressed.)
+        if (ctx.KickoffPassPending && ctx.KickoffPassTeam == a.Team)
+        {
+            if (Time.time - ctx.KickoffPassTime < KickoffPassSettle)
+            {
+                a.Body.linearVelocity = Vector2.zero; // settle briefly so it looks natural
+                return;
+            }
+            Transform deep = a.Team.DeepestMember(a.Tf);
+            ctx.ClearKickoffPass();
+            if (deep != null) { Pass(a, ctx, deep); return; } // reuse the normal pass path
+            // no valid teammate → fall through to normal carry
+        }
+
         TeamSide team = a.Team;
         if (team.attackGoal == null) { Release(a, ctx); return; }
 

@@ -17,6 +17,10 @@ public class MatchContext : MonoBehaviour
     // who currently holds the ball: null = loose
     public TeamSide PossessingTeam { get; private set; }
 
+    // the team that last touched the ball (grab / steal / shoot / pass release) —
+    // used by the out-of-bounds rule to award possession to the OTHER team.
+    public TeamSide LastTouchTeam { get; private set; }
+
     // last time the ball was released (shot/passed/dropped); used for the grab cooldown
     private float lastReleaseTime = -10f;
 
@@ -26,6 +30,12 @@ public class MatchContext : MonoBehaviour
     // A team banned from grabbing the loose ball until the OTHER team touches it
     // (shot-clock turnover). null = no ban.
     public TeamSide GrabBannedTeam { get; private set; }
+
+    // After a kickoff (duel win / goal restart) the carrying team's AI center makes one
+    // pass back to its deepest teammate before normal play. Cleared on possession change.
+    public bool KickoffPassPending { get; private set; }
+    public TeamSide KickoffPassTeam { get; private set; }
+    public float KickoffPassTime { get; private set; } // when the kickoff possession began
 
     public Vector2 BallPosition => ball != null ? ball.position : Vector2.zero;
     public Rigidbody2D Ball => ball;
@@ -41,9 +51,17 @@ public class MatchContext : MonoBehaviour
     // called by a player/bot when it grabs (team) or releases (null) the ball
     public void SetPossession(TeamSide team)
     {
+        // remember the last toucher: a grab/steal = the new team; a release (null) = the
+        // team that just let go (read the OLD possessor before overwriting it).
+        if (team != null) LastTouchTeam = team;
+        else if (PossessingTeam != null) LastTouchTeam = PossessingTeam;
+
         PossessingTeam = team;
         if (team == null) lastReleaseTime = Time.time;       // ball was just released → start the cooldown
         else if (team != GrabBannedTeam) GrabBannedTeam = null; // the OTHER team got it → lift the turnover ban
+
+        // a pending kickoff pass is void once possession leaves the kicking team
+        if (KickoffPassPending && team != KickoffPassTeam) ClearKickoffPass();
     }
 
     // ---- match-flow gates ----
@@ -56,6 +74,19 @@ public class MatchContext : MonoBehaviour
 
     // A team may grab unless it is the one serving a turnover ban.
     public bool CanGrab(TeamSide team) => GrabBannedTeam == null || team != GrabBannedTeam;
+
+    public void SetKickoffPass(TeamSide team)
+    {
+        KickoffPassPending = true;
+        KickoffPassTeam = team;
+        KickoffPassTime = Time.time;
+    }
+
+    public void ClearKickoffPass()
+    {
+        KickoffPassPending = false;
+        KickoffPassTeam = null;
+    }
 
     public bool TeamHasBall(TeamSide team) => PossessingTeam == team;
     public bool BallIsLoose => PossessingTeam == null;

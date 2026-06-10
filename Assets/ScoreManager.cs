@@ -28,6 +28,9 @@ public class ScoreManager : MonoBehaviour
     // called by a goal when the ball enters it
     public void BallEnteredGoal(string goalSide)
     {
+        // A HELD ball never scores — only a released/loose ball (shot, pass, loose) counts.
+        if (MatchContext.Instance != null && !MatchContext.Instance.BallIsLoose) return;
+
         // Credit the team ATTACKING that physical net (so scoring survives the halftime
         // side-swap — no hardcoded Right=YOU assumption).
         float netSign = goalSide == "Right" ? 1f : -1f;
@@ -77,14 +80,18 @@ public class ScoreManager : MonoBehaviour
 
         if (ctx != null) ctx.FreezeAll();
         StopAllCoroutines();
-        StartCoroutine(ResumeAfterGoal());
+        StartCoroutine(ResumeAfterGoal(concedingTeam));
     }
 
-    IEnumerator ResumeAfterGoal()
+    IEnumerator ResumeAfterGoal(TeamSide concedingTeam)
     {
         yield return new WaitForSeconds(goalFreezeSeconds);
         MatchContext ctx = MatchContext.Instance;
-        if (ctx != null) ctx.Unfreeze();
+        if (ctx != null)
+        {
+            ctx.Unfreeze();
+            ctx.SetKickoffPass(concedingTeam); // center passes back to its deepest teammate first
+        }
         if (ShotClock.Instance != null) ShotClock.Instance.ResetClock(); // fresh clock as play resumes
     }
 

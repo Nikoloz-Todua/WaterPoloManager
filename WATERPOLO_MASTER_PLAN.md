@@ -62,54 +62,62 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 | `BotMovement.cs` | Thin component on each bot. Always runs `WaterPoloBrain`. Implements `IAgentBody`. |
 | `WaterPoloAI.cs` | **The shared brain** + `IAgentBody` interface. All AI decisions live here once: carrier (shoot/pass/dribble), support (get open), presser (nearest chases), defender (hold shape). Nothing is attached to this file — pure logic the others call. **This is C# state-machine AI — NOT an LLM.** |
 | `TeamSide.cs` | One per team. Holds goals + roster (`members`), formation math (auto-spreads ANY number of players), passing/positioning logic. Scales 2v2 → 6v6 with no code change. |
-| `MatchContext.cs` | Singleton "match truth": ball position, which team has possession, post-release grab cooldown (`releaseGrabDelay = 0.35`), `EnemyOf()`. |
-| `TeamManager.cs` | On `GameManager`. Auto-switches control to whichever player holds the ball; manual **C** switch when nobody holds it; transfers the hold cleanly on switch. |
-| `Goalkeeper.cs` | Kinematic keeper sliding along its goal line tracking ball Y. Blocks shots. |
+| `MatchContext.cs` | Singleton "match truth": ball position, possession + last toucher, post-release grab cooldown, freeze flag, shot-clock grab-ban, kickoff-pass flag, halftime `SwapEnds()`, `GiveBallTo()` / `ForceDropHeldBall()`, `EnemyOf()`. |
+| `TeamManager.cs` | On `GameManager`. Auto-switches control to the ball-holder; manual **C** switch (skips excluded); **Z** toggles Press/Zone; never auto-activates excluded players. |
+| `Goalkeeper.cs` | Kinematic keeper sliding along its physical goal line tracking ball Y. Stays on its goal even after the halftime swap. |
 | `Goal.cs` | Trigger on each net; reports `goalSide` ("Left"/"Right") to ScoreManager. |
-| `ScoreManager.cs` | Team-aware score (Right net = YOU, Left net = BOT), resets ball to center, updates on-screen text. |
+| `ScoreManager.cs` | Team-based score (credits the team attacking that net → survives the halftime swap); conceding-team kickoff restart; **ignores held-ball goals**. |
+| `MatchTimer.cs` | Quarters (90s) + win/lose/draw; pauses the clock during freezes; triggers the sprint duel each quarter; halftime swap; `ForfeitMatch()`. |
+| `ShotClock.cs` | 30s per-possession clock (singleton): resets on possession change / goal / defensive exclusion; turnover + grab-ban at 0; pauses when frozen or match over. |
+| `ExclusionManager.cs` | Fouls + exclusions (singleton): failed steal = foul; 2 in 10s → 5s exclusion (roster slot nulled → AI auto-adapts); 3rd → removal; forfeit < 4 players; HUD countdowns. |
+| `SprintDuel.cs` | Quarter-start duel (singleton): line-up + freeze, whistle, two sprinters race (human mashes Space), winner grabs → kickoff pass. |
+| `EventFeed.cs` | Rolling last-5 event log (singleton): goals, exclusions, turnovers, out-of-bounds, forfeit, halftime. |
+| `BallOutOfBounds.cs` | Top/bottom-wall out rule: a loose ball at the edge → possession to the nearest player of the team that didn't touch it last. |
 
 **Architecture rule for any AI:** keep `TeamSide` + `MatchContext` + `WaterPoloBrain`. It is roster-size-agnostic by design. To scale teams: add player/bot objects, drop them into the team `members` arrays + TeamManager arrays; formation & AI scale automatically.
 
-## A6. Scene objects + wiring (the Hierarchy)
+## A6. Scene objects + wiring (the Hierarchy) — current 6v6 scene
 
-> ⚠️ Slots are set by dragging objects from the Hierarchy into the Inspector. After any full-script replace, VERIFY these. Numbers are approximate (read from screenshots) — the Unity Inspector is the real truth.
+> ⚠️ Slots are set by dragging objects from the Hierarchy into the Inspector. After any full-script replace, VERIFY these. The Unity Inspector is the real truth.
 
 **Pool & arena**
 - **Pool** — Square, Pos (0,0), Scale (16,9), blue.
-- **Walls** (empty parent) → `WallTop`/`WallBottom`/`WallLeft`/`WallRight` — Squares with **Box Collider 2D (Is Trigger OFF)** at pool edges (±8 x, ±4.5 y). Solid.
+- **Walls** (empty parent) → `WallTop`/`WallBottom`/`WallLeft`/`WallRight` — Squares, **Box Collider 2D (Is Trigger OFF)** at pool edges (±8 x, ±4.5 y). Top/bottom also act as out-of-bounds lines (handled in code by `BallOutOfBounds` via the ball's y — no wiring); left/right keep normal bounce physics.
+- **PoolLines** — thin decorative strips (2m / 5m / half markings). Visual only, no colliders.
 
 **Ball**
-- **Ball** — Circle, Scale (0.4,0.4), yellow, **Tag = "Ball"**, Order in Layer 1.
-- Rigidbody2D: Gravity 0, **Linear Damping 4**, **Collision Detection = Continuous**. Circle Collider 2D (trigger OFF).
+- **Ball** — Circle (~0.4), yellow, **Tag = "Ball"**, Order 1. Rigidbody2D: Gravity 0, Linear Damping 4, Collision Detection = Continuous. Circle Collider 2D (trigger OFF).
 
-**Players (your team — attack RIGHT, defend LEFT)**
-- **Player** — Circle, Scale (0.7,0.7), red, Order 1. Rigidbody2D (Gravity 0, Freeze Rotation Z). Circle Collider 2D. Child **AimLine** (Line Renderer).
-  - `PlayerMovement`: Move Speed 3, Hold Move Speed 1.5, **Ball = Ball**, **Aim Line = its AimLine child**, Grab Dist 1, Hold Offset 0.6, Max Shoot Power 12.
-  - `TeammateAI`: **My Team = PlayerTeam**, Chase 3, Carry 1.8, Support 2.5, Grab Dist 1.2. (Shoot Range/Power were left high ≈20 — TUNABLE.)
-- **Player2** — same as Player, its own **AimLine** child.
-  - `PlayerMovement`: same, **Ball = Ball**, **Aim Line = Player2's AimLine**.
-  - `TeammateAI`: **My Team = PlayerTeam**.
+**Players (your team, 6) — attack one end / defend the other; sides SWAP at halftime**
+- **Player1 … Player6** — Circles (~0.5), red, Order 1. Each has: Rigidbody2D (Gravity 0, Freeze Rotation Z), Circle Collider 2D, a child **AimLine** (Line Renderer).
+  - `PlayerMovement`: **Ball = Ball**, **Aim Line = its OWN AimLine child**, speed/grab/shoot/pass/steal tunables.
+  - `TeammateAI`: **My Team = PlayerTeam** (+ AI tunables).
+  - **Slot index in PlayerTeam.Members = role:** 0 Center, 1 Center-Back, 2/3 Wings, 4/5 Flats.
 
-**Bots (enemy team — attack LEFT, defend RIGHT)**
-- **Bot** — Circle (0.7,0.7), magenta. Rigidbody2D + Circle Collider 2D. `BotMovement`: **My Team = BotTeam**, Chase 3, Carry 1.8, Support 2.5, Grab Dist 1.6.
-- **Bot2** — same, Pos ~(3,3). `BotMovement`: **My Team = BotTeam**.
+**Bots (enemy team, 6)**
+- **Bot1 … Bot6** — Circles (~0.5), magenta. Each: Rigidbody2D + Circle Collider 2D + `BotMovement`: **My Team = BotTeam** (+ tunables).
 
-**Goals**
-- **GoalRight** — Square, Pos (7,0), Scale (0.5,3), white, Order 1. **Box Collider 2D, Is Trigger ON.** `Goal`: Goal Side = "Right", Score Manager = ScoreManager.
-- **GoalLeft** — Pos (-7,0), same. `Goal`: Goal Side = "Left", Score Manager = ScoreManager.
+**Goals & keepers**
+- **GoalRight** (Pos (7,0)) / **GoalLeft** (Pos (-7,0)) — Squares (0.5,3), **Box Collider 2D Is Trigger ON**. `Goal`: Goal Side = "Right"/"Left", **Score Manager = ScoreManager**.
+- **KeeperRight** (~(6.3,0)) / **KeeperLeft** (~(-6.3,0)) — thin tall Squares. Box Collider 2D (trigger OFF) + Rigidbody2D **Kinematic** (Use Full Kinematic Contacts ON, Gravity 0). `Goalkeeper`: **Ball = Ball**, Track Speed, Min/Max Y. Keepers guard their physical goal even after the halftime swap.
 
-**Goalkeepers (block shots)**
-- **KeeperRight** — thin tall Square, Pos ~(6.3,0), distinct color. **Box Collider 2D (trigger OFF)** + **Rigidbody2D Kinematic, Use Full Kinematic Contacts ON, Gravity 0.** `Goalkeeper`: **Ball = Ball**, Track Speed 4, Min Y -2, Max Y 2.
-- **KeeperLeft** — mirror ~(-6.3,0). Same setup, Ball = Ball.
+**Managers — all components on ONE `GameManager` GameObject:**
+- `MatchContext`: **Ball = Ball, Player Team = PlayerTeam, Bot Team = BotTeam**, Release Grab Delay 0.35.
+- `TeamManager`: **Players = [Player1..6]**, **Teammate AIs = [Player1..6] (SAME ORDER)**, **Player Team = PlayerTeam**, **Defense Mode Text = DefenseModeText**.
+- `MatchTimer`: **Score Manager = ScoreManager, Timer Text = TimerText, Quarter Text = QuarterText, Result Text = ResultText**, Quarter Length 90, Total Quarters 4.
+- `ShotClock`: **Match Timer = (this GameManager's MatchTimer), Shot Clock Text = ShotClockText**, Shot Clock Seconds 30.
+- `EventFeed`: **Feed Text = EventFeedText, Match Timer = MatchTimer**, Max Lines 5.
+- `SprintDuel`: no required refs (pulls teams/ball from MatchContext); optional **Duel Text**; speed/timing tunables.
+- `BallOutOfBounds`: no refs (pulls from MatchContext); Out Y Threshold 4.2, Reentry Inset 0.5.
 
-**Manager objects (empty GameObjects)**
-- **GameManager** — `TeamManager`: Players = [Player, Player2], **Teammate AIs = [Player, Player2] (SAME ORDER)**, Player Team = PlayerTeam. Also `MatchContext`: Ball = Ball, Player Team = PlayerTeam, Bot Team = BotTeam, Release Grab Delay 0.35.
-- **PlayerTeam** (empty) — `TeamSide`: Name "Player", **Attack Goal = GoalRight, Defend Goal = GoalLeft**, Members = [Player, Player2]. Formation: Half Width 6, Lane Height 3.5, Attack Push 3, Defend Pull 2.5 (+ AI tuning fields).
-- **BotTeam** (empty) — `TeamSide`: Name "Bot", **Attack Goal = GoalLeft, Defend Goal = GoalRight**, Members = [Bot, Bot2].
+**Other manager objects (empty GameObjects)**
+- **PlayerTeam** — `TeamSide`: Name "Player", **Attack Goal = GoalRight, Defend Goal = GoalLeft**, **Members = [Player1..6]**, formation + AI tunables.
+- **BotTeam** — `TeamSide`: Name "Bot", **Attack Goal = GoalLeft, Defend Goal = GoalRight**, **Members = [Bot1..6]**.
+- **ScoreManager** — `ScoreManager`: **Ball = Ball, Score Text = ScoreText, Player Team = PlayerTeam, Bot Team = BotTeam**, Goal Freeze Seconds 1.
+- **ExclusionManager** — `ExclusionManager`: **Match Timer = MatchTimer, Exclusion Text = ExclusionText**; Foul Window 10, Fouls For Exclusion 2, Exclusion 5, Max Exclusions 3, Min Players 4.
 
-**UI**
-- **Canvas** → **ScoreText** (TextMeshPro, anchored top, "YOU 0 - 0 BOT"). **EventSystem** (auto).
-- **ScoreManager** (empty) — `ScoreManager`: Ball = Ball, Score Text = ScoreText.
+**UI — Canvas (TextMeshPro), + EventSystem (auto)**
+- **ScoreText** ("YOU 0 - 0 BOT"), **TimerText** ("1:30"), **QuarterText** ("Q1"), **ResultText** (hidden until full time), **DefenseModeText** ("DEFENSE: PRESS/ZONE"), **ExclusionText** (exclusion countdowns), **ShotClockText** ("30"), **EventFeedText** (last 5 events).
 
 ## A7. Controls (keyboard — for PC testing; touch comes later)
 
@@ -131,7 +139,7 @@ Also now DONE:
 - **Human steal on Space** (chance-based, with cooldown) when not holding the ball.
 - **AI steal** — pressers strip the carrier (chance-based, with cooldown).
 - **AI catch-then-shoot settle delay** — carrier squares up before shooting.
-- **4-quarter match timer** (30s/quarter, tunable) with **win/lose/draw at full time**.
+- **4-quarter match timer** (90s/quarter, tunable) with **win/lose/draw at full time**.
 - **Scaled from 2v2 → 4v4 → 6v6** (formation + AI scale with no code change).
 - **Player/ball/keeper sprites scaled down** to reduce crowding.
 - **Role-based positioning** — Center, Center-Back, Wings, Flats assigned by roster index; each role holds a distinct depth + lane.
@@ -145,6 +153,13 @@ Also now DONE:
 - **Charged passing** — hold B to charge, auto-targets the teammate you're facing (nearest fallback), reusing the power bar.
 - **Selectable PRESS vs ZONE defense (player team)** — toggle with **Z**, shown on screen as "DEFENSE: PRESS/ZONE". Press = threat-based 1-to-1 marking with dynamic switching; Zone = goal-side spread, no man-chasing. Bots always use Press.
 - **Defensive-AI spec COMPLETE:** role-based positioning + 1-to-1 marking + dynamic threat-based mark-switching (with hysteresis) + press/zone toggle.
+- **Sprint duel** at every quarter start (incl. Q1): line-up + whistle, two sprinters race (human mashes **Space**), winner grabs → **kickoff pass to deepest teammate**, then play.
+- **Goal restart:** the conceding team's centre gets the ball at centre after a short settle freeze.
+- **30s shot clock** per possession (resets on possession change / goal / defensive exclusion; turnover + grab-ban at 0) and **halftime side-switch** (teams swap ends; scoring + keepers stay correct).
+- **Exclusion system:** failed steal = foul; 2 fouls in 10s → 5s exclusion; 3rd → permanent removal; **forfeit under 4 players**. Man-up/man-down emerges from the roster auto-adapting.
+- **Event feed** — rolling last-5 lines (goals, exclusions, turnovers, out-of-bounds, forfeit, halftime).
+- **Out-of-bounds** off the top/bottom walls → possession to the nearest player of the team that didn't touch it last.
+- **Held balls can't score** — only a released/loose ball (shot, pass, loose) counts.
 
 ## A9. Known issues / tuning notes
 
@@ -155,12 +170,10 @@ Also now DONE:
 
 **KNOWN ISSUES / NEXT:**
 - Residual **clustering only when the ball + multiple players + an opponent genuinely converge** on the same spot — acceptable/realistic, not the old "everyone bunches" bug.
-- **Done since last update:** dynamic mark-switching; charged passing; press/zone toggle. (Defensive AI spec is now complete.)
-- **Next brick (pick one):**
-  - **Match-start Sprint Duel** (B16.2) — ball drops at center, teams start on their goal lines, rapid-tap to win first possession.
-  - **Foul / exclusion system** (B16.9) — foul detection, ~20s exclusion zone, man-up / man-down AI, penalties.
-- **Deferred visuals** (secondary per dev priority): keeper art/animation; pool zone lines; crowd/stadium; camera zoom-out; water-flow effects.
-- **Other deferred:** per-player stamina system; halftime side-switch (teams don't swap ends yet); weak no-hold deflection shot (a ball struck without a settled hold should be weaker than a settled one).
+- **Done since last update:** sprint duel + kickoff pass; shot clock; halftime side-switch; exclusion system + forfeit; event feed; out-of-bounds; held-ball-goal fix; conceding-team goal restart.
+- **Next brick:** **Penalty inside the 5m zone** (B16.11) — penalty shot when a foul occurs in the 5m area — then **keeper grab-and-control** (keeper collects a stuck ball; player controls the keeper to pass it out, then it returns to the line).
+- **Deferred visuals** (secondary per dev priority): keeper art/animation; crowd/stadium; camera zoom-out; water-flow effects. (Pool zone lines now exist as `PoolLines`.)
+- **Other deferred:** per-player stamina system; weak no-hold deflection shot (a ball struck without a settled hold should be weaker than a settled one); corners on keeper deflections; referee.
 
 ## A10. Immediate roadmap (next bricks, rough order)
 
@@ -240,8 +253,8 @@ Also now DONE:
 ### B16.1 Pre-Match Intro ⬜
 - Optional skippable intro (≤10s): both teams enter pool and warm up.
 
-### B16.2 Match Start — Sprint Duel ⬜
-- Ball center, held by mechanism; whistle → mechanism drops, ball spins. Two sprinters race; tap a button rapidly to swim faster; a bar shows tap speed. Winner passes to a teammate; match begins.
+### B16.2 Match Start — Sprint Duel ✅ DONE
+- At every quarter start (incl. Q1): ball at centre, all players line up on their own goal lines and freeze; after a whistle delay the two sprinters (each team's first available member) race. Bot swims at a fixed speed; the human **mashes Space** to go faster (boost decays). First to the ball grabs it; play + shot clock start. The winning AI centre then makes a **kickoff pass to its deepest teammate** before normal play. (`SprintDuel.cs`.)
 
 ### B16.3 Match Controls 🟡 PARTIAL (shoot + power-bar feedback, B-pass to nearest teammate, E=grab, Space-steal all built on keyboard; full A/B/C touch scheme not built)
 - **A** — with ball: shoot (hold = power bar, directional arrow); without ball: aggressive defensive press. *(Charged-shot power bar for the active player is built ✅.)*
@@ -254,8 +267,8 @@ Also now DONE:
 ### B16.4 Camera & Visibility 🟡 PARTIAL (2D top-down + directional chevron done; player names not yet)
 - Dream-League-style overhead angled; faces not clear in play. Name above each player; directional arrow below showing heading. *(A directional chevron indicator under the active player is built ✅; player-name labels still TODO.)*
 
-### B16.5 Match Structure 🟡 PARTIAL (basic 4-quarter timer + win condition exist; no halftime side-switch, no shot clock yet)
-- 4 quarters, 2 real-minutes each (8 total, adjustable). 30-second shot clock per possession. Halftime (after Q2): switch sides.
+### B16.5 Match Structure ✅ DONE (shot clock + halftime side-switch built)
+- 4 quarters, **90s each** (tunable), win/lose/draw at full time. **30s shot clock** per possession — resets on possession change / goal / defensive exclusion; at 0 → turnover with a grab-ban on the violating team until the other side touches the ball. **Halftime side-switch** after the middle quarter: attack/defend goals swap, scoring stays correct, keepers keep their physical goal. Each quarter restarts through the sprint duel; the clock pauses during freezes.
 
 ### B16.6 HUD ⬜ (score display ✅ done)
 - Score with both team logos ✅; quarter indicator; match timer; pause button; exclusion countdown.
@@ -266,17 +279,18 @@ Also now DONE:
 ### B16.8 In-Game Substitutions ⬜
 - Players tap hands at pool edge; outgoing player must fully exit before new one enters; excluded/benched players uncontrollable during transition.
 
-### B16.9 Exclusion System ⬜
-- Exclusion foul → exclusion zone, 20s timer. 3rd exclusion on a player → permanent removal (notify to sub via Pause, or auto-sub). AI adjusts for 6-v-7 (down a man) and 7-v-6 (man up).
+### B16.9 Exclusion System ✅ DONE (man-up/man-down via roster auto-adapt, not special-cased)
+- A failed steal = foul (offender locked out, carrier keeps the ball). **2 fouls within 10s → 5s exclusion:** the player leaves its `TeamSide.members` slot (set null → formation + marking auto-adapt to the extra/missing man), parks in its goal corner, fully inert. **3rd exclusion → permanent removal** (GameObject disabled). If a team drops **below 4 players → forfeit** (other team wins, via `MatchTimer.ForfeitMatch`). HUD shows exclusion countdowns; event feed logs each. (`ExclusionManager.cs`.) Tunables: Foul Window 10, Fouls 2, Exclusion 5s, Max 3, Min Players 4.
 
 ### B16.10 AI Behaviour 🟡 PARTIAL (full defensive AI DONE in C#; only exclusion-based repositioning NOT yet)
 - With ball → attack positions; lose ball → defensive positions; players hold assigned positions; opponent excluded → exploit extra man; own exclusion → shorthanded defense.
 - **Built (defensive AI spec COMPLETE):** role-based positioning + 1-to-1 marking (nearest presses, others mark their man); facing-gated steal (no stealing from behind); dynamic threat-based mark-switching with hysteresis (coverage hands off automatically, no oscillation); selectable **Press vs Zone** defense for the player team (toggle **Z**, on-screen label) — Press = man-marking with switching, Zone = goal-side spread; bots always use Press.
-- **TODO:** exclusion-based repositioning (man-up / man-down) — waits on the exclusion system (B16.9).
+- **Man-up / man-down:** now emerges automatically — an excluded player's roster slot is nulled, so formation spacing and marking re-solve for the extra/missing man with no special-case code (B16.9 done).
 - **AI is C# state-machine logic (`WaterPoloBrain`), scaled by player stats.** The original "LLM-driven bots (LM Studio/llama.cpp/Claude API)" idea is **ABANDONED** — do not implement it; it's wrong for a real-time game.
 
-### B16.11 Fouls & Rules ⬜ (goal walls/keeper collisions done; foul logic not)
-- Minor foul → possession changes. Exclusion foul → 20s zone. 3rd → removal. Penalty if foul inside 5m zone. Corner only if keeper deflects ball out (normal deflection = no corner). Referee walks poolside following the ball along X.
+### B16.11 Fouls & Rules 🟡 PARTIAL (fouls + exclusions + out-of-bounds + held-ball-goal done; penalties NOT)
+- **Done:** failed-steal fouls + exclusions (see B16.9); **out-of-bounds** off the top/bottom walls (a loose ball at the edge → possession to the nearest player of the team that didn't touch it last, ball re-enters just inside, shot clock resets, "Out - YOU/BOT" feed line); **held-ball goals ignored** (only released/loose balls can score). Minor foul = possession change is approximated by the steal/foul system.
+- **NOT yet:** penalty shot for a foul inside the 5m zone; corners on keeper deflections; poolside referee.
 
 ### B16.12 Goals & Replays 🟡 PARTIAL (goal detection + scoring DONE; replays/celebrations/sounds not)
 - Goal → auto replay; player can save replay (→ Club highlights); celebrations; specific crowd sounds.
@@ -297,4 +311,4 @@ Also now DONE:
 - Don't suggest: Swift/SDL2/SceneKit, LLM-driven bots, web deployment, Stripe/PayPal, Tailwind. Mobile payments = Apple/Google billing, later.
 - Nikoloz has **Claude Code in VS Code** — big multi-file AI work goes there; single-file features + guidance happen in chat.
 - Commit routine: `git add . && git commit -m "..." && git push`. GitHub: https://github.com/Nikoloz-Todua
-- Current focus: still in **Part A10** roadmap (scaling teams / match timer next). Everything in Part B tagged ⬜ is future.
+- Current focus: core match rules are in (6v6, sprint duel, shot clock, halftime swap, exclusions/forfeit, out-of-bounds, event feed). **Next: penalty inside the 5m zone (B16.11), then keeper grab-and-control.** Everything in Part B tagged ⬜ is future.
