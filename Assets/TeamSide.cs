@@ -27,6 +27,13 @@ public class TeamSide : MonoBehaviour
     public float shotLaneRadius = 0.6f;  // a shot lane is blocked if an enemy is this close to it
     public float aimCornerOffset = 1.1f; // aim this far off goal-centre to beat the keeper
     public float forwardPassMin = 0.5f;  // min forward progress required to pass when not pressured
+    public float freeThrowClearance = 2.2f; // enemies must back this far off a free-throw taker
+
+    [Header("Attacking spacing")]
+    public float teammateSpacing = 2.0f;     // attackers closer than this to a nearer-ball mate get pushed to their lane
+    public float supportPassRange = 5.0f;    // an off-ball attacker only offers a support outlet within this of the carrier
+    public float supportBlend = 0.5f;        // how far an open, in-range attacker blends role-spot → support (0..1)
+    public float passOpennessWeight = 1.5f;  // how strongly the carrier prefers WIDE-open pass targets (e.g. wings)
 
     // Fixed tactical roles, assigned by slot index in `members` (0..5).
     public enum Role { Center, CenterBack, LeftWing, RightWing, LeftFlat, RightFlat }
@@ -169,6 +176,66 @@ public class TeamSide : MonoBehaviour
         return ClampToField(spot);
     }
 
+    // ---- attacking off-ball target: hold the role shape (width), only drift toward a
+    // support outlet when genuinely useful, then enforce minimum spacing so attackers
+    // don't bunch on the ball. Used by the brain's attacking branch (carrier excluded).
+    public Vector2 AttackTarget(Transform me, Vector2 ballPos, TeamSide enemy)
+    {
+        if (me == null) return ballPos;
+        Vector2 spot = AttackPositionFor(me, ballPos); // role shape = primary
+
+        // blend toward support ONLY if this attacker is genuinely useful: open AND within
+        // a reasonable pass range of the carrier (otherwise everyone would crowd the ball).
+        Transform carrier = ClosestMemberTo(ballPos); // the ball sits on the carrier
+        if (carrier != null && carrier != me)
+        {
+            bool open = NearestDistance(me.position, enemy) >= openRadius;
+            bool inRange = Vector2.Distance(me.position, carrier.position) <= supportPassRange;
+            if (open && inRange)
+                spot = Vector2.Lerp(spot, SupportSpot(me, ballPos, enemy), Mathf.Clamp01(supportBlend));
+        }
+
+        spot = ApplyTeammateSpacing(me, spot, ballPos);
+        return ClampToField(spot);
+    }
+
+    // If a teammate that is CLOSER to the ball crowds me (within teammateSpacing), slide
+    // my target laterally away from them (toward my own lane) to keep the team wide.
+    Vector2 ApplyTeammateSpacing(Transform me, Vector2 target, Vector2 ballPos)
+    {
+        if (members == null) return target;
+
+        Vector2 across = new Vector2(-Forward().y, Forward().x);
+        float laneSign = RoleLateralSign(me);
+        float myBallDist = Vector2.Distance(me.position, ballPos);
+
+        foreach (Transform t in members)
+        {
+            if (t == null || t == me) continue;
+            if (Vector2.Distance(t.position, ballPos) >= myBallDist) continue; // only nearer-the-ball mates
+            float d = Vector2.Distance(t.position, me.position);
+            if (d >= teammateSpacing) continue;
+
+            float side = Mathf.Sign(Vector2.Dot((Vector2)me.position - (Vector2)t.position, across));
+            if (Mathf.Abs(side) < 0.01f) side = laneSign == 0f ? 1f : laneSign; // tie → my lane
+            target += across * (side * (teammateSpacing - d));
+        }
+        return target;
+    }
+
+    // Sign (+1 / -1 / 0) of a role's lateral lane, for spacing tie-breaks.
+    float RoleLateralSign(Transform me)
+    {
+        switch (RoleOf(me))
+        {
+            case Role.LeftWing:
+            case Role.LeftFlat:  return 1f;
+            case Role.RightWing:
+            case Role.RightFlat: return -1f;
+            default:             return 0f; // Center / CenterBack
+        }
+    }
+
     // ---- 1-to-1 marking ----
     // Pair my slot to the SAME slot on the enemy team (role-vs-role). null if none.
     public Transform MarkAssignmentFor(Transform me, TeamSide enemy)
@@ -258,8 +325,8 @@ public class TeamSide : MonoBehaviour
             // when not under pressure, only pass if it actually advances the ball
             if (!pressured && forwardGain < forwardPassMin) continue;
 
-            // prefer forward + open + closer to goal
-            float score = forwardGain * 1.5f + openness - mateGoalDist * 0.1f;
+            // prefer forward + (heavily) open + closer to goal → favours wide-open wings
+            float score = forwardGain * 1.5f + openness * passOpennessWeight - mateGoalDist * 0.1f;
             if (score > bestScore) { bestScore = score; best = mate; }
         }
         return best;

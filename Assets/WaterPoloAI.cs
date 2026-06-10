@@ -87,16 +87,33 @@ public static class WaterPoloBrain
         {
             // We attack → drop any defensive mark so it recomputes fresh next phase.
             a.CurrentMark = null;
-            // A teammate is carrying → hold our role's attacking spot (fixed spacing).
-            MoveTo(a, a.Team.AttackPositionFor(a.Tf, ctx.BallPosition), a.SupportSpeed);
+            // A teammate is carrying → hold our role shape (width), only drift toward a
+            // support outlet when genuinely useful, and keep spacing off the ball.
+            MoveTo(a, a.Team.AttackTarget(a.Tf, ctx.BallPosition, enemy), a.SupportSpeed);
             return;
+        }
+
+        // ---- sanctioned free-throw gate (Task 2): respect the enemy's free throw ----
+        // We're in the defensive branch, so the free-throw taker is on the enemy team.
+        bool enemyFreeThrow = ctx.FreeThrowActive && ctx.FreeThrowCarrier != null;
+        if (enemyFreeThrow)
+        {
+            Vector2 cpos = ctx.FreeThrowCarrier.position;
+            if (Vector2.Distance(a.Body.position, cpos) < a.Team.freeThrowClearance)
+            {
+                // too close to the taker → back straight off to the respect distance
+                Vector2 away = a.Body.position - cpos;
+                if (away.sqrMagnitude < 1e-4f) away = Vector2.down;
+                MoveTo(a, cpos + away.normalized * a.Team.freeThrowClearance, a.SupportSpeed);
+                return;
+            }
         }
 
         // Ball is loose or the enemy has it: the single nearest swimmer presses (and is
         // excluded from marking); every other swimmer dynamically marks the most
         // dangerous still-unmarked attacker.
         Transform presser = a.Team.ClosestMemberTo(ctx.BallPosition);
-        if (presser == a.Tf)
+        if (presser == a.Tf && !enemyFreeThrow) // no pressing/chasing/stealing during a free throw
         {
             if (TryStealAI(a, ctx, enemy)) return;
             ChaseBall(a, ctx);
@@ -203,6 +220,26 @@ public static class WaterPoloBrain
         return false;
     }
 
+    // Keep a swimmer inside the play area — can't cross the goal line. Called from each
+    // body's FixedUpdate during LIVE play only (the bodies return before this while frozen
+    // or excluded, so duel/penalty/corner placements are never clamped). Ball + keepers
+    // never call this.
+    public static void ClampX(Rigidbody2D body, float limitX)
+    {
+        if (body == null) return;
+        Vector2 p = body.position;
+        if (p.x > limitX)
+        {
+            body.position = new Vector2(limitX, p.y);
+            if (body.linearVelocity.x > 0f) body.linearVelocity = new Vector2(0f, body.linearVelocity.y);
+        }
+        else if (p.x < -limitX)
+        {
+            body.position = new Vector2(-limitX, p.y);
+            if (body.linearVelocity.x < 0f) body.linearVelocity = new Vector2(0f, body.linearVelocity.y);
+        }
+    }
+
     // Keep the held ball glued in front of us (called from LateUpdate).
     public static void KeepHeldBall(IAgentBody a, MatchContext ctx)
     {
@@ -220,6 +257,15 @@ public static class WaterPoloBrain
     static void Carry(IAgentBody a, MatchContext ctx)
     {
         a.CurrentMark = null; // we hold the ball → no defensive assignment
+
+        // Free throw: the fouled AI carrier settles in place (shot clock paused), then
+        // decision-making resumes once the hold elapses and the flag clears.
+        if (ctx.FreeThrowActive && ctx.FreeThrowCarrier == a.Tf)
+        {
+            if (Time.time - ctx.FreeThrowStartTime >= ctx.FreeThrowAIHoldSeconds)
+                ctx.ClearFreeThrow();
+            else { a.Body.linearVelocity = Vector2.zero; return; }
+        }
 
         // Kickoff pass: an AI carrier's first action is one pass back to its deepest
         // teammate, then normal play. (Human carriers never reach here — suppressed.)
@@ -332,6 +378,7 @@ public static class WaterPoloBrain
     // The presser tries to rip the ball off the enemy carrier when in range.
     static bool TryStealAI(IAgentBody a, MatchContext ctx, TeamSide enemy)
     {
+        if (ctx.FreeThrowActive) return false; // no steals during a free throw
         if (enemy == null || !ctx.TeamHasBall(enemy)) return false;
         if (Time.time < a.NextStealTime) return false;
         Transform carrier = ctx.Ball.transform.parent;
@@ -351,7 +398,7 @@ public static class WaterPoloBrain
         {
             // failed steal = ordinary foul (carrier keeps the ball; offender locked out longer)
             if (ExclusionManager.Instance != null)
-                ExclusionManager.Instance.ReportFoul(a.Tf, a.Team);
+                ExclusionManager.Instance.ReportFoul(a.Tf, a.Team, carrier);
             return false;
         }
         IAgentBody holder = carrier.GetComponent<IAgentBody>();

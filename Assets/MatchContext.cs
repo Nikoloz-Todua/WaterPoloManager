@@ -13,6 +13,10 @@ public class MatchContext : MonoBehaviour
     [Header("Ball handling")]
     [Tooltip("After a shot/pass/drop the ball can't be re-grabbed for this long, so it has time to travel.")]
     [SerializeField] private float releaseGrabDelay = 0.35f;
+    [Tooltip("On an ordinary foul, an AI free-throw carrier holds the ball this long, then takes its normal decision (pass/shoot/dribble).")]
+    [SerializeField] private float freeThrowAIHoldSeconds = 3f;
+    [Tooltip("Swimmers can't cross the goal line: their x is clamped to ±this during live play (ball/keepers excluded).")]
+    [SerializeField] private float playerLimitX = 6.9f;
 
     // who currently holds the ball: null = loose
     public TeamSide PossessingTeam { get; private set; }
@@ -37,10 +41,18 @@ public class MatchContext : MonoBehaviour
     public TeamSide KickoffPassTeam { get; private set; }
     public float KickoffPassTime { get; private set; } // when the kickoff possession began
 
+    // Free throw (ordinary foul): the fouled carrier is protected from steals and the
+    // shot clock pauses until they act / move / the AI hold elapses.
+    public bool FreeThrowActive { get; private set; }
+    public Transform FreeThrowCarrier { get; private set; }
+    public float FreeThrowStartTime { get; private set; }
+    public float FreeThrowAIHoldSeconds => freeThrowAIHoldSeconds;
+
     public Vector2 BallPosition => ball != null ? ball.position : Vector2.zero;
     public Rigidbody2D Ball => ball;
     public TeamSide PlayerTeam => playerTeam;
     public TeamSide BotTeam => botTeam;
+    public float PlayerLimitX => playerLimitX;
 
     void Awake()
     {
@@ -62,6 +74,9 @@ public class MatchContext : MonoBehaviour
 
         // a pending kickoff pass is void once possession leaves the kicking team
         if (KickoffPassPending && team != KickoffPassTeam) ClearKickoffPass();
+
+        // any possession change / release ends a free throw (carrier passed/shot/dropped)
+        ClearFreeThrow();
     }
 
     // ---- match-flow gates ----
@@ -86,6 +101,26 @@ public class MatchContext : MonoBehaviour
     {
         KickoffPassPending = false;
         KickoffPassTeam = null;
+    }
+
+    public void StartFreeThrow(Transform carrier)
+    {
+        FreeThrowActive = true;
+        FreeThrowCarrier = carrier;
+        FreeThrowStartTime = Time.time;
+    }
+
+    public void ClearFreeThrow()
+    {
+        FreeThrowActive = false;
+        FreeThrowCarrier = null;
+    }
+
+    // Physical-touch attribution (used by the out-of-bounds rules so a deflection off an
+    // opponent is credited to them). Does NOT change possession.
+    public void NoteTouch(TeamSide team)
+    {
+        if (team != null) LastTouchTeam = team;
     }
 
     public bool TeamHasBall(TeamSide team) => PossessingTeam == team;

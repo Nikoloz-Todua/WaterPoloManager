@@ -23,6 +23,7 @@ public class ExclusionManager : MonoBehaviour
     [SerializeField] private int maxExclusionsPerPlayer = 3;  // this many exclusions → permanent removal
     [SerializeField] private int minPlayersToContinue = 4;    // below this (after removals) → forfeit
     [SerializeField] private float foulStealLockout = 1.5f;   // steal lockout applied to a fouling agent
+    [SerializeField] private float penaltyZoneX = 4.28f;      // victim |x| ≥ this (goal-side) → penalty, not exclusion
 
     [Header("References")]
     [SerializeField] private MatchTimer matchTimer;           // to end the match on a forfeit
@@ -98,9 +99,10 @@ public class ExclusionManager : MonoBehaviour
     public bool IsExcluded(Transform t)
         => t != null && (excludedNow.Contains(t) || permanentlyOut.Contains(t));
 
-    // Called on EVERY failed steal. Carrier keeps the ball; offender is locked out and
-    // may be excluded if it has fouled too often recently.
-    public void ReportFoul(Transform offender, TeamSide team)
+    // Called on EVERY failed steal. `victim` = the carrier that was fouled. Carrier keeps
+    // the ball; offender is locked out. An ordinary foul gives the victim a FREE THROW;
+    // enough fouls escalate to an exclusion — or a PENALTY if the victim was in the 2m zone.
+    public void ReportFoul(Transform offender, TeamSide team, Transform victim)
     {
         if (offender == null) return;
 
@@ -115,7 +117,68 @@ public class ExclusionManager : MonoBehaviour
         times.RemoveAll(t => Time.time - t > foulWindowSeconds);
 
         if (times.Count >= foulsForExclusion)
-            Exclude(offender, team);
+            Escalate(offender, team, victim); // exclusion, or penalty if in the 2m zone
+        else
+            FreeThrow(team, victim);           // ordinary foul
+    }
+
+    // Ordinary foul → free throw to the fouled (victim's) team: shot clock pauses and the
+    // carrier can't be stolen from until they act.
+    void FreeThrow(TeamSide offenderTeam, Transform victim)
+    {
+        MatchContext ctx = MatchContext.Instance;
+        if (ctx != null && victim != null) ctx.StartFreeThrow(victim);
+
+        TeamSide victimTeam = ctx != null ? ctx.EnemyOf(offenderTeam) : null;
+        if (EventFeed.Instance != null)
+            EventFeed.Instance.AddEvent("Foul - free throw " + (victimTeam == playerTeam ? "YOU" : "BOT"));
+    }
+
+    // Exclusion-level foul: a PENALTY if the victim was inside the attacking 2m zone,
+    // otherwise the usual temporary/permanent exclusion.
+    void Escalate(Transform offender, TeamSide team, Transform victim)
+    {
+        bool penalty = false;
+        if (victim != null && team != null && team.defendGoal != null)
+        {
+            float sign = Mathf.Sign(team.defendGoal.position.x);
+            if (sign == 0f) sign = 1f;
+            penalty = victim.position.x * sign >= penaltyZoneX;
+        }
+
+        if (penalty) AwardPenalty(offender, team, victim);
+        else Exclude(offender, team);
+    }
+
+    // Penalty: the offender does NOT sit out (the penalty shot is the punishment), but the
+    // exclusion bookkeeping — count, foul reset, permanent-removal-at-max + forfeit — still
+    // applies exactly as a normal exclusion would.
+    void AwardPenalty(Transform offender, TeamSide team, Transform victim)
+    {
+        foulTimes.Remove(offender);
+
+        int count = (exclusionCount.TryGetValue(offender, out int c) ? c : 0) + 1;
+        exclusionCount[offender] = count;
+
+        if (count >= maxExclusionsPerPlayer)
+        {
+            // max reached → permanent removal still applies (roster slot null + disable + forfeit)
+            permanentlyOut.Add(offender);
+            int idx = MemberIndex(team, offender);
+            if (idx >= 0) team.members[idx] = null;
+            offender.gameObject.SetActive(false);
+            if (ActiveCount(team) < minPlayersToContinue) Forfeit(team);
+        }
+        // else: NO temporary exclusion — no roster null, no corner, no excludedNow entry.
+
+        MatchContext ctx = MatchContext.Instance;
+        TeamSide attackingTeam = ctx != null ? ctx.EnemyOf(team) : null;
+
+        if (EventFeed.Instance != null)
+            EventFeed.Instance.AddEvent("PENALTY - " + (attackingTeam == playerTeam ? "YOU" : "BOT"));
+
+        if (PenaltyManager.Instance != null && attackingTeam != null && victim != null)
+            PenaltyManager.Instance.StartPenalty(victim, attackingTeam);
     }
 
     // ---------- internals ----------

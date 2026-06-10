@@ -113,9 +113,45 @@ public class PlayerMovement : MonoBehaviour
         if (isHolding && ball != null && ball.transform.parent != transform)
             isHolding = false;
 
-        // Play frozen (sprint duel / goal settle) → no control, charge, steal, or aim.
+        // Play frozen (sprint duel / goal settle / penalty) → no control, charge, steal, or aim
+        // — EXCEPT the active penalty shooter, who may only charge & shoot (Space), no moving.
         if (MatchContext.Instance != null && MatchContext.Instance.PlayFrozen)
         {
+            bool penaltyShooter = PenaltyManager.Instance != null &&
+                                  PenaltyManager.Instance.IsActiveShooter(transform);
+            if (penaltyShooter && isHolding)
+            {
+                // AIM with movement keys: rotate the shot within a cone toward the goal
+                // (never move the body — position stays on the spot).
+                Vector2 goalDir = PenaltyManager.Instance.ShooterGoalDir();
+                Vector2 aimIn = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
+                if (aimIn.sqrMagnitude > 0.01f && goalDir.sqrMagnitude > 1e-4f)
+                {
+                    float cone = PenaltyManager.Instance.AimCone;
+                    float ang = Mathf.Clamp(Vector2.SignedAngle(goalDir, aimIn.normalized), -cone, cone);
+                    lastDirection = RotateVector(goalDir.normalized, ang);
+                }
+
+                input = Vector2.zero; // planted on the penalty spot — aiming only
+                if (chargeMode == Charging.None && Input.GetKeyDown(KeyCode.Space))
+                    chargeMode = Charging.Shoot;
+                if (chargeMode == Charging.Shoot)
+                {
+                    if (Input.GetKey(KeyCode.Space))
+                        currentPower = Mathf.Min(currentPower + chargeRate * Time.deltaTime, maxShootPower);
+                    if (Input.GetKeyUp(KeyCode.Space))
+                    {
+                        Shoot();
+                        currentPower = 0f;
+                        chargeMode = Charging.None;
+                    }
+                }
+                if (sprite != null) sprite.color = holdingColor;
+                UpdateAimLine();
+                UpdatePowerBar();
+                return;
+            }
+
             input = Vector2.zero;
             chargeMode = Charging.None; currentPower = 0f; passPower = 0f;
             if (aimLine != null) aimLine.enabled = false;
@@ -152,6 +188,12 @@ public class PlayerMovement : MonoBehaviour
                 MatchContext.Instance.KickoffPassPending &&
                 MatchContext.Instance.KickoffPassTeam == MatchContext.Instance.PlayerTeam)
                 MatchContext.Instance.ClearKickoffPass();
+
+            // A human free-throw carrier resumes free play the moment they move.
+            if (isHolding && input != Vector2.zero && MatchContext.Instance != null &&
+                MatchContext.Instance.FreeThrowActive &&
+                MatchContext.Instance.FreeThrowCarrier == transform)
+                MatchContext.Instance.ClearFreeThrow();
 
             if (Input.GetKeyDown(KeyCode.E))
             {
@@ -223,12 +265,15 @@ public class PlayerMovement : MonoBehaviour
 
     void FixedUpdate()
     {
+        if (rb == null) return; // no body → nothing to drive (defensive)
         if (MatchContext.Instance != null && MatchContext.Instance.PlayFrozen)
         { rb.linearVelocity = Vector2.zero; return; } // frozen during duel / goal settle
         if (Excluded) { rb.linearVelocity = Vector2.zero; return; } // frozen in the corner
         if (!IsActive) return;
         float speed = isHolding ? holdMoveSpeed : moveSpeed;
         rb.linearVelocity = input * speed;
+        if (MatchContext.Instance != null)
+            WaterPoloBrain.ClampX(rb, MatchContext.Instance.PlayerLimitX); // can't cross the goal line
     }
 
     // Short triangle that points along lastDirection, sitting just in front of the player.
@@ -307,6 +352,7 @@ public class PlayerMovement : MonoBehaviour
 
         MatchContext ctx = MatchContext.Instance;
         if (ctx == null) return;
+        if (ctx.FreeThrowActive) return; // no steals during a free throw
 
         TeamSide enemy = ctx.EnemyOf(ctx.PlayerTeam);
         if (enemy == null || !ctx.TeamHasBall(enemy)) return;
@@ -345,7 +391,7 @@ public class PlayerMovement : MonoBehaviour
         else if (ExclusionManager.Instance != null)
         {
             // failed steal = ordinary foul: carrier keeps the ball, we get locked out
-            ExclusionManager.Instance.ReportFoul(transform, ctx.PlayerTeam);
+            ExclusionManager.Instance.ReportFoul(transform, ctx.PlayerTeam, carrier);
         }
     }
 
@@ -442,6 +488,20 @@ public class PlayerMovement : MonoBehaviour
 
         if (MatchContext.Instance != null)
             MatchContext.Instance.SetPossession(null);
+    }
+
+    // Point the aim/facing at a world direction (used by PenaltyManager to face the goal).
+    public void SetFacing(Vector2 dir)
+    {
+        if (dir.sqrMagnitude > 1e-6f) lastDirection = dir.normalized;
+    }
+
+    // Rotate a 2D vector by `degrees` (CCW), used for the penalty aim cone.
+    static Vector2 RotateVector(Vector2 v, float degrees)
+    {
+        float r = degrees * Mathf.Deg2Rad;
+        float c = Mathf.Cos(r), s = Mathf.Sin(r);
+        return new Vector2(v.x * c - v.y * s, v.x * s + v.y * c);
     }
 
     public void TakeOverHeldBall()

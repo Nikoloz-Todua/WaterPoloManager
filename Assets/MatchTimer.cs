@@ -13,7 +13,7 @@ public class MatchTimer : MonoBehaviour
     [SerializeField] private TMP_Text resultText;  // hidden until match ends, then shows winner
 
     [Header("Match settings")]
-    [SerializeField] private float quarterLength = 30f; // seconds per quarter (bump to 90 later)
+    [SerializeField] private float quarterLength = 90f; // seconds per quarter
     [SerializeField] private int totalQuarters = 4;
 
     private float timeLeft;     // seconds remaining in the current quarter

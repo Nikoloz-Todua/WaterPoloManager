@@ -44,6 +44,7 @@ public class TeammateAI : MonoBehaviour, IAgentBody
         { rb.linearVelocity = Vector2.zero; return; }
 
         WaterPoloBrain.Tick(this, ctx);
+        if (ctx != null) WaterPoloBrain.ClampX(rb, ctx.PlayerLimitX); // can't cross the goal line
     }
     void LateUpdate()  { WaterPoloBrain.KeepHeldBall(this, MatchContext.Instance); }
 
