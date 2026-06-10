@@ -20,6 +20,9 @@ public class MatchTimer : MonoBehaviour
     private int currentQuarter; // 1..totalQuarters
     private bool matchOver;
 
+    // read-only access for other systems (shot clock pauses on this; event feed stamps with it)
+    public bool MatchOver => matchOver;
+
     void Start()
     {
         Time.timeScale = 1f;    // un-freeze in case a previous match ended frozen
@@ -109,5 +112,14 @@ public class MatchTimer : MonoBehaviour
     {
         if (quarterText != null)
             quarterText.text = "Q" + currentQuarter;
+    }
+
+    // Elapsed match time as "MM:SS" (across quarters), used by the event feed.
+    public string MatchTimeStamp()
+    {
+        float elapsed = Mathf.Max(0f, (currentQuarter - 1) * quarterLength + (quarterLength - timeLeft));
+        int m = Mathf.FloorToInt(elapsed / 60f);
+        int s = Mathf.FloorToInt(elapsed % 60f);
+        return m.ToString("00") + ":" + s.ToString("00");
     }
 }

@@ -30,6 +30,12 @@ public class ScoreManager : MonoBehaviour
             awayScore++;
 
         UpdateText();
+
+        if (EventFeed.Instance != null)
+            EventFeed.Instance.AddEvent("Goal - " + (goalSide == "Right" ? "YOU" : "BOT"));
+        if (ShotClock.Instance != null)
+            ShotClock.Instance.ResetClock(); // a shot hit the goal → fresh clock
+
         ResetKickoff();
     }
 

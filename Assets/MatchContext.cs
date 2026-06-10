@@ -52,4 +52,27 @@ public class MatchContext : MonoBehaviour
         if (team == botTeam) return playerTeam;
         return null;
     }
+
+    // Force whoever currently holds the ball to drop it in place (shot-clock turnover,
+    // exclusion, etc.). Reuses the same release path the player/AI use so there's one
+    // consistent way the ball comes loose.
+    public void ForceDropHeldBall()
+    {
+        if (ball == null) return;
+
+        Transform carrier = ball.transform.parent;
+        if (carrier == null) { SetPossession(null); return; }
+
+        IAgentBody body = carrier.GetComponent<IAgentBody>();
+        if (body != null) body.IsHolding = false;
+
+        PlayerMovement pm = carrier.GetComponent<PlayerMovement>();
+        if (pm != null) { pm.ReleaseBall(); return; } // detaches the ball + clears possession
+
+        // pure AI body: detach manually
+        ball.transform.SetParent(null);
+        ball.simulated = true;
+        ball.linearVelocity = Vector2.zero;
+        SetPossession(null);
+    }
 }

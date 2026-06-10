@@ -164,6 +164,16 @@ public class ExclusionManager : MonoBehaviour
                 endTime = Time.time + exclusionSeconds
             });
         }
+
+        if (EventFeed.Instance != null)
+            EventFeed.Instance.AddEvent("Exclusion - " + team.teamName);
+
+        // An exclusion by the DEFENDING team (the team without the ball) gives the
+        // attacking team a fresh shot clock.
+        MatchContext mc = MatchContext.Instance;
+        if (mc != null && mc.PossessingTeam != null && mc.PossessingTeam != team &&
+            ShotClock.Instance != null)
+            ShotClock.Instance.ResetClock();
     }
 
     void DropBallHeldBy(Transform agent)
@@ -215,6 +225,9 @@ public class ExclusionManager : MonoBehaviour
 
     void Forfeit(TeamSide losingTeam)
     {
+        if (EventFeed.Instance != null)
+            EventFeed.Instance.AddEvent("Forfeit - " + (losingTeam != null ? losingTeam.teamName : "?"));
+
         if (matchTimer == null) return;
         bool playerWins = losingTeam != playerTeam; // the OTHER team wins
         matchTimer.ForfeitMatch(playerWins);
