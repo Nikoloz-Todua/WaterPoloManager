@@ -77,6 +77,25 @@ public class MatchTimer : MonoBehaviour
         resultText.text = "FULL TIME\n" + outcome + "\n" + you + " - " + bot;
     }
 
+    // Force an immediate end (e.g. a forfeit from too many exclusions). Reuses the same
+    // freeze + result-reveal as the final whistle, but with a forced winner instead of
+    // the score-based decision.
+    public void ForfeitMatch(bool playerWins)
+    {
+        if (matchOver) return;
+        matchOver = true;
+        Time.timeScale = 0f;
+
+        if (resultText == null) return;
+
+        int you = scoreManager != null ? scoreManager.HomeScore : 0;
+        int bot = scoreManager != null ? scoreManager.AwayScore : 0;
+        string outcome = playerWins ? "YOU WIN" : "YOU LOSE";
+
+        resultText.gameObject.SetActive(true);
+        resultText.text = "FORFEIT\n" + outcome + "\n" + you + " - " + bot;
+    }
+
     void UpdateTimerText()
     {
         if (timerText == null) return;

@@ -32,7 +32,14 @@ public class TeammateAI : MonoBehaviour, IAgentBody
         self = GetComponent<PlayerMovement>();
     }
 
-    void FixedUpdate() { WaterPoloBrain.Tick(this, MatchContext.Instance); }
+    void FixedUpdate()
+    {
+        // Excluded → fully inert (frozen in the corner), brain does not run.
+        if (ExclusionManager.Instance != null && ExclusionManager.Instance.IsExcluded(transform))
+        { rb.linearVelocity = Vector2.zero; return; }
+
+        WaterPoloBrain.Tick(this, MatchContext.Instance);
+    }
     void LateUpdate()  { WaterPoloBrain.KeepHeldBall(this, MatchContext.Instance); }
 
     // ---- IAgentBody ----

@@ -64,6 +64,9 @@ public class PlayerMovement : MonoBehaviour
     private float lastStealTime = -10f;
     private bool stealConsumedSpace = false;
 
+    // True while this player is serving (or permanently out of) an exclusion → inert.
+    private bool Excluded => ExclusionManager.Instance != null && ExclusionManager.Instance.IsExcluded(transform);
+
     // Only one action charges at a time; whichever key was pressed first wins until released.
     private enum Charging { None, Shoot, Pass }
     private Charging chargeMode = Charging.None;
@@ -109,6 +112,17 @@ public class PlayerMovement : MonoBehaviour
         // the stale holding flag before anything reads it, so we don't stay green/aiming.
         if (isHolding && ball != null && ball.transform.parent != transform)
             isHolding = false;
+
+        // Excluded → fully inert: no control, charge, steal, or aim visuals.
+        if (Excluded)
+        {
+            input = Vector2.zero;
+            chargeMode = Charging.None; currentPower = 0f; passPower = 0f;
+            if (aimLine != null) aimLine.enabled = false;
+            if (powerBar != null) powerBar.enabled = false;
+            if (sprite != null) sprite.color = inactiveColor;
+            return;
+        }
 
         // No ball → nothing can be charging.
         if (!isHolding) { chargeMode = Charging.None; currentPower = 0f; passPower = 0f; }
@@ -192,6 +206,7 @@ public class PlayerMovement : MonoBehaviour
 
     void FixedUpdate()
     {
+        if (Excluded) { rb.linearVelocity = Vector2.zero; return; } // frozen in the corner
         if (!IsActive) return;
         float speed = isHolding ? holdMoveSpeed : moveSpeed;
         rb.linearVelocity = input * speed;
@@ -306,6 +321,17 @@ public class PlayerMovement : MonoBehaviour
 
             ctx.SetPossession(ctx.PlayerTeam);
         }
+        else if (ExclusionManager.Instance != null)
+        {
+            // failed steal = ordinary foul: carrier keeps the ball, we get locked out
+            ExclusionManager.Instance.ReportFoul(transform, ctx.PlayerTeam);
+        }
+    }
+
+    // Block this player's steal for `seconds` (called by ExclusionManager after a foul).
+    public void ApplyStealLockout(float seconds)
+    {
+        lastStealTime = Time.time + Mathf.Max(0f, seconds - stealCooldown);
     }
 
     void DropBall()

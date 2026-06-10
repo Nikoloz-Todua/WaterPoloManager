@@ -329,7 +329,13 @@ public static class WaterPoloBrain
             return false;
 
         a.NextStealTime = Time.time + StealCooldown;
-        if (Random.value > a.StealChance) return false;
+        if (Random.value > a.StealChance)
+        {
+            // failed steal = ordinary foul (carrier keeps the ball; offender locked out longer)
+            if (ExclusionManager.Instance != null)
+                ExclusionManager.Instance.ReportFoul(a.Tf, a.Team);
+            return false;
+        }
         IAgentBody holder = carrier.GetComponent<IAgentBody>();
         if (holder != null) holder.IsHolding = false;
         else { PlayerMovement pm = carrier.GetComponent<PlayerMovement>(); if (pm != null) pm.ReleaseBall(); }

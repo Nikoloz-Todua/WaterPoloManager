@@ -27,6 +27,13 @@ public class TeamManager : MonoBehaviour
             UpdateDefenseModeText();
         }
 
+        // 0) If the active player got excluded, hand control to a valid teammate.
+        if (IsExcludedIndex(activeIndex))
+        {
+            int v = NextValidIndex(activeIndex);
+            if (v != -1) SetActive(v);
+        }
+
         // 1) If one of my players holds the ball, control auto-follows to them.
         int holder = HolderIndex();
         if (holder != -1 && holder != activeIndex)
@@ -38,9 +45,28 @@ public class TeamManager : MonoBehaviour
         // 2) Manual switch (only useful when nobody on my team holds the ball).
         if (Input.GetKeyDown(KeyCode.C))
         {
-            int next = (activeIndex + 1) % players.Length;
-            SetActive(next);
+            int next = NextValidIndex(activeIndex);
+            if (next != -1) SetActive(next);
         }
+    }
+
+    bool IsExcludedIndex(int i)
+    {
+        return i >= 0 && i < players.Length && players[i] != null &&
+               ExclusionManager.Instance != null &&
+               ExclusionManager.Instance.IsExcluded(players[i].transform);
+    }
+
+    // Next selectable (non-null, non-excluded) player after `from`, or -1 if none.
+    int NextValidIndex(int from)
+    {
+        int n = players.Length;
+        for (int step = 1; step <= n; step++)
+        {
+            int idx = (from + step) % n;
+            if (players[idx] != null && !IsExcludedIndex(idx)) return idx;
+        }
+        return -1;
     }
 
     void UpdateDefenseModeText()
@@ -54,6 +80,7 @@ public class TeamManager : MonoBehaviour
     {
         for (int i = 0; i < players.Length; i++)
         {
+            if (IsExcludedIndex(i)) continue; // excluded players can't hold
             if (players[i] != null && players[i].IsHolding) return i;
             if (teammateAIs != null && i < teammateAIs.Length &&
                 teammateAIs[i] != null && teammateAIs[i].IsHolding) return i;
