@@ -20,6 +20,13 @@ public class MatchContext : MonoBehaviour
     // last time the ball was released (shot/passed/dropped); used for the grab cooldown
     private float lastReleaseTime = -10f;
 
+    // While true, all swimmers freeze (sprint-duel line-up/race, goal settle, etc).
+    public bool PlayFrozen { get; private set; }
+
+    // A team banned from grabbing the loose ball until the OTHER team touches it
+    // (shot-clock turnover). null = no ban.
+    public TeamSide GrabBannedTeam { get; private set; }
+
     public Vector2 BallPosition => ball != null ? ball.position : Vector2.zero;
     public Rigidbody2D Ball => ball;
     public TeamSide PlayerTeam => playerTeam;
@@ -35,8 +42,20 @@ public class MatchContext : MonoBehaviour
     public void SetPossession(TeamSide team)
     {
         PossessingTeam = team;
-        if (team == null) lastReleaseTime = Time.time; // ball was just released → start the cooldown
+        if (team == null) lastReleaseTime = Time.time;       // ball was just released → start the cooldown
+        else if (team != GrabBannedTeam) GrabBannedTeam = null; // the OTHER team got it → lift the turnover ban
     }
+
+    // ---- match-flow gates ----
+
+    public void FreezeAll() { PlayFrozen = true; }
+    public void Unfreeze()  { PlayFrozen = false; }
+
+    public void SetGrabBan(TeamSide team) { GrabBannedTeam = team; }
+    public void ClearGrabBan() { GrabBannedTeam = null; }
+
+    // A team may grab unless it is the one serving a turnover ban.
+    public bool CanGrab(TeamSide team) => GrabBannedTeam == null || team != GrabBannedTeam;
 
     public bool TeamHasBall(TeamSide team) => PossessingTeam == team;
     public bool BallIsLoose => PossessingTeam == null;
@@ -74,5 +93,41 @@ public class MatchContext : MonoBehaviour
         ball.simulated = true;
         ball.linearVelocity = Vector2.zero;
         SetPossession(null);
+    }
+
+    // Hand the ball to a specific holder (sprint-duel winner, kickoff centre). Reuses the
+    // player/AI hold mechanics so the ball is parented and possession set consistently.
+    public void GiveBallTo(Transform holder, TeamSide team)
+    {
+        if (ball == null || holder == null) return;
+
+        PlayerMovement pm = holder.GetComponent<PlayerMovement>();
+        if (pm != null) { pm.TakeOverHeldBall(); return; } // parents ball + sets PlayerTeam possession + isHolding
+
+        IAgentBody body = holder.GetComponent<IAgentBody>();
+        ball.simulated = false;
+        ball.linearVelocity = Vector2.zero;
+        ball.transform.SetParent(holder);
+        Vector2 dir = body != null ? body.LastDirection : Vector2.right;
+        float off = body != null ? body.HoldOffset : 0.6f;
+        ball.transform.localPosition = (Vector3)(dir * off);
+        if (body != null) body.IsHolding = true;
+        SetPossession(team);
+    }
+
+    // Halftime: swap both teams' attack/defend goals so they attack the opposite ends.
+    // Keepers (bound to their own physical goal transform) are unaffected.
+    public void SwapEnds()
+    {
+        SwapGoals(playerTeam);
+        SwapGoals(botTeam);
+    }
+
+    static void SwapGoals(TeamSide t)
+    {
+        if (t == null) return;
+        Transform tmp = t.attackGoal;
+        t.attackGoal = t.defendGoal;
+        t.defendGoal = tmp;
     }
 }

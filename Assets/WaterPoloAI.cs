@@ -71,8 +71,9 @@ public static class WaterPoloBrain
 
         if (a.IsHolding) { Carry(a, ctx); return; }
 
-        // Collect a genuinely loose ball within reach (cooldown stops snatch-backs).
-        if (ctx.BallGrabbable &&
+        // Collect a genuinely loose ball within reach (cooldown stops snatch-backs;
+        // CanGrab enforces the shot-clock turnover ban on the violating team).
+        if (ctx.BallGrabbable && ctx.CanGrab(a.Team) &&
             Vector2.Distance(a.Body.position, ctx.BallPosition) <= a.GrabDistance)
         {
             Grab(a, ctx);

@@ -33,11 +33,19 @@ public class MatchTimer : MonoBehaviour
         if (resultText != null) resultText.gameObject.SetActive(false);
         UpdateQuarterText();
         UpdateTimerText();
+
+        // Q1 begins with a sprint duel (the duel freezes play; the clock waits below).
+        if (SprintDuel.Instance != null) SprintDuel.Instance.StartDuel();
     }
 
     void Update()
     {
         if (matchOver) return;
+
+        // The quarter clock is paused while play is frozen (sprint duel line-up/race,
+        // post-goal settle), so the timer only drains during live play.
+        MatchContext ctx = MatchContext.Instance;
+        if (ctx != null && ctx.PlayFrozen) { UpdateTimerText(); return; }
 
         timeLeft -= Time.deltaTime;
 
@@ -52,10 +60,20 @@ public class MatchTimer : MonoBehaviour
                 return;
             }
 
-            // otherwise roll into the next quarter (play continues, no stoppage)
+            // roll into the next quarter
             currentQuarter++;
             timeLeft = quarterLength;
             UpdateQuarterText();
+
+            // halftime (after the middle quarter): swap ends so both attack the other way
+            if (ctx != null && currentQuarter == totalQuarters / 2 + 1)
+            {
+                ctx.SwapEnds();
+                if (EventFeed.Instance != null) EventFeed.Instance.AddEvent("Halftime - ends switched");
+            }
+
+            // every quarter restarts through the sprint duel (not an instant continue)
+            if (SprintDuel.Instance != null) SprintDuel.Instance.StartDuel();
         }
 
         UpdateTimerText();

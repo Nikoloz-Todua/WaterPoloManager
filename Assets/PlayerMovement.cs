@@ -113,6 +113,16 @@ public class PlayerMovement : MonoBehaviour
         if (isHolding && ball != null && ball.transform.parent != transform)
             isHolding = false;
 
+        // Play frozen (sprint duel / goal settle) → no control, charge, steal, or aim.
+        if (MatchContext.Instance != null && MatchContext.Instance.PlayFrozen)
+        {
+            input = Vector2.zero;
+            chargeMode = Charging.None; currentPower = 0f; passPower = 0f;
+            if (aimLine != null) aimLine.enabled = false;
+            if (powerBar != null) powerBar.enabled = false;
+            return;
+        }
+
         // Excluded → fully inert: no control, charge, steal, or aim visuals.
         if (Excluded)
         {
@@ -206,6 +216,8 @@ public class PlayerMovement : MonoBehaviour
 
     void FixedUpdate()
     {
+        if (MatchContext.Instance != null && MatchContext.Instance.PlayFrozen)
+        { rb.linearVelocity = Vector2.zero; return; } // frozen during duel / goal settle
         if (Excluded) { rb.linearVelocity = Vector2.zero; return; } // frozen in the corner
         if (!IsActive) return;
         float speed = isHolding ? holdMoveSpeed : moveSpeed;
@@ -259,7 +271,9 @@ public class PlayerMovement : MonoBehaviour
     void TryGrabBall()
     {
         if (ball == null) return;
-        if (MatchContext.Instance != null && !MatchContext.Instance.BallGrabbable) return;
+        MatchContext ctx = MatchContext.Instance;
+        // loose + past cooldown + not under a shot-clock turnover ban
+        if (ctx != null && (!ctx.BallGrabbable || !ctx.CanGrab(ctx.PlayerTeam))) return;
 
         if (Vector2.Distance(transform.position, ball.position) <= grabDistance)
         {

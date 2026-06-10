@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using TMPro;
 
@@ -7,9 +8,10 @@ public class ScoreManager : MonoBehaviour
     [SerializeField] private TMP_Text scoreText;
     [SerializeField] private TeamSide playerTeam;
     [SerializeField] private TeamSide botTeam;
+    [SerializeField] private float goalFreezeSeconds = 1f; // settle pause after a goal
 
-    private int homeScore = 0; // YOU (attack the RIGHT goal)
-    private int awayScore = 0; // BOT (attacks the LEFT goal)
+    private int homeScore = 0; // YOU  (= playerTeam)
+    private int awayScore = 0; // BOT  (= botTeam)
 
     // public read-only access for other systems (e.g. MatchTimer's win condition)
     public int HomeScore => homeScore;
@@ -18,29 +20,83 @@ public class ScoreManager : MonoBehaviour
     void Start()
     {
         UpdateText();
-        ResetKickoff(); // clean opening shape
+        // The opening is normally the Q1 sprint duel; only do a plain kickoff if there's
+        // no SprintDuel in the scene.
+        if (SprintDuel.Instance == null) ResetKickoff();
     }
 
     // called by a goal when the ball enters it
     public void BallEnteredGoal(string goalSide)
     {
-        if (goalSide == "Right")      // ball went into the right net = YOU scored
-            homeScore++;
-        else if (goalSide == "Left")  // ball went into the left net = BOT scored
-            awayScore++;
+        // Credit the team ATTACKING that physical net (so scoring survives the halftime
+        // side-swap — no hardcoded Right=YOU assumption).
+        float netSign = goalSide == "Right" ? 1f : -1f;
+        TeamSide scorer = TeamAttacking(netSign);
+
+        if (scorer == playerTeam) homeScore++;
+        else if (scorer == botTeam) awayScore++;
 
         UpdateText();
 
         if (EventFeed.Instance != null)
-            EventFeed.Instance.AddEvent("Goal - " + (goalSide == "Right" ? "YOU" : "BOT"));
-        if (ShotClock.Instance != null)
-            ShotClock.Instance.ResetClock(); // a shot hit the goal → fresh clock
+            EventFeed.Instance.AddEvent("Goal - " + (scorer == playerTeam ? "YOU" : "BOT"));
 
-        ResetKickoff();
+        // The team that CONCEDED restarts with possession.
+        TeamSide conceding = (scorer == playerTeam) ? botTeam : playerTeam;
+        RestartAfterGoal(conceding);
     }
 
-    // Reset the ball to centre AND spread both teams back to their home shapes,
-    // so players don't stay bunched after a goal.
+    // Which team currently attacks the net on the given side (+1 = Right, -1 = Left).
+    TeamSide TeamAttacking(float netSign)
+    {
+        if (playerTeam != null && playerTeam.attackGoal != null &&
+            Mathf.Sign(playerTeam.attackGoal.position.x) == netSign) return playerTeam;
+        if (botTeam != null && botTeam.attackGoal != null &&
+            Mathf.Sign(botTeam.attackGoal.position.x) == netSign) return botTeam;
+        return null;
+    }
+
+    // Conceding team's centre holds the ball at centre; everyone else snaps home; brief
+    // settle freeze; then play + shot clock resume.
+    void RestartAfterGoal(TeamSide concedingTeam)
+    {
+        MatchContext ctx = MatchContext.Instance;
+
+        ResetBall();
+        if (ctx != null) { ctx.SetPossession(null); ctx.ClearGrabBan(); }
+
+        if (playerTeam != null) playerTeam.SnapToKickoffFormation();
+        if (botTeam != null) botTeam.SnapToKickoffFormation();
+
+        Transform center = FirstMember(concedingTeam);
+        if (center != null && ctx != null)
+        {
+            center.position = new Vector3(0f, 0f, center.position.z);
+            ctx.GiveBallTo(center, concedingTeam);
+        }
+
+        if (ctx != null) ctx.FreezeAll();
+        StopAllCoroutines();
+        StartCoroutine(ResumeAfterGoal());
+    }
+
+    IEnumerator ResumeAfterGoal()
+    {
+        yield return new WaitForSeconds(goalFreezeSeconds);
+        MatchContext ctx = MatchContext.Instance;
+        if (ctx != null) ctx.Unfreeze();
+        if (ShotClock.Instance != null) ShotClock.Instance.ResetClock(); // fresh clock as play resumes
+    }
+
+    Transform FirstMember(TeamSide team)
+    {
+        if (team == null || team.members == null) return null;
+        foreach (Transform m in team.members)
+            if (m != null) return m; // excluded members are null → first available
+        return null;
+    }
+
+    // Plain kickoff (fallback opening when there's no SprintDuel).
     void ResetKickoff()
     {
         ResetBall();

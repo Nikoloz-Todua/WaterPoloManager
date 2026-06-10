@@ -27,11 +27,16 @@ public class BotMovement : MonoBehaviour, IAgentBody
 
     void FixedUpdate()
     {
+        MatchContext ctx = MatchContext.Instance;
+
+        // Play frozen (sprint duel / goal settle) → inert. Sprinters are moved by SprintDuel.
+        if (ctx != null && ctx.PlayFrozen) { rb.linearVelocity = Vector2.zero; return; }
+
         // Excluded → fully inert (frozen in the corner), brain does not run.
         if (ExclusionManager.Instance != null && ExclusionManager.Instance.IsExcluded(transform))
         { rb.linearVelocity = Vector2.zero; return; }
 
-        WaterPoloBrain.Tick(this, MatchContext.Instance);
+        WaterPoloBrain.Tick(this, ctx);
     }
     void LateUpdate()  { WaterPoloBrain.KeepHeldBall(this, MatchContext.Instance); }
 

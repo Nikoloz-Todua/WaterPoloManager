@@ -41,8 +41,8 @@ public class ShotClock : MonoBehaviour
         MatchContext ctx = MatchContext.Instance;
         if (ctx == null) return;
 
-        // Paused when the match is over.
-        if (matchTimer != null && matchTimer.MatchOver) { UpdateDisplay(); return; }
+        // Paused when the match is over or while play is frozen (sprint duel / goal settle).
+        if ((matchTimer != null && matchTimer.MatchOver) || ctx.PlayFrozen) { UpdateDisplay(); return; }
 
         TeamSide cur = ctx.PossessingTeam;
 
@@ -72,12 +72,15 @@ public class ShotClock : MonoBehaviour
         UpdateDisplay();
     }
 
-    // Shot-clock violation: the possessing team loses the ball.
+    // Shot-clock violation: the possessing team loses the ball and can't re-grab it
+    // until the other team has had it.
     void Turnover(MatchContext ctx)
     {
-        ctx.ForceDropHeldBall();   // reuse the shared drop/release path; ball goes loose
+        TeamSide violator = ctx.PossessingTeam;
+        ctx.ForceDropHeldBall();             // reuse the shared drop/release path; ball goes loose
+        if (violator != null) ctx.SetGrabBan(violator);
         if (EventFeed.Instance != null) EventFeed.Instance.AddEvent("Shot clock - turnover");
-        timeLeft = shotClockSeconds; // ball is now loose → next frame pauses until re-grabbed
+        timeLeft = shotClockSeconds;         // ball is now loose → next frame pauses until re-grabbed
     }
 
     void UpdateDisplay()
