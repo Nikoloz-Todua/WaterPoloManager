@@ -79,6 +79,8 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 | `PlayerAnimator.cs` | Drives Animator for the human player. Reads speed from Rigidbody2D, IsHolding from PlayerMovement. Fires IsShooting trigger on fast release, IsStealing trigger on every grab attempt. Flips SpriteRenderer horizontally based on velocity.x. Defend animation triggers only when enemy carrier is within 1.5 units. |
 | `BotAnimator.cs` | Drives Animator for AI bots. Reads state via IAgentBody. Same steal/defend/flip logic as PlayerAnimator. Reads isBlueTeam from BotMovement and swaps Animator controller to BlueAnimation.controller at Awake() if true. |
 | `AnimationClipBuilder.cs` | Editor tool (Tools menu). Builds 7 animation clips (idle/swim/sprint/hold/throw/defend/steal) from sliced sprite sheets, assigns them to the Animator controller states, and wires all transitions. Two menu items: Tools/Build Water Polo Animations (red) and Tools/Build Blue Team Animations (blue). Creates BlueAnimation.controller programmatically if missing. |
+| `GoalkeeperAnimator.cs` | Drives Animator on KeeperLeft and KeeperRight. Reads ball velocity and position from MatchContext to compute DiveState (0–7): idle, dive left/right, dive bottom-left/right, dive top-left/right, save. Single integer Animator parameter DiveState. SpriteRenderer flipX set in Awake based on keeper side. Shot height placeholder (0.5 = mid) ready for future height-zone system. |
+| `GoalkeeperAnimationBuilder.cs` | Editor tool (Tools → Build Goalkeeper Animations). Builds 8 animation clips from goalkeeper_sheet.png frames, assigns them to GoalkeeperAnimation.controller states, wires DiveState int parameter and Any State transitions. Idempotent. |
 
 **Architecture rule for any AI:** keep `TeamSide` + `MatchContext` + `WaterPoloBrain`. It is roster-size-agnostic by design. To scale teams: add player/bot objects, drop them into the team `members` arrays + TeamManager arrays; formation & AI scale automatically.
 
@@ -172,7 +174,8 @@ Filter Mode: Bilinear, Max Size: 4096
 **Known remaining issues (fix later):**
 - Sprint animation not triggering correctly in all cases (IsSprinting threshold tuning needed)
 - Idle/swim sprite size inconsistency (swim sprites slightly smaller — art fix needed in ChatGPT)
-- Goalkeeper animations not yet built
+
+Goalkeeper animations: COMPLETE. goalkeeper_sheet.png (8 frames: idle, dive left/right, dive bottom-left/right, dive top-left/right, save). GoalkeeperAnimation.controller with DiveState integer parameter. GoalkeeperAnimator.cs on both KeeperLeft and KeeperRight.
 
 ## A8. Pool Visual (COMPLETE)
 
@@ -424,6 +427,5 @@ Also now 🟡 **WORKING (first pass — improve later, not 100% done):**
   (1) Pool lane lines (2m/5m markings as sprite overlay),
   (2) Player number labels above heads (TextMesh Pro),
   (3) Touch controls (B16.3) — biggest remaining gameplay feature,
-  (4) Goalkeeper animations,
-  (5) HUD improvements (B16.6).
+  (4) HUD improvements (B16.6).
   Everything in Part B tagged ⬜ is future.
