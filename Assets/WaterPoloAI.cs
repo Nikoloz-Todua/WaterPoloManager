@@ -62,6 +62,7 @@ public static class WaterPoloBrain
     const float SettleDelay = 0.4f;     // must hold the ball this long before shooting
     const float StealCooldown = 0.6f;   // min time between steal attempts
     const float StealFacingDot = 0.3f;  // stealer must be within ~70° of the carrier's front
+    const float LobInterceptFactor = 0.4f; // enemy lob in flight: steal chance reduced by 60%
     const float IdleDriftFraction = 0.2f; // idle float speed as a fraction of move speed
     const float IdleRadius = 0.35f;       // how far the idle bob point sits from the spot
     const float IdleFreq = 1.2f;          // idle bob speed (rad/s)
@@ -117,13 +118,12 @@ public static class WaterPoloBrain
         }
 
         // Collect a genuinely loose ball within reach (cooldown stops snatch-backs;
-        // CanGrab enforces the shot-clock turnover ban on the violating team).
+        // CanGrab enforces the shot-clock turnover ban on the violating team). An enemy
+        // HIGH LOB in flight is hard to pick off — reduced-chance roll inside.
         if (ctx.BallGrabbable && ctx.CanGrab(a.Team) &&
-            Vector2.Distance(a.Body.position, ctx.BallPosition) <= a.GrabDistance)
-        {
-            Grab(a, ctx);
+            Vector2.Distance(a.Body.position, ctx.BallPosition) <= a.GrabDistance &&
+            TryCollectLoose(a, ctx))
             return;
-        }
 
         TeamSide enemy = ctx.EnemyOf(a.Team);
 
@@ -724,6 +724,25 @@ public static class WaterPoloBrain
     }
 
     // ---- ball handling ----
+
+    // Grab the loose ball — unless it's an ENEMY lob mid-flight (F+B high pass),
+    // which takes a reduced steal roll (StealChance × LobInterceptFactor, with the
+    // normal steal cooldown between tries). The lobbing team's own receivers collect
+    // it normally. Returns true if the ball was collected; false = it sails on.
+    static bool TryCollectLoose(IAgentBody a, MatchContext ctx)
+    {
+        BallFlight flight = BallFlight.Instance;
+        bool enemyLob = flight != null && flight.LobActive &&
+                        flight.LobTeam != null && flight.LobTeam != a.Team;
+        if (!enemyLob) { Grab(a, ctx); return true; }
+
+        if (Time.time < a.NextStealTime) return false; // just missed it → no instant re-try
+        a.NextStealTime = Time.time + StealCooldown;
+        NotifyStealAttempt(a.Tf); // visible snatch at the high ball, hit or miss
+        if (Random.value <= a.StealChance * LobInterceptFactor) { Grab(a, ctx); return true; }
+        return false; // the ball sails over the outstretched arm
+    }
+
     static void Grab(IAgentBody a, MatchContext ctx)
     {
         a.IsHolding = true;

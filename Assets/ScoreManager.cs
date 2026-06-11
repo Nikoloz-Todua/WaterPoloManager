@@ -7,7 +7,8 @@ public class ScoreManager : MonoBehaviour
     public static ScoreManager Instance { get; private set; }
 
     [SerializeField] private Rigidbody2D ball;
-    [SerializeField] private TMP_Text scoreText;
+    [SerializeField] private TMP_Text playerScoreText;
+    [SerializeField] private TMP_Text botScoreText;
     [SerializeField] private TeamSide playerTeam;
     [SerializeField] private TeamSide botTeam;
     [SerializeField] private float goalFreezeSeconds = 1f; // settle pause after a goal
@@ -132,7 +133,7 @@ public class ScoreManager : MonoBehaviour
 
     void UpdateText()
     {
-        if (scoreText != null)
-            scoreText.text = "YOU  " + homeScore + "  -  " + awayScore + "  BOT";
+        if (playerScoreText != null) playerScoreText.text = homeScore.ToString();
+        if (botScoreText != null) botScoreText.text = awayScore.ToString();
     }
 }

@@ -28,11 +28,6 @@ public class GoalkeeperAnimator : MonoBehaviour
     [Tooltip("Ball Y within this of the keeper Y = coming straight at us → keep tracking, no dive.")]
     [SerializeField] private float midBandY = 0.5f;
 
-    [Header("Shot height (placeholder — real height logic hooks in later)")]
-    [Range(0f, 1f)]
-    [Tooltip("0..1: below 0.3 = low dive, above 0.7 = high dive, otherwise mid.")]
-    [SerializeField] private float shotHeight = 0.5f;
-
     private static readonly int DiveStateId = Animator.StringToHash("DiveState");
 
     private Animator animator;
@@ -76,8 +71,26 @@ public class GoalkeeperAnimator : MonoBehaviour
         bool facingRight = transform.position.x < 0f;
         bool diveLeft = facingRight ? dy > 0f : dy < 0f;
 
+        // a skip shot that fooled us at its bounce → stuck in the MID dive, no reaction
+        if (BallFlight.Instance != null && BallFlight.Instance.KeeperFooled)
+            return diveLeft ? StateDiveLeft : StateDiveRight;
+
+        float shotHeight = ShotHeightForFlight(ctx);
         if (shotHeight < 0.3f) return diveLeft ? StateDiveBottomLeft : StateDiveBottomRight;
         if (shotHeight > 0.7f) return diveLeft ? StateDiveTopLeft : StateDiveTopRight;
         return diveLeft ? StateDiveLeft : StateDiveRight;
+    }
+
+    // Height (0..1) of the current flight, read from the last releaser's charged
+    // PlayerMovement.ShotHeight (low < 0.3, high > 0.7). AI shots have no height
+    // system yet → 0.5 (mid dive).
+    static float ShotHeightForFlight(MatchContext ctx)
+    {
+        if (ctx != null && ctx.LastReleaser != null)
+        {
+            PlayerMovement pm = ctx.LastReleaser.GetComponent<PlayerMovement>();
+            if (pm != null) return pm.ShotHeight;
+        }
+        return 0.5f;
     }
 }

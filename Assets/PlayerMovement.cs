@@ -15,12 +15,15 @@ public class PlayerMovement : MonoBehaviour
     [Header("Shooting")]
     [SerializeField] private float maxShootPower = 12f;
     [SerializeField] private float chargeRate = 8f;
+    [SerializeField] private float highShotSpeedBonus = 1.15f; // height > 0.7 → shot flies this much faster
+    [SerializeField] private float skipShotHeight = 0.15f;     // Q+Space skip shot is locked to this LOW height
 
     [Header("Passing")]
     [SerializeField] private float passFactor = 2.5f; // (legacy; pass speed is charge-based now)
     [SerializeField] private float minPassSpeed = 6f;
     [SerializeField] private float maxPassSpeed = 13f;
     [SerializeField] private float passChargeRate = 1.5f; // pass charge gained per second (0..1)
+    [SerializeField] private float lobSpeedFactor = 0.7f; // F+B lob travels at this fraction of pass speed
     private const float PassConeDot = 0.3f;               // teammate must be within this forward cone
 
     [Header("Stealing")]
@@ -58,6 +61,11 @@ public class PlayerMovement : MonoBehaviour
     public bool IsHolding => isHolding;
     public Vector2 Facing => lastDirection;
 
+    // 0..1, charged in lock-step with shot power (0–0.3 low, 0.3–0.7 mid, 0.7–1 high).
+    // Keeps the LAST shot's value through its flight — Goalkeeper/GoalkeeperAnimator
+    // read it via MatchContext.LastReleaser to pick the dive tier.
+    public float ShotHeight => shotHeight;
+
     // True while the carrier sprints WITH the ball (Shift held + holding): the hold is
     // "loose" — opponents get 2x steal range and a success bonus (read by WaterPoloBrain).
     // The ball is NOT dropped. Resets the moment Shift is released.
@@ -70,6 +78,8 @@ public class PlayerMovement : MonoBehaviour
     private Vector2 input;
     private Vector2 lastDirection = Vector2.up;
     private float currentPower = 0f;        // shoot charge (0..maxShootPower)
+    private float shotHeight = 0.5f;        // see ShotHeight
+    private bool skipCharge = false;        // Q held during the shot charge → skip shot
     private float passPower = 0f;           // pass charge (0..1)
     private bool isHolding = false;
     private float lastStealTime = -10f;
@@ -88,6 +98,10 @@ public class PlayerMovement : MonoBehaviour
     {
         rb = GetComponent<Rigidbody2D>();
         playerAnimator = GetComponent<PlayerAnimator>();
+
+        // flight effects (skip bounce, lob shadow) live on the Ball — first Awake adds them
+        if (ball != null && ball.GetComponent<BallFlight>() == null)
+            ball.gameObject.AddComponent<BallFlight>();
 
         // Configure the existing LineRenderer to draw a soft chevron.
         if (aimLine != null)
@@ -184,11 +198,14 @@ public class PlayerMovement : MonoBehaviour
 
                 input = Vector2.zero; // planted on the penalty spot — aiming only
                 if (chargeMode == Charging.None && Input.GetKeyDown(KeyCode.Space))
-                    chargeMode = Charging.Shoot;
+                { chargeMode = Charging.Shoot; skipCharge = Input.GetKey(KeyCode.Q); }
                 if (chargeMode == Charging.Shoot)
                 {
                     if (Input.GetKey(KeyCode.Space))
+                    {
                         currentPower = Mathf.Min(currentPower + chargeRate * Time.deltaTime, maxShootPower);
+                        ChargeHeight();
+                    }
                     if (Input.GetKeyUp(KeyCode.Space))
                     {
                         Shoot();
@@ -263,14 +280,17 @@ public class PlayerMovement : MonoBehaviour
                 // Start a charge on key-down only if nothing else is already charging.
                 // Space is blocked while a steal consumed this press.
                 if (chargeMode == Charging.None && !stealConsumedSpace && Input.GetKeyDown(KeyCode.Space))
-                    chargeMode = Charging.Shoot;
+                { chargeMode = Charging.Shoot; skipCharge = Input.GetKey(KeyCode.Q); }
                 else if (chargeMode == Charging.None && Input.GetKeyDown(KeyCode.B))
                     chargeMode = Charging.Pass;
 
                 if (chargeMode == Charging.Shoot)
                 {
                     if (Input.GetKey(KeyCode.Space))
+                    {
                         currentPower = Mathf.Min(currentPower + chargeRate * Time.deltaTime, maxShootPower);
+                        ChargeHeight();
+                    }
 
                     if (Input.GetKeyUp(KeyCode.Space))
                     {
@@ -482,13 +502,32 @@ public class PlayerMovement : MonoBehaviour
             MatchContext.Instance.SetPossession(null);
     }
 
+    // Height charges in lock-step with power: the same hold that fills the bar raises
+    // the shot from low (0–0.3) through mid to high (0.7–1). Q at any point during
+    // the charge turns it into a skip shot.
+    void ChargeHeight()
+    {
+        shotHeight = maxShootPower > 0f ? currentPower / maxShootPower : 0.5f;
+        if (Input.GetKey(KeyCode.Q)) skipCharge = true;
+    }
+
     void Shoot()
     {
         if (ball == null) return;
         isHolding = false;
         ball.transform.SetParent(null);
         ball.simulated = true;
-        ball.linearVelocity = lastDirection * currentPower;
+
+        bool skip = skipCharge;
+        skipCharge = false;
+        if (skip) shotHeight = skipShotHeight; // a skip shot is fast and LOW by definition
+
+        float speed = currentPower;
+        if (!skip && shotHeight > 0.7f) speed *= highShotSpeedBonus; // high shots fly faster
+        ball.linearVelocity = lastDirection * speed;
+
+        if (BallFlight.Instance != null)
+            BallFlight.Instance.NoteShot(shotHeight, skip); // arms the bounce for a skip
 
         if (MatchContext.Instance != null)
         {
@@ -518,7 +557,18 @@ public class PlayerMovement : MonoBehaviour
         ball.simulated = true;
         float speed = Mathf.Clamp(Mathf.Lerp(minPassSpeed, maxPassSpeed, Mathf.Clamp01(charge)),
                                   minPassSpeed, maxPassSpeed);
+
+        // F+B = HIGH LOB: slower flight, ball arcs overhead with a water shadow
+        // (BallFlight), and AI interception is gated to a reduced roll (WaterPoloBrain).
+        bool lob = Input.GetKey(KeyCode.F);
+        if (lob) speed *= lobSpeedFactor;
         ball.linearVelocity = dir * speed;
+        shotHeight = lob ? 0.9f : 0.5f; // a pass overwrites LastReleaser → keep its height honest
+        if (lob && BallFlight.Instance != null)
+        {
+            float dist = Vector2.Distance(transform.position, target.position);
+            BallFlight.Instance.NoteLob(MatchContext.Instance.PlayerTeam, dist, speed);
+        }
 
         MatchContext.Instance.NoteRelease(transform);
         MatchContext.Instance.SetPossession(null);

@@ -374,6 +374,11 @@ Also now 🟡 **WORKING (first pass — improve later, not 100% done):**
 - **Hand button ✋** — tap: pick ball up to hands; hold: water-polo hand movements; then A to shoot; single tap: release.
 - **Joystick (bottom-right)** — 360° move; directs pass/shot aim via under-player arrow.
 - **Swipes** — up = special evasion (pump fake/shoulder turn); down = different (reverse pivot); success = attacker rating vs defender rating; fail risks losing ball.
+- **🟡 IN PROGRESS — planned shot/pass upgrades:**
+  - **Charged shot** — hold Space = power + height; max charge = high shot, harder to block.
+  - **Skip/bounce shot** — hold modifier key + Space.
+  - **High lob pass** — hold pass key longer = high arc pass with shadow, harder to intercept.
+  - **Block animation upgrade** — defending pose changes to one-arm raised block.
 
 ### B16.4 Camera & Visibility 🟡 PARTIAL (2D top-down + directional chevron done; player names not yet)
 - Dream-League-style overhead angled; faces not clear in play. Name above each player; directional arrow below showing heading. *(A directional chevron indicator under the active player is built ✅; player-name labels still TODO.)*
@@ -412,6 +417,7 @@ Also now 🟡 **WORKING (first pass — improve later, not 100% done):**
 ## B17. Art & Character Notes 🟡 (basic sprite animation DONE & working in-engine; full art still a later phase)
 - **Visual Pass 1 COMPLETE:** 7-state animation system fully working in-engine for both red and blue teams. Red team: PlayerAnimation.controller on Player1–6. Blue team: BlueAnimation.controller on Bot1–6, blue cap sprites in BlueTeam folder. AnimationClipBuilder editor tool builds and wires everything (Tools menu). Steal animation fires on every grab attempt. Defend animation proximity-gated (1.5 units). Sprint mechanic with loose-hold strip bonus. SpriteRenderer horizontal flipping. **Remaining art:** goalkeeper animations; scale consistency between idle and swim/sprint sprites; 15 total animation states planned (7 done).
 - Believable body types/faces. In live play faces not detailed (Dream-League style). Goal replays use close-up → detailed faces matter there. **2D approach:** small simple sprites in-match; higher-detail 2D portraits for cards/managers/replays/celebrations. Art is deliberately deferred until gameplay is locked. (Old SceneKit/3D-mesh/GLTF notes are obsolete — this is a 2D Unity game.)
+- **Skeletal animation** (Unity 2D Animation package, free) planned for goal celebrations, player portrait cards, manager animations, special move sequences. Developer will animate manually for full control. Status: 🟡 planned, not started.
 
 ---
 
@@ -424,8 +430,8 @@ Also now 🟡 **WORKING (first pass — improve later, not 100% done):**
 - Nikoloz has **Claude Code in VS Code** — big multi-file AI work goes there; single-file features + guidance happen in chat.
 - Commit routine: `git add . && git commit -m "..." && git push`. GitHub: https://github.com/Nikoloz-Todua
 - Current focus: Visual Pass 1 complete (A7), pool water background complete (A8). Next priorities:
-  (1) Pool lane lines (2m/5m markings as sprite overlay),
-  (2) Player number labels above heads (TextMesh Pro),
-  (3) Touch controls (B16.3) — biggest remaining gameplay feature,
-  (4) HUD improvements (B16.6).
+  (1) charged shot height system,
+  (2) skip shot,
+  (3) high lob pass with arc shadow,
+  (4) touch controls (B16.3).
   Everything in Part B tagged ⬜ is future.

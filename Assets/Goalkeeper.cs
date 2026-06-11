@@ -16,6 +16,10 @@ public class Goalkeeper : MonoBehaviour
     [SerializeField] private float minY = -2f;
     [SerializeField] private float maxY = 2f;
 
+    [Header("Shot reaction")]
+    [SerializeField] private float shotSpeedThreshold = 4f;      // loose ball faster than this = a shot
+    [SerializeField] private float highShotReactionDelay = 0.2f; // extra freeze vs a HIGH (charge > 0.7) shot
+
     [Header("Grab & control (Part 1)")]
     [SerializeField] private float keeperGrabDistance = 1.2f;  // collect a loose ball within this
     [SerializeField] private float keeperGrabMaxSpeed = 3f;    // ...only if it's moving slower than this
@@ -26,6 +30,8 @@ public class Goalkeeper : MonoBehaviour
     private Rigidbody2D rb;
     private bool holding;
     private float holdStartTime;
+    private bool shotIncoming;              // edge-detects a NEW incoming shot
+    private float reactBlockedUntil = -10f; // high-shot reaction-delay window
 
     void Awake() { rb = GetComponent<Rigidbody2D>(); }
 
@@ -62,11 +68,31 @@ public class Goalkeeper : MonoBehaviour
 
         if (holding) { HoldTick(ctx); return; }
 
-        // track the ball along the goal line (only y → never crosses the midline)
-        float targetY = Mathf.Clamp(ball.position.y, minY, maxY);
-        Vector2 pos = rb.position;
-        pos.y = Mathf.MoveTowards(pos.y, targetY, trackSpeed * Time.fixedDeltaTime);
-        rb.MovePosition(pos);
+        // Edge-detect a NEW incoming shot (loose + fast + toward our side). A HIGH shot
+        // (charged past 0.7) freezes our reaction for an extra beat — harder to block.
+        bool incoming = ctx != null && ctx.BallIsLoose &&
+                        ball.linearVelocity.magnitude > shotSpeedThreshold &&
+                        ball.linearVelocity.x * Mathf.Sign(transform.position.x) > 0f;
+        if (incoming && !shotIncoming)
+        {
+            shotIncoming = true;
+            if (IncomingShotHeight(ctx) > 0.7f)
+                reactBlockedUntil = Time.time + highShotReactionDelay;
+        }
+        else if (!incoming) shotIncoming = false;
+
+        // A skip shot that fooled us at its bounce (BallFlight) stops our tracking too —
+        // we hold the line where we are and don't react to the deflection.
+        bool fooled = incoming && BallFlight.Instance != null && BallFlight.Instance.KeeperFooled;
+
+        if (Time.time >= reactBlockedUntil && !fooled)
+        {
+            // track the ball along the goal line (only y → never crosses the midline)
+            float targetY = Mathf.Clamp(ball.position.y, minY, maxY);
+            Vector2 pos = rb.position;
+            pos.y = Mathf.MoveTowards(pos.y, targetY, trackSpeed * Time.fixedDeltaTime);
+            rb.MovePosition(pos);
+        }
 
         // collect a slow, loose, nearby ball
         TeamSide team = KeeperTeam();
@@ -76,6 +102,18 @@ public class Goalkeeper : MonoBehaviour
         {
             Grab(ctx, team);
         }
+    }
+
+    // Height (0..1) of the ball's current flight: the last releaser's charged ShotHeight
+    // (human shots). AI swimmers have no height system yet → 0.5 (mid).
+    static float IncomingShotHeight(MatchContext ctx)
+    {
+        if (ctx != null && ctx.LastReleaser != null)
+        {
+            PlayerMovement pm = ctx.LastReleaser.GetComponent<PlayerMovement>();
+            if (pm != null) return pm.ShotHeight;
+        }
+        return 0.5f;
     }
 
     void HoldTick(MatchContext ctx)
