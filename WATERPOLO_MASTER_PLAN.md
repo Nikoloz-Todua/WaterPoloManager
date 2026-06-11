@@ -23,7 +23,7 @@
 
 A **2D top-down water polo game** in **Unity 6 (6000.4.7f1), C#**, targeting **Android + iOS** (later). Originally conceived as a 3D Dream-League-style game; **retargeted to 2D** for solo-dev scope and hardware. Built brick-by-brick with step-by-step guidance.
 
-**Current state: a working 6v6 match with full defensive AI and a complete Visual Pass 1 animation system.** Core gameplay works (role-based positioning, marking, dynamic mark-switching, press/zone toggle, sprint mechanic, steal animation, proximity-based defend animation); menus/economy/career not built yet.
+**Current state: a working 6v6 match with full defensive AI and a complete Visual Pass 1 animation system.** Core gameplay works (role-based positioning, marking, dynamic mark-switching, press/zone toggle, sprint mechanic, steal animation, proximity-based defend animation); menus/economy/career not built yet. Animated pool water background working via custom URP shader (WaterScroll.shader) and WaterScroller.cs script.
 
 ## A2. Developer & environment
 
@@ -174,7 +174,27 @@ Filter Mode: Bilinear, Max Size: 4096
 - Idle/swim sprite size inconsistency (swim sprites slightly smaller — art fix needed in ChatGPT)
 - Goalkeeper animations not yet built
 
-## A8. Controls (keyboard — for PC testing; touch comes later)
+## A8. Pool Visual (COMPLETE)
+
+**Water background:**
+- Pool GameObject has animated water texture via custom shader
+- Assets/Shaders/WaterScroll.shader — custom unlit URP shader
+  with _ScrollOffset property for UV scrolling
+- Assets/WaterScroller.cs — scrolls texture diagonally each frame
+  using MaterialPropertyBlock, wraps with Mathf.Repeat
+- Material: Assets/WaterScrollMat — uses WaterScroll shader
+- Texture: Assets/Sprites/Pool/water_sheet.png
+  Wrap Mode: Repeat, Mesh Type: Full Rect
+- Speed tunable via ScrollX/ScrollY fields on WaterScroller component
+- Pool Sprite Renderer: Draw Mode Tiled, Order in Layer -10
+
+**Remaining pool visuals (not started):**
+- Lane lines (2m, 5m, 7m markings)
+- Goal net art
+- Poolside/edge tiles
+- Player ripple effects
+
+## A9. Controls (keyboard — for PC testing; touch comes later)
 
 - **WASD / arrows** — move active player.
 - **Hold LeftShift** — **sprint** (2x speed while moving). Sprinting WITH the ball = **loose hold**: you keep the ball but opponents get 2x steal range + a steal-chance bonus (`looseHoldStealBonus` 0.15 on BotMovement/TeammateAI).
@@ -185,7 +205,7 @@ Filter Mode: Bilinear, Max Size: 4096
 - **C** — manual player switch (mostly redundant: control auto-follows the ball-carrier).
 - **Z** — cycle team defense: **Press → Zone → Drop → MPress**.
 
-## A9. What's working today (DONE)
+## A10. What's working today (DONE)
 
 Movement, ball carry (parented), charged shoot, aim line; passing with control hand-off; two AI teammates + two AI bots on ONE shared C# brain (carrier shoots/passes/dribbles, nearest presses, others hold a spread formation, support gets open); AI shoots at the goal CORNER via direct velocity (mass-independent); post-release grab cooldown (0.35s) so shots/passes travel; goalkeepers block shots; pool walls; two team-aware goals; on-screen scoreboard; formation spacing that auto-spreads any roster; **auto-switch control to whoever on your team holds the ball.**
 
@@ -235,7 +255,7 @@ Also now 🟡 **WORKING (first pass — improve later, not 100% done):**
 - **Centre draws fouls** — steals on an inside-water Centre fail more often + a virtual foul on the offender → exclusions/penalties come faster (tunable/toggleable).
 - New plumbing: `MatchContext.LastReleaser` (who released the ball) → `ScoreManager` tracks Centre goals per conceding team; `MatchTimer.RemainingSeconds()` + `MatchTimer`/`ScoreManager` singletons.
 
-## A10. Known issues / tuning notes
+## A11. Known issues / tuning notes
 
 - At 2v2, **passing is rare by design** (few open teammates) — comes alive at 6v6.
 - Bots can feel **too strong** — lower Chase/Carry/Support speeds to tune.
@@ -250,7 +270,7 @@ Also now 🟡 **WORKING (first pass — improve later, not 100% done):**
 - **Deferred visuals** (secondary per dev priority): keeper art/animation; crowd/stadium; camera zoom-out; water-flow effects. (Pool zone lines now exist as `PoolLines`.)
 - **Other deferred:** per-player stamina system; weak no-hold deflection shot (a ball struck without a settled hold should be weaker than a settled one); corners on KEEPER deflections; referee.
 
-## A11. Immediate roadmap (next bricks, rough order)
+## A12. Immediate roadmap (next bricks, rough order)
 
 1. **Scale teams** — 4v4 first (verify formation+AI), then 6v6. Mostly cloning objects + adding to lists. ✅ **DONE** (now 6v6).
 2. **Match timer + win condition** — game currently never ends. ✅ **DONE** (4 quarters, 30s each tunable, win/lose/draw at full time).
@@ -262,7 +282,7 @@ Also now 🟡 **WORKING (first pass — improve later, not 100% done):**
 8. Then the whole shell: menus, onboarding, currencies, career/divisions, store (Part B §1–15).
 9. Android build/test (Build Support module + phone over USB). iOS needs a Mac later.
 
-### A11.1 NEXT BRICK DESIGN (in order)
+### A12.1 NEXT BRICK DESIGN (in order)
 
 **(a) Drives + picks + bot adaptive Drop — 🟡 BUILT (first pass, June 2026; improve later):**
 - **Drives.** A perimeter carrier with a step on its marker and a clear lane attacks the cage: a timed burst toward the goal that draws help; if a second defender commits, kick to the now-open man. Hook into the carrier branch of `WaterPoloBrain` — when shot-quality is low but the marker is beaten (carrier has a lateral/forward step + lane toward 2m), set a **drive target** instead of holding the role spot. End the drive on: reaching ~2m (shoot), a help defender stepping in (pass to the vacated man), or losing the step.
@@ -400,10 +420,10 @@ Also now 🟡 **WORKING (first pass — improve later, not 100% done):**
 - Don't suggest: Swift/SDL2/SceneKit, LLM-driven bots, web deployment, Stripe/PayPal, Tailwind. Mobile payments = Apple/Google billing, later.
 - Nikoloz has **Claude Code in VS Code** — big multi-file AI work goes there; single-file features + guidance happen in chat.
 - Commit routine: `git add . && git commit -m "..." && git push`. GitHub: https://github.com/Nikoloz-Todua
-- Current focus: Visual Pass 1 complete (see A7). Next priorities:
-  (1) sprint animation threshold fix,
-  (2) touch controls (B16.3),
-  (3) goalkeeper animations,
-  (4) player name labels above heads (B16.4),
+- Current focus: Visual Pass 1 complete (A7), pool water background complete (A8). Next priorities:
+  (1) Pool lane lines (2m/5m markings as sprite overlay),
+  (2) Player number labels above heads (TextMesh Pro),
+  (3) Touch controls (B16.3) — biggest remaining gameplay feature,
+  (4) Goalkeeper animations,
   (5) HUD improvements (B16.6).
   Everything in Part B tagged ⬜ is future.

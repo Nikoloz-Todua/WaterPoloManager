@@ -132,6 +132,8 @@ GameObject:
   - component: {fileID: 61178236}
   - component: {fileID: 61178235}
   - component: {fileID: 61178234}
+  - component: {fileID: 61178239}
+  - component: {fileID: 61178238}
   m_Layer: 0
   m_Name: Bot5
   m_TagString: Untagged
@@ -149,7 +151,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 2.71, y: -1.7, z: 0}
-  m_LocalScale: {x: 0.5, y: 0.5, z: 1}
+  m_LocalScale: {x: 0.35, y: 0.35, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -166,6 +168,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 64b89ac986ebbaf4f92f5097cfba5a48, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BotMovement
+  isBlueTeam: 1
   myTeam: {fileID: 896660540}
   chaseSpeed: 3
   carrySpeed: 1.8
@@ -175,6 +178,8 @@ MonoBehaviour:
   shootRange: 20
   shootPower: 20
   stealChance: 0.1
+  looseHoldStealBonus: 0.15
+  defenseEvalPoll: 0.5
 --- !u!58 &61178235
 CircleCollider2D:
   m_ObjectHideFlags: 0
@@ -287,16 +292,53 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 1
   m_MaskInteraction: 0
-  m_Sprite: {fileID: -2413806693520163455, guid: a86470a33a6bf42c4b3595704624658b, type: 3}
-  m_Color: {r: 1, g: 0, b: 0.71499395, a: 1}
+  m_Sprite: {fileID: 0}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
   m_Size: {x: 1, y: 1}
   m_AdaptiveModeThreshold: 0.5
   m_SpriteTileMode: 0
-  m_WasSpriteAssigned: 1
+  m_WasSpriteAssigned: 0
   m_SpriteSortPoint: 0
+--- !u!114 &61178238
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 61178232}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 702abb68fcc0028439b4b0836e11d4b8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::BotAnimator
+  defendProximityRadius: 1.5
+  redController: {fileID: 9100000, guid: a55cf296371becd4b854f6f6a232eacd, type: 2}
+  blueController: {fileID: 9100000, guid: a46921a7e5912564bb5ae2119e0d8b35, type: 2}
+--- !u!95 &61178239
+Animator:
+  serializedVersion: 7
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 61178232}
+  m_Enabled: 1
+  m_Avatar: {fileID: 0}
+  m_Controller: {fileID: 9100000, guid: a55cf296371becd4b854f6f6a232eacd, type: 2}
+  m_CullingMode: 0
+  m_UpdateMode: 0
+  m_ApplyRootMotion: 0
+  m_LinearVelocityBlending: 0
+  m_StabilizeFeet: 0
+  m_AnimatePhysics: 0
+  m_WarningMessage: 
+  m_HasTransformHierarchy: 1
+  m_AllowConstantClipSamplingOptimization: 1
+  m_KeepAnimatorStateOnDisable: 0
+  m_WriteDefaultValuesOnDisable: 0
 --- !u!1 &65601303
 GameObject:
   m_ObjectHideFlags: 0
@@ -541,6 +583,10 @@ GameObject:
   - component: {fileID: 140903098}
   - component: {fileID: 140903099}
   - component: {fileID: 140903100}
+  - component: {fileID: 140903101}
+  - component: {fileID: 140903102}
+  - component: {fileID: 140903104}
+  - component: {fileID: 140903103}
   m_Layer: 0
   m_Name: GameManager
   m_TagString: Untagged
@@ -607,6 +653,9 @@ MonoBehaviour:
   playerTeam: {fileID: 1812404639}
   botTeam: {fileID: 896660540}
   releaseGrabDelay: 0.35
+  freeThrowAIHoldSeconds: 1
+  playerLimitX: 6.9
+  counterWindowSeconds: 4
 --- !u!114 &140903096
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -694,6 +743,84 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::BallOutOfBounds
   outYThreshold: 4.2
   reentryInset: 0.5
+--- !u!114 &140903101
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 140903092}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 59c6dff3cf59c4249a7488603eb39020, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PenaltyManager
+  penaltySpotX: 2.47
+  behindSpotMargin: 1
+  penaltyAimCone: 70
+  aiShootDelay: 1
+  aiMissChance: 0.25
+  aiMissOffset: 1.6
+  penaltyShotSpeed: 13
+  maxPenaltySeconds: 6
+  penaltyText: {fileID: 332114239}
+--- !u!114 &140903102
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 140903092}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: aa1827882eaed244fa39e91903ee1667, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GoalLineOut
+  goalLineX: 7
+  goalMouthHalfHeight: 1.5
+  reentryInset: 0.5
+  carrierOutX: 6.7
+  cornerInsetX: 6.2
+  cornerY: 3.5
+--- !u!114 &140903103
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 140903092}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 11ec7dc050f26844d8bc9c4129f32ac5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::BallTouchTracker
+--- !u!50 &140903104
+Rigidbody2D:
+  serializedVersion: 5
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 140903092}
+  m_BodyType: 0
+  m_Simulated: 1
+  m_UseFullKinematicContacts: 0
+  m_UseAutoMass: 0
+  m_Mass: 1
+  m_LinearDamping: 0
+  m_AngularDamping: 0.05
+  m_GravityScale: 1
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_Interpolate: 0
+  m_SleepingMode: 1
+  m_CollisionDetection: 0
+  m_Constraints: 0
 --- !u!1 &167614394
 GameObject:
   m_ObjectHideFlags: 0
@@ -785,6 +912,143 @@ SpriteRenderer:
   m_SpriteTileMode: 0
   m_WasSpriteAssigned: 1
   m_SpriteSortPoint: 0
+--- !u!1 &332114237
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 332114238}
+  - component: {fileID: 332114240}
+  - component: {fileID: 332114239}
+  m_Layer: 5
+  m_Name: PenaltyText
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!224 &332114238
+RectTransform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 332114237}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 950693082}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_AnchorMin: {x: 0.5, y: 0.5}
+  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchoredPosition: {x: 26.333328, y: -109.16667}
+  m_SizeDelta: {x: 200, y: 50}
+  m_Pivot: {x: 0.5, y: 0.5}
+--- !u!114 &332114239
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 332114237}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
+  m_Material: {fileID: 0}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_RaycastTarget: 1
+  m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
+  m_Maskable: 1
+  m_OnCullStateChanged:
+    m_PersistentCalls:
+      m_Calls: []
+  m_text: New Text
+  m_isRightToLeft: 0
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontSharedMaterials: []
+  m_fontMaterial: {fileID: 0}
+  m_fontMaterials: []
+  m_fontColor32:
+    serializedVersion: 2
+    rgba: 4294967295
+  m_fontColor: {r: 1, g: 1, b: 1, a: 1}
+  m_enableVertexGradient: 0
+  m_colorMode: 3
+  m_fontColorGradient:
+    topLeft: {r: 1, g: 1, b: 1, a: 1}
+    topRight: {r: 1, g: 1, b: 1, a: 1}
+    bottomLeft: {r: 1, g: 1, b: 1, a: 1}
+    bottomRight: {r: 1, g: 1, b: 1, a: 1}
+  m_fontColorGradientPreset: {fileID: 0}
+  m_spriteAsset: {fileID: 0}
+  m_tintAllSprites: 0
+  m_StyleSheet: {fileID: 0}
+  m_TextStyleHashCode: -1183493901
+  m_overrideHtmlColors: 0
+  m_faceColor:
+    serializedVersion: 2
+    rgba: 4294967295
+  m_fontSize: 36
+  m_fontSizeBase: 36
+  m_fontWeight: 400
+  m_enableAutoSizing: 0
+  m_fontSizeMin: 18
+  m_fontSizeMax: 72
+  m_fontStyle: 0
+  m_HorizontalAlignment: 1
+  m_VerticalAlignment: 256
+  m_textAlignment: 65535
+  m_characterSpacing: 0
+  m_characterHorizontalScale: 1
+  m_wordSpacing: 0
+  m_lineSpacing: 0
+  m_lineSpacingMax: 0
+  m_paragraphSpacing: 0
+  m_charWidthMaxAdj: 0
+  m_TextWrappingMode: 1
+  m_wordWrappingRatios: 0.4
+  m_overflowMode: 0
+  m_linkedTextComponent: {fileID: 0}
+  parentLinkedComponent: {fileID: 0}
+  m_enableKerning: 0
+  m_ActiveFontFeatures: 6e72656b
+  m_enableExtraPadding: 0
+  checkPaddingRequired: 0
+  m_isRichText: 1
+  m_EmojiFallbackSupport: 1
+  m_parseCtrlCharacters: 1
+  m_isOrthographic: 1
+  m_isCullingEnabled: 0
+  m_horizontalMapping: 0
+  m_verticalMapping: 0
+  m_uvLineOffset: 0
+  m_geometrySortingOrder: 0
+  m_IsTextObjectScaleStatic: 0
+  m_VertexBufferAutoSizeReduction: 0
+  m_useMaxVisibleDescender: 1
+  m_pageToDisplay: 1
+  m_margin: {x: 0, y: 0, z: 0, w: 0}
+  m_isUsingLegacyAnimationComponent: 0
+  m_isVolumetricText: 0
+  m_hasFontAssetChanged: 0
+  m_baseMaterial: {fileID: 0}
+  m_maskOffset: {x: 0, y: 0, z: 0, w: 0}
+--- !u!222 &332114240
+CanvasRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 332114237}
+  m_CullTransparentMesh: 1
 --- !u!1 &358453738
 GameObject:
   m_ObjectHideFlags: 0
@@ -900,6 +1164,11 @@ MonoBehaviour:
   trackSpeed: 4
   minY: -2
   maxY: 2
+  keeperGrabDistance: 1.2
+  keeperGrabMaxSpeed: 3
+  keeperHoldSeconds: 1.5
+  playerKeeperMaxHold: 3
+  holdOffset: 0.5
 --- !u!212 &365746330
 SpriteRenderer:
   serializedVersion: 2
@@ -1331,6 +1600,7 @@ GameObject:
   m_Component:
   - component: {fileID: 483796060}
   - component: {fileID: 483796059}
+  - component: {fileID: 483796061}
   m_Layer: 0
   m_Name: Pool
   m_TagString: Untagged
@@ -1385,10 +1655,10 @@ SpriteRenderer:
   m_GlobalIlluminationMeshLod: 0
   m_SortingLayerID: 0
   m_SortingLayer: 0
-  m_SortingOrder: -2
+  m_SortingOrder: -10
   m_MaskInteraction: 0
-  m_Sprite: {fileID: 7482667652216324306, guid: 311925a002f4447b3a28927169b83ea6, type: 3}
-  m_Color: {r: 0.15408784, g: 0.3760017, b: 1, a: 1}
+  m_Sprite: {fileID: 21300000, guid: 547404d573280fa42ac3ba4321ff1374, type: 3}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
@@ -1407,11 +1677,33 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 16, y: 9, z: 1}
+  m_LocalScale: {x: 0.9, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!95 &483796061
+Animator:
+  serializedVersion: 7
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 483796058}
+  m_Enabled: 1
+  m_Avatar: {fileID: 0}
+  m_Controller: {fileID: 9100000, guid: e292ff12cb85ccc41ac992fcac548536, type: 2}
+  m_CullingMode: 0
+  m_UpdateMode: 0
+  m_ApplyRootMotion: 0
+  m_LinearVelocityBlending: 0
+  m_StabilizeFeet: 0
+  m_AnimatePhysics: 0
+  m_WarningMessage: 
+  m_HasTransformHierarchy: 1
+  m_AllowConstantClipSamplingOptimization: 1
+  m_KeepAnimatorStateOnDisable: 0
+  m_WriteDefaultValuesOnDisable: 0
 --- !u!1 &498516010
 GameObject:
   m_ObjectHideFlags: 0
@@ -1737,6 +2029,8 @@ GameObject:
   - component: {fileID: 630562158}
   - component: {fileID: 630562157}
   - component: {fileID: 630562156}
+  - component: {fileID: 630562161}
+  - component: {fileID: 630562160}
   m_Layer: 0
   m_Name: Bot3
   m_TagString: Untagged
@@ -1754,7 +2048,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 2.61, y: 1.43, z: 0}
-  m_LocalScale: {x: 0.5, y: 0.5, z: 1}
+  m_LocalScale: {x: 0.35, y: 0.35, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -1771,6 +2065,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 64b89ac986ebbaf4f92f5097cfba5a48, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BotMovement
+  isBlueTeam: 1
   myTeam: {fileID: 896660540}
   chaseSpeed: 3
   carrySpeed: 1.8
@@ -1780,6 +2075,8 @@ MonoBehaviour:
   shootRange: 20
   shootPower: 20
   stealChance: 0.1
+  looseHoldStealBonus: 0.15
+  defenseEvalPoll: 0.5
 --- !u!58 &630562157
 CircleCollider2D:
   m_ObjectHideFlags: 0
@@ -1892,16 +2189,53 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 1
   m_MaskInteraction: 0
-  m_Sprite: {fileID: -2413806693520163455, guid: a86470a33a6bf42c4b3595704624658b, type: 3}
-  m_Color: {r: 1, g: 0, b: 0.71499395, a: 1}
+  m_Sprite: {fileID: 0}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
   m_Size: {x: 1, y: 1}
   m_AdaptiveModeThreshold: 0.5
   m_SpriteTileMode: 0
-  m_WasSpriteAssigned: 1
+  m_WasSpriteAssigned: 0
   m_SpriteSortPoint: 0
+--- !u!114 &630562160
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 630562154}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 702abb68fcc0028439b4b0836e11d4b8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::BotAnimator
+  defendProximityRadius: 1.5
+  redController: {fileID: 9100000, guid: a55cf296371becd4b854f6f6a232eacd, type: 2}
+  blueController: {fileID: 9100000, guid: a46921a7e5912564bb5ae2119e0d8b35, type: 2}
+--- !u!95 &630562161
+Animator:
+  serializedVersion: 7
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 630562154}
+  m_Enabled: 1
+  m_Avatar: {fileID: 0}
+  m_Controller: {fileID: 9100000, guid: a55cf296371becd4b854f6f6a232eacd, type: 2}
+  m_CullingMode: 0
+  m_UpdateMode: 0
+  m_ApplyRootMotion: 0
+  m_LinearVelocityBlending: 0
+  m_StabilizeFeet: 0
+  m_AnimatePhysics: 0
+  m_WarningMessage: 
+  m_HasTransformHierarchy: 1
+  m_AllowConstantClipSamplingOptimization: 1
+  m_KeepAnimatorStateOnDisable: 0
+  m_WriteDefaultValuesOnDisable: 0
 --- !u!1 &650185482
 GameObject:
   m_ObjectHideFlags: 0
@@ -2397,6 +2731,97 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &874332554
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 874332556}
+  - component: {fileID: 874332555}
+  m_Layer: 0
+  m_Name: Square
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!212 &874332555
+SpriteRenderer:
+  serializedVersion: 2
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 874332554}
+  m_Enabled: 1
+  m_CastShadows: 0
+  m_ReceiveShadows: 0
+  m_DynamicOccludee: 1
+  m_StaticShadowCaster: 0
+  m_MotionVectors: 1
+  m_LightProbeUsage: 1
+  m_ReflectionProbeUsage: 1
+  m_RayTracingMode: 0
+  m_RayTraceProcedural: 0
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
+  m_SmallMeshCulling: 1
+  m_ForceMeshLod: -1
+  m_MeshLodSelectionBias: 0
+  m_RenderingLayerMask: 1
+  m_RendererPriority: 0
+  m_Materials:
+  - {fileID: 2100000, guid: d1d0e78b28383914ca972d24cd453a80, type: 2}
+  m_StaticBatchInfo:
+    firstSubMesh: 0
+    subMeshCount: 0
+  m_StaticBatchRoot: {fileID: 0}
+  m_ProbeAnchor: {fileID: 0}
+  m_LightProbeVolumeOverride: {fileID: 0}
+  m_ScaleInLightmap: 1
+  m_ReceiveGI: 1
+  m_PreserveUVs: 0
+  m_IgnoreNormalsForChartDetection: 0
+  m_ImportantGI: 0
+  m_StitchLightmapSeams: 1
+  m_SelectedEditorRenderState: 0
+  m_MinimumChartSize: 4
+  m_AutoUVMaxDistance: 0.5
+  m_AutoUVMaxAngle: 89
+  m_LightmapParameters: {fileID: 0}
+  m_GlobalIlluminationMeshLod: 0
+  m_SortingLayerID: 0
+  m_SortingLayer: 0
+  m_SortingOrder: 2
+  m_MaskInteraction: 0
+  m_Sprite: {fileID: 7482667652216324306, guid: 311925a002f4447b3a28927169b83ea6, type: 3}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_FlipX: 0
+  m_FlipY: 0
+  m_DrawMode: 0
+  m_Size: {x: 1, y: 1}
+  m_AdaptiveModeThreshold: 0.5
+  m_SpriteTileMode: 0
+  m_WasSpriteAssigned: 1
+  m_SpriteSortPoint: 0
+--- !u!4 &874332556
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 874332554}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0.076554164, y: -0.101266354, z: -0.007815855, w: 0.99187875}
+  m_LocalPosition: {x: 2.65, y: -4.31, z: 1.11}
+  m_LocalScale: {x: 12.966172, y: 3.8921087, z: 3.8921087}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: -8.827, y: -11.659, z: 0}
 --- !u!1 &896660539
 GameObject:
   m_ObjectHideFlags: 0
@@ -2450,6 +2875,23 @@ MonoBehaviour:
   shotLaneRadius: 0.6
   aimCornerOffset: 1.1
   forwardPassMin: 0.5
+  freeThrowClearance: 2.2
+  teammateSpacing: 2
+  supportPassRange: 5
+  supportBlend: 0.5
+  passOpennessWeight: 1.5
+  formationAnchorStrength: 0.7
+  formationAnchorRadius: 1.5
+  centerFeedWeight: 3
+  counterRunners: 2
+  dropSag: 0.5
+  shotQualityThreshold: 0.42
+  passShotQualityWeight: 1.2
+  spacingPushMult: 1.4
+  wideLateralMult: 1.2
+  wingWideBias: 0.2
+  defenseReevalInterval: 4
+  defenseHysteresisSeconds: 1.5
 --- !u!4 &896660541
 Transform:
   m_ObjectHideFlags: 0
@@ -2617,6 +3059,8 @@ GameObject:
   - component: {fileID: 945807558}
   - component: {fileID: 945807557}
   - component: {fileID: 945807559}
+  - component: {fileID: 945807561}
+  - component: {fileID: 945807560}
   m_Layer: 0
   m_Name: Player
   m_TagString: Untagged
@@ -2674,7 +3118,7 @@ SpriteRenderer:
   m_SortingOrder: 1
   m_MaskInteraction: 0
   m_Sprite: {fileID: -2413806693520163455, guid: a86470a33a6bf42c4b3595704624658b, type: 3}
-  m_Color: {r: 1, g: 0.047169685, b: 0.047169685, a: 1}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
@@ -2693,7 +3137,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: -1.59, y: 0, z: 0}
-  m_LocalScale: {x: 0.5, y: 0.5, z: 1}
+  m_LocalScale: {x: 0.35, y: 0.35, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1366410577}
@@ -2713,6 +3157,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerMovement
   moveSpeed: 3
   holdMoveSpeed: 1.5
+  sprintMultiplier: 2
   ball: {fileID: 650185484}
   grabDistance: 1
   holdOffset: 0.6
@@ -2723,11 +3168,8 @@ MonoBehaviour:
   maxPassSpeed: 13
   passChargeRate: 1.5
   stealDistance: 1.2
-  stealChance: 0.4
+  stealChance: 0.2
   stealCooldown: 0.6
-  holdingColor: {r: 0, g: 1, b: 0, a: 1}
-  activeColor: {r: 1, g: 0, b: 0, a: 1}
-  inactiveColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
   aimLine: {fileID: 1366410576}
   aimLineLength: 2.5
   aimTriangleLength: 0.3
@@ -2822,6 +3264,42 @@ MonoBehaviour:
   shootRange: 20
   shootPower: 20
   stealChance: 0.5
+  looseHoldStealBonus: 0.15
+--- !u!114 &945807560
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 945807553}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d05ac4a1e76d9414cb4fa9c5851f3bfb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerAnimator
+  defendProximityRadius: 1.5
+--- !u!95 &945807561
+Animator:
+  serializedVersion: 7
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 945807553}
+  m_Enabled: 1
+  m_Avatar: {fileID: 0}
+  m_Controller: {fileID: 9100000, guid: a55cf296371becd4b854f6f6a232eacd, type: 2}
+  m_CullingMode: 0
+  m_UpdateMode: 0
+  m_ApplyRootMotion: 0
+  m_LinearVelocityBlending: 0
+  m_StabilizeFeet: 0
+  m_AnimatePhysics: 0
+  m_WarningMessage: 
+  m_HasTransformHierarchy: 1
+  m_AllowConstantClipSamplingOptimization: 1
+  m_KeepAnimatorStateOnDisable: 0
+  m_WriteDefaultValuesOnDisable: 0
 --- !u!1 &950693081
 GameObject:
   m_ObjectHideFlags: 0
@@ -2861,6 +3339,7 @@ RectTransform:
   - {fileID: 1517344743}
   - {fileID: 66022952}
   - {fileID: 1460223838}
+  - {fileID: 332114238}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
@@ -2946,6 +3425,8 @@ GameObject:
   - component: {fileID: 965530507}
   - component: {fileID: 965530506}
   - component: {fileID: 965530504}
+  - component: {fileID: 965530510}
+  - component: {fileID: 965530509}
   m_Layer: 0
   m_Name: Player3
   m_TagString: Untagged
@@ -2963,7 +3444,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: -3, y: 1.39, z: 0}
-  m_LocalScale: {x: 0.5, y: 0.5, z: 1}
+  m_LocalScale: {x: 0.35, y: 0.35, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1572314169}
@@ -2990,6 +3471,7 @@ MonoBehaviour:
   shootRange: 20
   shootPower: 20
   stealChance: 0.5
+  looseHoldStealBonus: 0.15
 --- !u!114 &965530505
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3004,6 +3486,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerMovement
   moveSpeed: 3
   holdMoveSpeed: 1.5
+  sprintMultiplier: 2
   ball: {fileID: 650185484}
   grabDistance: 1
   holdOffset: 0.6
@@ -3013,12 +3496,9 @@ MonoBehaviour:
   minPassSpeed: 6
   maxPassSpeed: 13
   passChargeRate: 1.5
-  stealDistance: 1.2
-  stealChance: 0.4
+  stealDistance: 0.2
+  stealChance: 0.2
   stealCooldown: 0.6
-  holdingColor: {r: 0, g: 1, b: 0, a: 1}
-  activeColor: {r: 1, g: 0, b: 0, a: 1}
-  inactiveColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
   aimLine: {fileID: 1572314170}
   aimLineLength: 2.5
   aimTriangleLength: 0.3
@@ -3142,7 +3622,7 @@ SpriteRenderer:
   m_SortingOrder: 1
   m_MaskInteraction: 0
   m_Sprite: {fileID: -2413806693520163455, guid: a86470a33a6bf42c4b3595704624658b, type: 3}
-  m_Color: {r: 1, g: 0.047169685, b: 0.047169685, a: 1}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
@@ -3151,6 +3631,41 @@ SpriteRenderer:
   m_SpriteTileMode: 0
   m_WasSpriteAssigned: 1
   m_SpriteSortPoint: 0
+--- !u!114 &965530509
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 965530502}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d05ac4a1e76d9414cb4fa9c5851f3bfb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerAnimator
+  defendProximityRadius: 1.5
+--- !u!95 &965530510
+Animator:
+  serializedVersion: 7
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 965530502}
+  m_Enabled: 1
+  m_Avatar: {fileID: 0}
+  m_Controller: {fileID: 9100000, guid: a55cf296371becd4b854f6f6a232eacd, type: 2}
+  m_CullingMode: 0
+  m_UpdateMode: 0
+  m_ApplyRootMotion: 0
+  m_LinearVelocityBlending: 0
+  m_StabilizeFeet: 0
+  m_AnimatePhysics: 0
+  m_WarningMessage: 
+  m_HasTransformHierarchy: 1
+  m_AllowConstantClipSamplingOptimization: 1
+  m_KeepAnimatorStateOnDisable: 0
+  m_WriteDefaultValuesOnDisable: 0
 --- !u!1 &1019713549
 GameObject:
   m_ObjectHideFlags: 0
@@ -3506,6 +4021,8 @@ MonoBehaviour:
   maxExclusionsPerPlayer: 3
   minPlayersToContinue: 4
   foulStealLockout: 1.5
+  penaltyZoneX: 4.28
+  centerFoulBoost: 1
   matchTimer: {fileID: 140903096}
   exclusionText: {fileID: 1517344741}
 --- !u!4 &1195036845
@@ -3537,6 +4054,8 @@ GameObject:
   - component: {fileID: 1204470616}
   - component: {fileID: 1204470615}
   - component: {fileID: 1204470613}
+  - component: {fileID: 1204470619}
+  - component: {fileID: 1204470618}
   m_Layer: 0
   m_Name: Player6
   m_TagString: Untagged
@@ -3554,7 +4073,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: -1.19, y: -2.97, z: 0}
-  m_LocalScale: {x: 0.5, y: 0.5, z: 1}
+  m_LocalScale: {x: 0.35, y: 0.35, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 660776514}
@@ -3581,6 +4100,7 @@ MonoBehaviour:
   shootRange: 20
   shootPower: 20
   stealChance: 0.5
+  looseHoldStealBonus: 0.15
 --- !u!114 &1204470614
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3595,6 +4115,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerMovement
   moveSpeed: 3
   holdMoveSpeed: 1.5
+  sprintMultiplier: 2
   ball: {fileID: 650185484}
   grabDistance: 1
   holdOffset: 0.6
@@ -3605,11 +4126,8 @@ MonoBehaviour:
   maxPassSpeed: 13
   passChargeRate: 1.5
   stealDistance: 1.2
-  stealChance: 0.4
+  stealChance: 0.2
   stealCooldown: 0.6
-  holdingColor: {r: 0, g: 1, b: 0, a: 1}
-  activeColor: {r: 1, g: 0, b: 0, a: 1}
-  inactiveColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
   aimLine: {fileID: 660776515}
   aimLineLength: 2.5
   aimTriangleLength: 0.3
@@ -3733,7 +4251,7 @@ SpriteRenderer:
   m_SortingOrder: 1
   m_MaskInteraction: 0
   m_Sprite: {fileID: -2413806693520163455, guid: a86470a33a6bf42c4b3595704624658b, type: 3}
-  m_Color: {r: 1, g: 0.047169685, b: 0.047169685, a: 1}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
@@ -3742,6 +4260,41 @@ SpriteRenderer:
   m_SpriteTileMode: 0
   m_WasSpriteAssigned: 1
   m_SpriteSortPoint: 0
+--- !u!114 &1204470618
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1204470611}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d05ac4a1e76d9414cb4fa9c5851f3bfb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerAnimator
+  defendProximityRadius: 1.5
+--- !u!95 &1204470619
+Animator:
+  serializedVersion: 7
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1204470611}
+  m_Enabled: 1
+  m_Avatar: {fileID: 0}
+  m_Controller: {fileID: 9100000, guid: a55cf296371becd4b854f6f6a232eacd, type: 2}
+  m_CullingMode: 0
+  m_UpdateMode: 0
+  m_ApplyRootMotion: 0
+  m_LinearVelocityBlending: 0
+  m_StabilizeFeet: 0
+  m_AnimatePhysics: 0
+  m_WarningMessage: 
+  m_HasTransformHierarchy: 1
+  m_AllowConstantClipSamplingOptimization: 1
+  m_KeepAnimatorStateOnDisable: 0
+  m_WriteDefaultValuesOnDisable: 0
 --- !u!1 &1227050014
 GameObject:
   m_ObjectHideFlags: 0
@@ -3756,6 +4309,8 @@ GameObject:
   - component: {fileID: 1227050017}
   - component: {fileID: 1227050016}
   - component: {fileID: 1227050020}
+  - component: {fileID: 1227050022}
+  - component: {fileID: 1227050021}
   m_Layer: 0
   m_Name: Player2
   m_TagString: Untagged
@@ -3777,6 +4332,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerMovement
   moveSpeed: 3
   holdMoveSpeed: 1.5
+  sprintMultiplier: 2
   ball: {fileID: 650185484}
   grabDistance: 1
   holdOffset: 0.6
@@ -3787,11 +4343,8 @@ MonoBehaviour:
   maxPassSpeed: 13
   passChargeRate: 1.5
   stealDistance: 1.2
-  stealChance: 0.8
+  stealChance: 0.2
   stealCooldown: 0.6
-  holdingColor: {r: 0, g: 1, b: 0, a: 1}
-  activeColor: {r: 1, g: 0, b: 0, a: 1}
-  inactiveColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
   aimLine: {fileID: 1917738298}
   aimLineLength: 2.5
   aimTriangleLength: 0.3
@@ -3915,7 +4468,7 @@ SpriteRenderer:
   m_SortingOrder: 1
   m_MaskInteraction: 0
   m_Sprite: {fileID: -2413806693520163455, guid: a86470a33a6bf42c4b3595704624658b, type: 3}
-  m_Color: {r: 1, g: 0.047169685, b: 0.047169685, a: 1}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
@@ -3934,7 +4487,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: -1.52, y: 2.38, z: 0}
-  m_LocalScale: {x: 0.5, y: 0.5, z: 1}
+  m_LocalScale: {x: 0.35, y: 0.35, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1917738299}
@@ -3961,6 +4514,42 @@ MonoBehaviour:
   shootRange: 20
   shootPower: 20
   stealChance: 0.5
+  looseHoldStealBonus: 0.15
+--- !u!114 &1227050021
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1227050014}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d05ac4a1e76d9414cb4fa9c5851f3bfb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerAnimator
+  defendProximityRadius: 1.5
+--- !u!95 &1227050022
+Animator:
+  serializedVersion: 7
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1227050014}
+  m_Enabled: 1
+  m_Avatar: {fileID: 0}
+  m_Controller: {fileID: 9100000, guid: a55cf296371becd4b854f6f6a232eacd, type: 2}
+  m_CullingMode: 0
+  m_UpdateMode: 0
+  m_ApplyRootMotion: 0
+  m_LinearVelocityBlending: 0
+  m_StabilizeFeet: 0
+  m_AnimatePhysics: 0
+  m_WarningMessage: 
+  m_HasTransformHierarchy: 1
+  m_AllowConstantClipSamplingOptimization: 1
+  m_KeepAnimatorStateOnDisable: 0
+  m_WriteDefaultValuesOnDisable: 0
 --- !u!1 &1296226206
 GameObject:
   m_ObjectHideFlags: 0
@@ -4840,6 +5429,8 @@ GameObject:
   - component: {fileID: 1480314584}
   - component: {fileID: 1480314583}
   - component: {fileID: 1480314581}
+  - component: {fileID: 1480314587}
+  - component: {fileID: 1480314586}
   m_Layer: 0
   m_Name: Player4
   m_TagString: Untagged
@@ -4857,7 +5448,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: -2.58, y: -2, z: 0}
-  m_LocalScale: {x: 0.5, y: 0.5, z: 1}
+  m_LocalScale: {x: 0.35, y: 0.35, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1359018348}
@@ -4884,6 +5475,7 @@ MonoBehaviour:
   shootRange: 20
   shootPower: 20
   stealChance: 0.5
+  looseHoldStealBonus: 0.15
 --- !u!114 &1480314582
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -4898,6 +5490,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerMovement
   moveSpeed: 3
   holdMoveSpeed: 1.5
+  sprintMultiplier: 2
   ball: {fileID: 650185484}
   grabDistance: 1
   holdOffset: 0.6
@@ -4908,11 +5501,8 @@ MonoBehaviour:
   maxPassSpeed: 13
   passChargeRate: 1.5
   stealDistance: 1.2
-  stealChance: 0.4
+  stealChance: 0.2
   stealCooldown: 0.6
-  holdingColor: {r: 0, g: 1, b: 0, a: 1}
-  activeColor: {r: 1, g: 0, b: 0, a: 1}
-  inactiveColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
   aimLine: {fileID: 1359018349}
   aimLineLength: 2.5
   aimTriangleLength: 0.3
@@ -5036,7 +5626,7 @@ SpriteRenderer:
   m_SortingOrder: 1
   m_MaskInteraction: 0
   m_Sprite: {fileID: -2413806693520163455, guid: a86470a33a6bf42c4b3595704624658b, type: 3}
-  m_Color: {r: 1, g: 0.047169685, b: 0.047169685, a: 1}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
@@ -5045,6 +5635,41 @@ SpriteRenderer:
   m_SpriteTileMode: 0
   m_WasSpriteAssigned: 1
   m_SpriteSortPoint: 0
+--- !u!114 &1480314586
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1480314579}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d05ac4a1e76d9414cb4fa9c5851f3bfb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerAnimator
+  defendProximityRadius: 1.5
+--- !u!95 &1480314587
+Animator:
+  serializedVersion: 7
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1480314579}
+  m_Enabled: 1
+  m_Avatar: {fileID: 0}
+  m_Controller: {fileID: 9100000, guid: a55cf296371becd4b854f6f6a232eacd, type: 2}
+  m_CullingMode: 0
+  m_UpdateMode: 0
+  m_ApplyRootMotion: 0
+  m_LinearVelocityBlending: 0
+  m_StabilizeFeet: 0
+  m_AnimatePhysics: 0
+  m_WarningMessage: 
+  m_HasTransformHierarchy: 1
+  m_AllowConstantClipSamplingOptimization: 1
+  m_KeepAnimatorStateOnDisable: 0
+  m_WriteDefaultValuesOnDisable: 0
 --- !u!1 &1500086011
 GameObject:
   m_ObjectHideFlags: 0
@@ -5058,6 +5683,8 @@ GameObject:
   - component: {fileID: 1500086015}
   - component: {fileID: 1500086014}
   - component: {fileID: 1500086013}
+  - component: {fileID: 1500086018}
+  - component: {fileID: 1500086017}
   m_Layer: 0
   m_Name: Bot6
   m_TagString: Untagged
@@ -5075,7 +5702,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 2.41, y: -0.01, z: 0}
-  m_LocalScale: {x: 0.5, y: 0.5, z: 1}
+  m_LocalScale: {x: 0.35, y: 0.35, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -5092,6 +5719,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 64b89ac986ebbaf4f92f5097cfba5a48, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BotMovement
+  isBlueTeam: 1
   myTeam: {fileID: 896660540}
   chaseSpeed: 3
   carrySpeed: 1.8
@@ -5101,6 +5729,8 @@ MonoBehaviour:
   shootRange: 20
   shootPower: 20
   stealChance: 0.1
+  looseHoldStealBonus: 0.15
+  defenseEvalPoll: 0.5
 --- !u!58 &1500086014
 CircleCollider2D:
   m_ObjectHideFlags: 0
@@ -5213,16 +5843,53 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 1
   m_MaskInteraction: 0
-  m_Sprite: {fileID: -2413806693520163455, guid: a86470a33a6bf42c4b3595704624658b, type: 3}
-  m_Color: {r: 1, g: 0, b: 0.71499395, a: 1}
+  m_Sprite: {fileID: 0}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
   m_Size: {x: 1, y: 1}
   m_AdaptiveModeThreshold: 0.5
   m_SpriteTileMode: 0
-  m_WasSpriteAssigned: 1
+  m_WasSpriteAssigned: 0
   m_SpriteSortPoint: 0
+--- !u!114 &1500086017
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1500086011}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 702abb68fcc0028439b4b0836e11d4b8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::BotAnimator
+  defendProximityRadius: 1.5
+  redController: {fileID: 9100000, guid: a55cf296371becd4b854f6f6a232eacd, type: 2}
+  blueController: {fileID: 9100000, guid: a46921a7e5912564bb5ae2119e0d8b35, type: 2}
+--- !u!95 &1500086018
+Animator:
+  serializedVersion: 7
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1500086011}
+  m_Enabled: 1
+  m_Avatar: {fileID: 0}
+  m_Controller: {fileID: 9100000, guid: a55cf296371becd4b854f6f6a232eacd, type: 2}
+  m_CullingMode: 0
+  m_UpdateMode: 0
+  m_ApplyRootMotion: 0
+  m_LinearVelocityBlending: 0
+  m_StabilizeFeet: 0
+  m_AnimatePhysics: 0
+  m_WarningMessage: 
+  m_HasTransformHierarchy: 1
+  m_AllowConstantClipSamplingOptimization: 1
+  m_KeepAnimatorStateOnDisable: 0
+  m_WriteDefaultValuesOnDisable: 0
 --- !u!1 &1517344740
 GameObject:
   m_ObjectHideFlags: 0
@@ -5396,6 +6063,11 @@ MonoBehaviour:
   trackSpeed: 4
   minY: -2
   maxY: 2
+  keeperGrabDistance: 1.2
+  keeperGrabMaxSpeed: 3
+  keeperHoldSeconds: 1.5
+  playerKeeperMaxHold: 3
+  holdOffset: 0.5
 --- !u!212 &1523456036
 SpriteRenderer:
   serializedVersion: 2
@@ -5745,6 +6417,8 @@ GameObject:
   - component: {fileID: 1601739696}
   - component: {fileID: 1601739695}
   - component: {fileID: 1601739694}
+  - component: {fileID: 1601739700}
+  - component: {fileID: 1601739699}
   m_Layer: 0
   m_Name: Bot
   m_TagString: Untagged
@@ -5764,6 +6438,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 64b89ac986ebbaf4f92f5097cfba5a48, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BotMovement
+  isBlueTeam: 1
   myTeam: {fileID: 896660540}
   chaseSpeed: 3
   carrySpeed: 1.8
@@ -5773,6 +6448,8 @@ MonoBehaviour:
   shootRange: 20
   shootPower: 20
   stealChance: 0.1
+  looseHoldStealBonus: 0.15
+  defenseEvalPoll: 0.5
 --- !u!58 &1601739695
 CircleCollider2D:
   m_ObjectHideFlags: 0
@@ -5885,15 +6562,15 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 1
   m_MaskInteraction: 0
-  m_Sprite: {fileID: -2413806693520163455, guid: a86470a33a6bf42c4b3595704624658b, type: 3}
-  m_Color: {r: 1, g: 0, b: 0.71499395, a: 1}
+  m_Sprite: {fileID: 0}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
   m_Size: {x: 1, y: 1}
   m_AdaptiveModeThreshold: 0.5
   m_SpriteTileMode: 0
-  m_WasSpriteAssigned: 1
+  m_WasSpriteAssigned: 0
   m_SpriteSortPoint: 0
 --- !u!4 &1601739698
 Transform:
@@ -5905,11 +6582,48 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 4.05, y: -0.01, z: 0}
-  m_LocalScale: {x: 0.5, y: 0.5, z: 1}
+  m_LocalScale: {x: 0.35, y: 0.35, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1601739699
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1601739693}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 702abb68fcc0028439b4b0836e11d4b8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::BotAnimator
+  defendProximityRadius: 1.5
+  redController: {fileID: 9100000, guid: a55cf296371becd4b854f6f6a232eacd, type: 2}
+  blueController: {fileID: 9100000, guid: a46921a7e5912564bb5ae2119e0d8b35, type: 2}
+--- !u!95 &1601739700
+Animator:
+  serializedVersion: 7
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1601739693}
+  m_Enabled: 1
+  m_Avatar: {fileID: 0}
+  m_Controller: {fileID: 9100000, guid: a55cf296371becd4b854f6f6a232eacd, type: 2}
+  m_CullingMode: 0
+  m_UpdateMode: 0
+  m_ApplyRootMotion: 0
+  m_LinearVelocityBlending: 0
+  m_StabilizeFeet: 0
+  m_AnimatePhysics: 0
+  m_WarningMessage: 
+  m_HasTransformHierarchy: 1
+  m_AllowConstantClipSamplingOptimization: 1
+  m_KeepAnimatorStateOnDisable: 0
+  m_WriteDefaultValuesOnDisable: 0
 --- !u!1 &1636601636
 GameObject:
   m_ObjectHideFlags: 0
@@ -6492,6 +7206,8 @@ GameObject:
   - component: {fileID: 1804307262}
   - component: {fileID: 1804307261}
   - component: {fileID: 1804307259}
+  - component: {fileID: 1804307265}
+  - component: {fileID: 1804307264}
   m_Layer: 0
   m_Name: Player5
   m_TagString: Untagged
@@ -6509,7 +7225,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: -3.32, y: 0, z: 0}
-  m_LocalScale: {x: 0.5, y: 0.5, z: 1}
+  m_LocalScale: {x: 0.35, y: 0.35, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1298931748}
@@ -6536,6 +7252,7 @@ MonoBehaviour:
   shootRange: 20
   shootPower: 20
   stealChance: 0.5
+  looseHoldStealBonus: 0.15
 --- !u!114 &1804307260
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -6550,6 +7267,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerMovement
   moveSpeed: 3
   holdMoveSpeed: 1.5
+  sprintMultiplier: 2
   ball: {fileID: 650185484}
   grabDistance: 1
   holdOffset: 0.6
@@ -6560,11 +7278,8 @@ MonoBehaviour:
   maxPassSpeed: 13
   passChargeRate: 1.5
   stealDistance: 1.2
-  stealChance: 0.4
+  stealChance: 0.2
   stealCooldown: 0.6
-  holdingColor: {r: 0, g: 1, b: 0, a: 1}
-  activeColor: {r: 1, g: 0, b: 0, a: 1}
-  inactiveColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
   aimLine: {fileID: 1298931749}
   aimLineLength: 2.5
   aimTriangleLength: 0.3
@@ -6688,7 +7403,7 @@ SpriteRenderer:
   m_SortingOrder: 1
   m_MaskInteraction: 0
   m_Sprite: {fileID: -2413806693520163455, guid: a86470a33a6bf42c4b3595704624658b, type: 3}
-  m_Color: {r: 1, g: 0.047169685, b: 0.047169685, a: 1}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
@@ -6697,6 +7412,41 @@ SpriteRenderer:
   m_SpriteTileMode: 0
   m_WasSpriteAssigned: 1
   m_SpriteSortPoint: 0
+--- !u!114 &1804307264
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1804307257}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d05ac4a1e76d9414cb4fa9c5851f3bfb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerAnimator
+  defendProximityRadius: 1.5
+--- !u!95 &1804307265
+Animator:
+  serializedVersion: 7
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1804307257}
+  m_Enabled: 1
+  m_Avatar: {fileID: 0}
+  m_Controller: {fileID: 9100000, guid: a55cf296371becd4b854f6f6a232eacd, type: 2}
+  m_CullingMode: 0
+  m_UpdateMode: 0
+  m_ApplyRootMotion: 0
+  m_LinearVelocityBlending: 0
+  m_StabilizeFeet: 0
+  m_AnimatePhysics: 0
+  m_WarningMessage: 
+  m_HasTransformHierarchy: 1
+  m_AllowConstantClipSamplingOptimization: 1
+  m_KeepAnimatorStateOnDisable: 0
+  m_WriteDefaultValuesOnDisable: 0
 --- !u!1 &1805958863
 GameObject:
   m_ObjectHideFlags: 0
@@ -6710,6 +7460,8 @@ GameObject:
   - component: {fileID: 1805958866}
   - component: {fileID: 1805958865}
   - component: {fileID: 1805958864}
+  - component: {fileID: 1805958870}
+  - component: {fileID: 1805958869}
   m_Layer: 0
   m_Name: Bot2
   m_TagString: Untagged
@@ -6729,6 +7481,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 64b89ac986ebbaf4f92f5097cfba5a48, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BotMovement
+  isBlueTeam: 1
   myTeam: {fileID: 896660540}
   chaseSpeed: 3
   carrySpeed: 1.8
@@ -6738,6 +7491,8 @@ MonoBehaviour:
   shootRange: 20
   shootPower: 20
   stealChance: 0.1
+  looseHoldStealBonus: 0.15
+  defenseEvalPoll: 0.5
 --- !u!58 &1805958865
 CircleCollider2D:
   m_ObjectHideFlags: 0
@@ -6850,15 +7605,15 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 1
   m_MaskInteraction: 0
-  m_Sprite: {fileID: -2413806693520163455, guid: a86470a33a6bf42c4b3595704624658b, type: 3}
-  m_Color: {r: 1, g: 0, b: 0.71499395, a: 1}
+  m_Sprite: {fileID: 0}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
   m_Size: {x: 1, y: 1}
   m_AdaptiveModeThreshold: 0.5
   m_SpriteTileMode: 0
-  m_WasSpriteAssigned: 1
+  m_WasSpriteAssigned: 0
   m_SpriteSortPoint: 0
 --- !u!4 &1805958868
 Transform:
@@ -6870,11 +7625,48 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 1.64, y: 2.34, z: 0}
-  m_LocalScale: {x: 0.5, y: 0.5, z: 1}
+  m_LocalScale: {x: 0.35, y: 0.35, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1805958869
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1805958863}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 702abb68fcc0028439b4b0836e11d4b8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::BotAnimator
+  defendProximityRadius: 1.5
+  redController: {fileID: 9100000, guid: a55cf296371becd4b854f6f6a232eacd, type: 2}
+  blueController: {fileID: 9100000, guid: a46921a7e5912564bb5ae2119e0d8b35, type: 2}
+--- !u!95 &1805958870
+Animator:
+  serializedVersion: 7
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1805958863}
+  m_Enabled: 1
+  m_Avatar: {fileID: 0}
+  m_Controller: {fileID: 9100000, guid: a55cf296371becd4b854f6f6a232eacd, type: 2}
+  m_CullingMode: 0
+  m_UpdateMode: 0
+  m_ApplyRootMotion: 0
+  m_LinearVelocityBlending: 0
+  m_StabilizeFeet: 0
+  m_AnimatePhysics: 0
+  m_WarningMessage: 
+  m_HasTransformHierarchy: 1
+  m_AllowConstantClipSamplingOptimization: 1
+  m_KeepAnimatorStateOnDisable: 0
+  m_WriteDefaultValuesOnDisable: 0
 --- !u!1 &1812404638
 GameObject:
   m_ObjectHideFlags: 0
@@ -6928,6 +7720,23 @@ MonoBehaviour:
   shotLaneRadius: 0.6
   aimCornerOffset: 1.1
   forwardPassMin: 0.5
+  freeThrowClearance: 2.2
+  teammateSpacing: 2
+  supportPassRange: 5
+  supportBlend: 0.5
+  passOpennessWeight: 1.5
+  formationAnchorStrength: 0.7
+  formationAnchorRadius: 1.5
+  centerFeedWeight: 3
+  counterRunners: 2
+  dropSag: 0.5
+  shotQualityThreshold: 0.42
+  passShotQualityWeight: 1.2
+  spacingPushMult: 1.4
+  wideLateralMult: 1.2
+  wingWideBias: 0.2
+  defenseReevalInterval: 4
+  defenseHysteresisSeconds: 1.5
 --- !u!4 &1812404640
 Transform:
   m_ObjectHideFlags: 0
@@ -6956,6 +7765,8 @@ GameObject:
   - component: {fileID: 1871819970}
   - component: {fileID: 1871819969}
   - component: {fileID: 1871819968}
+  - component: {fileID: 1871819973}
+  - component: {fileID: 1871819972}
   m_Layer: 0
   m_Name: Bot4
   m_TagString: Untagged
@@ -6973,7 +7784,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 1.82, y: -2.81, z: 0}
-  m_LocalScale: {x: 0.5, y: 0.5, z: 1}
+  m_LocalScale: {x: 0.35, y: 0.35, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -6990,6 +7801,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 64b89ac986ebbaf4f92f5097cfba5a48, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BotMovement
+  isBlueTeam: 1
   myTeam: {fileID: 896660540}
   chaseSpeed: 3
   carrySpeed: 1.8
@@ -6999,6 +7811,8 @@ MonoBehaviour:
   shootRange: 20
   shootPower: 20
   stealChance: 0.1
+  looseHoldStealBonus: 0.15
+  defenseEvalPoll: 0.5
 --- !u!58 &1871819969
 CircleCollider2D:
   m_ObjectHideFlags: 0
@@ -7111,16 +7925,53 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 1
   m_MaskInteraction: 0
-  m_Sprite: {fileID: -2413806693520163455, guid: a86470a33a6bf42c4b3595704624658b, type: 3}
-  m_Color: {r: 1, g: 0, b: 0.71499395, a: 1}
+  m_Sprite: {fileID: 0}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
   m_Size: {x: 1, y: 1}
   m_AdaptiveModeThreshold: 0.5
   m_SpriteTileMode: 0
-  m_WasSpriteAssigned: 1
+  m_WasSpriteAssigned: 0
   m_SpriteSortPoint: 0
+--- !u!114 &1871819972
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1871819966}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 702abb68fcc0028439b4b0836e11d4b8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::BotAnimator
+  defendProximityRadius: 1.5
+  redController: {fileID: 9100000, guid: a55cf296371becd4b854f6f6a232eacd, type: 2}
+  blueController: {fileID: 9100000, guid: a46921a7e5912564bb5ae2119e0d8b35, type: 2}
+--- !u!95 &1871819973
+Animator:
+  serializedVersion: 7
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1871819966}
+  m_Enabled: 1
+  m_Avatar: {fileID: 0}
+  m_Controller: {fileID: 9100000, guid: a55cf296371becd4b854f6f6a232eacd, type: 2}
+  m_CullingMode: 0
+  m_UpdateMode: 0
+  m_ApplyRootMotion: 0
+  m_LinearVelocityBlending: 0
+  m_StabilizeFeet: 0
+  m_AnimatePhysics: 0
+  m_WarningMessage: 
+  m_HasTransformHierarchy: 1
+  m_AllowConstantClipSamplingOptimization: 1
+  m_KeepAnimatorStateOnDisable: 0
+  m_WriteDefaultValuesOnDisable: 0
 --- !u!1 &1917738297
 GameObject:
   m_ObjectHideFlags: 0
@@ -7524,3 +8375,4 @@ SceneRoots:
   - {fileID: 896660541}
   - {fileID: 1195036845}
   - {fileID: 1578712968}
+  - {fileID: 874332556}
