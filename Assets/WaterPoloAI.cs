@@ -19,6 +19,7 @@ public interface IAgentBody
     float ShootPower { get; }   // used as a deterministic shot SPEED (units/sec)
 
     float StealChance { get; }
+    float LooseHoldStealBonus { get; } // extra steal chance vs a Shift-sprinting (loose-hold) carrier
     float HoldStartTime { get; set; }
     float NextStealTime { get; set; }
 
@@ -66,6 +67,8 @@ public static class WaterPoloBrain
     const float IdleFreq = 1.2f;          // idle bob speed (rad/s)
     const float MarkSwitchCooldown = 0.6f; // min time before a defender may switch its man
     const float KickoffPassSettle = 0.4f;  // AI carrier settles this long before the kickoff pass
+    const float KeeperProtectRadius = 2.5f; // a presser can't crowd a ball-holding keeper
+    const float MinTeammateSeparation = 1.2f; // teammates never pack tighter than this (lower priority yields)
 
     // ---- drives (Feature 1) ----
     const float DriveSpeedMult = 1.35f;      // drive burst over normal carry speed
@@ -660,9 +663,43 @@ public static class WaterPoloBrain
     {
         Vector2 delta = target - a.Body.position;
         if (delta.magnitude < ArriveDistance) { IdleDrift(a, target, speed); return; }
-        Vector2 dir = delta.normalized;
+        Vector2 dir = ApplySeparation(a, delta.normalized);
         a.LastDirection = dir;
         a.Body.linearVelocity = dir * speed;
+    }
+
+    // Anti-stacking: if a HIGHER-priority teammate (closer to the ball; instance id
+    // breaks ties) is within MinTeammateSeparation, steer our movement away from him.
+    // Only MoveTo/IdleDrift route through here, so carriers and pressers — who set
+    // their velocity directly — are never deflected off the ball.
+    static Vector2 ApplySeparation(IAgentBody a, Vector2 dir)
+    {
+        MatchContext ctx = MatchContext.Instance;
+        if (ctx == null || a.Team == null || a.Team.members == null) return dir;
+
+        Vector2 myPos = a.Body.position;
+        float myBallDist = Vector2.Distance(myPos, ctx.BallPosition);
+
+        foreach (Transform m in a.Team.members)
+        {
+            if (m == null || m == a.Tf) continue;
+            Vector2 toMate = (Vector2)m.position - myPos;
+            float d = toMate.magnitude;
+            if (d >= MinTeammateSeparation || d < 1e-4f) continue;
+
+            // the one further from the ball is the lower priority and yields
+            float mateBallDist = Vector2.Distance(m.position, ctx.BallPosition);
+            bool iYield = myBallDist > mateBallDist ||
+                          (Mathf.Approximately(myBallDist, mateBallDist) &&
+                           a.Tf.GetInstanceID() > m.GetInstanceID());
+            if (!iYield) continue;
+
+            // push away harder the deeper the overlap
+            Vector2 push = (-toMate / d) * ((MinTeammateSeparation - d) / MinTeammateSeparation);
+            Vector2 blended = dir + push;
+            dir = blended.sqrMagnitude > 1e-4f ? blended.normalized : (-toMate / d);
+        }
+        return dir;
     }
 
     // Arrived at our spot: instead of freezing, gently float around it. Each agent
@@ -677,6 +714,11 @@ public static class WaterPoloBrain
         Vector2 toBob = bob - a.Body.position;
         // ClampMagnitude(...,1) eases the speed down as we near the bob point (no jitter)
         Vector2 vel = Vector2.ClampMagnitude(toBob, 1f) * (speed * IdleDriftFraction);
+
+        // even while idling, keep the minimum separation off higher-priority teammates
+        if (vel.sqrMagnitude > 1e-6f)
+            vel = ApplySeparation(a, vel.normalized) * vel.magnitude;
+
         a.Body.linearVelocity = vel;
         if (vel.sqrMagnitude > 1e-4f) a.LastDirection = vel.normalized;
     }
@@ -702,8 +744,28 @@ public static class WaterPoloBrain
         if (Time.time < a.NextStealTime) return false;
         Transform carrier = ctx.Ball.transform.parent;
         if (carrier == null) return false;
-        if (carrier.GetComponent<Goalkeeper>() != null) return false; // can't steal from a keeper
-        if (Vector2.Distance(a.Body.position, ctx.BallPosition) > a.GrabDistance) return false;
+        if (carrier.GetComponent<Goalkeeper>() != null)
+        {
+            // can't steal from a keeper — and inside the protect radius we get pushed
+            // straight back out at chase speed (returns true: movement handled).
+            Vector2 away = a.Body.position - (Vector2)carrier.position;
+            if (away.magnitude < KeeperProtectRadius)
+            {
+                if (away.sqrMagnitude < 1e-4f) away = Vector2.down;
+                away.Normalize();
+                a.LastDirection = away;
+                a.Body.linearVelocity = away * a.ChaseSpeed;
+                return true;
+            }
+            return false;
+        }
+
+        // A Shift-sprinting human carrier holds the ball LOOSELY: double steal range
+        // and a flat success bonus (PlayerMovement.IsLooseHold).
+        PlayerMovement carrierPm = carrier.GetComponent<PlayerMovement>();
+        bool looseHold = carrierPm != null && carrierPm.IsLooseHold;
+        float reach = looseHold ? a.GrabDistance * 2f : a.GrabDistance;
+        if (Vector2.Distance(a.Body.position, ctx.BallPosition) > reach) return false;
 
         // Must come at the carrier from the front, not from behind.
         Vector2 dirToCarrier = (Vector2)carrier.position - a.Body.position;
@@ -721,7 +783,10 @@ public static class WaterPoloBrain
                             TeamSide.IsInsideTwoMeter(carrier, enemy);
         a.NextStealTime = Time.time + (centerInside ? Mathf.Max(0.1f, StealCooldown - 0.2f)
                                                     : StealCooldown);
+        NotifyStealAttempt(a.Tf); // play the snatch animation on the ATTEMPT, win or lose
+
         float chance = centerInside ? a.StealChance * 0.5f : a.StealChance;
+        if (looseHold) chance += a.LooseHoldStealBonus;
         if (Random.value > chance)
         {
             // failed steal = ordinary foul (carrier keeps the ball; offender locked out longer)
@@ -741,6 +806,16 @@ public static class WaterPoloBrain
         ctx.Ball.transform.localPosition = (Vector3)(a.LastDirection * a.HoldOffset);
         ctx.SetPossession(a.Team);
         return true;
+    }
+
+    // Fire the steal animation on whichever animator this swimmer carries
+    // (BotAnimator on bots, PlayerAnimator on player-team swimmers).
+    static void NotifyStealAttempt(Transform stealer)
+    {
+        BotAnimator ba = stealer.GetComponent<BotAnimator>();
+        if (ba != null) { ba.TriggerSteal(); return; }
+        PlayerAnimator pa = stealer.GetComponent<PlayerAnimator>();
+        if (pa != null) pa.TriggerSteal();
     }
 
     // The direction the carrier is facing. A human-controlled carrier reports its

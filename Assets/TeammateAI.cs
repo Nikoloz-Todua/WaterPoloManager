@@ -16,6 +16,7 @@ public class TeammateAI : MonoBehaviour, IAgentBody
     [SerializeField] private float shootRange = 4f;
     [SerializeField] private float shootPower = 11f;
     [SerializeField] private float stealChance = 0.2f;
+    [SerializeField] private float looseHoldStealBonus = 0.15f; // extra chance vs a sprinting (loose-hold) carrier
 
     private Rigidbody2D rb;
     private PlayerMovement self;
@@ -69,6 +70,7 @@ public class TeammateAI : MonoBehaviour, IAgentBody
     public float ShootRange => shootRange;
     public float ShootPower => shootPower;
     public float StealChance => stealChance;
+    public float LooseHoldStealBonus => looseHoldStealBonus;
     public float HoldStartTime { get => holdStartTime; set => holdStartTime = value; }
     public float NextStealTime { get => nextStealTime; set => nextStealTime = value; }
     public Transform CurrentMark { get => currentMark; set => currentMark = value; }

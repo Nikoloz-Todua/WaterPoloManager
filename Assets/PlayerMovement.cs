@@ -5,6 +5,7 @@ public class PlayerMovement : MonoBehaviour
     [Header("Movement")]
     [SerializeField] private float moveSpeed = 5f;
     [SerializeField] private float holdMoveSpeed = 2f;
+    [SerializeField] private float sprintMultiplier = 2f; // LeftShift speed boost while moving
 
     [Header("Ball")]
     [SerializeField] private Rigidbody2D ball;
@@ -28,34 +29,44 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private float stealCooldown = 0.6f;
     private const float StealFacingDot = 0.3f; // stealer must be within ~70° of the carrier's front
 
-    [Header("Visual Feedback")]
-    [SerializeField] private Color holdingColor = Color.green;
-    [SerializeField] private Color activeColor = Color.red;
-    [SerializeField] private Color inactiveColor = Color.gray;
-
     [Header("Aim line")]
     [SerializeField] private LineRenderer aimLine;
     [SerializeField] private float aimLineLength = 2.5f; // (legacy; triangle uses the fields below)
 
     [Header("Aim triangle")]
-    [SerializeField] private float aimTriangleLength = 0.7f; // tip distance from the base
-    [SerializeField] private float aimTriangleWidth = 0.5f;  // base width
+    [SerializeField] private float aimTriangleLength = 0.4f; // tip distance from the base
+    [SerializeField] private float aimTriangleWidth = 0.3f;  // base width
     [SerializeField] private float aimTriangleGap = 0.5f;    // gap from player centre to base
-    [SerializeField] private float aimTriangleLineWidth = 0.08f;
+    [SerializeField] private float aimTriangleLineWidth = 0.05f;
 
     [Header("Power bar")]
     [SerializeField] private float powerBarWidth = 1.0f;
     [SerializeField] private float powerBarHeight = 0.12f;
     [SerializeField] private float powerBarYOffset = 0.9f;
 
-    private LineRenderer powerBar; // built in code, no Inspector wiring needed
+    private LineRenderer powerBar;          // built in code, no Inspector wiring needed
+    private GameObject selectionTriangle;   // FIFA-style marker above the active player
+
+    private const float SelectionTriangleSize = 0.15f;
+    private const float KeeperProtectRadius = 2.5f; // can't crowd a ball-holding keeper
+    private const float KeeperPushSeconds = 0.25f;  // how long the shove-back drives us
+
+    private Vector2 keeperPushDir;
+    private float keeperPushUntil = -10f;
 
     public bool IsActive = false;
     public bool IsHolding => isHolding;
     public Vector2 Facing => lastDirection;
 
+    // True while the carrier sprints WITH the ball (Shift held + holding): the hold is
+    // "loose" — opponents get 2x steal range and a success bonus (read by WaterPoloBrain).
+    // The ball is NOT dropped. Resets the moment Shift is released.
+    public bool IsLooseHold { get; private set; }
+
+    // Raw Shift state, honoured only on the human-controlled player (PlayerAnimator reads this).
+    public bool SprintHeld => IsActive && sprintHeld;
+
     private Rigidbody2D rb;
-    private SpriteRenderer sprite;
     private Vector2 input;
     private Vector2 lastDirection = Vector2.up;
     private float currentPower = 0f;        // shoot charge (0..maxShootPower)
@@ -63,6 +74,8 @@ public class PlayerMovement : MonoBehaviour
     private bool isHolding = false;
     private float lastStealTime = -10f;
     private bool stealConsumedSpace = false;
+    private bool sprintHeld = false;
+    private PlayerAnimator playerAnimator; // optional; fires the steal animation on attempts
 
     // True while this player is serving (or permanently out of) an exclusion → inert.
     private bool Excluded => ExclusionManager.Instance != null && ExclusionManager.Instance.IsExcluded(transform);
@@ -74,19 +87,47 @@ public class PlayerMovement : MonoBehaviour
     void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
-        sprite = GetComponent<SpriteRenderer>();
+        playerAnimator = GetComponent<PlayerAnimator>();
 
-        // Configure the existing LineRenderer to draw a closed triangle.
+        // Configure the existing LineRenderer to draw a soft chevron.
         if (aimLine != null)
         {
             aimLine.useWorldSpace = true;
             aimLine.positionCount = 3;
             aimLine.loop = false; // open chevron ">" — no base line between the tails
             aimLine.startWidth = aimLine.endWidth = aimTriangleLineWidth;
+            aimLine.startColor = aimLine.endColor = new Color(1f, 1f, 1f, 0.6f);
             aimLine.enabled = false;
         }
 
         BuildPowerBar();
+        BuildSelectionTriangle();
+    }
+
+    // Small white equilateral triangle hovering above the player's head, pointing
+    // down at it — shown only while this player is the human-controlled one.
+    void BuildSelectionTriangle()
+    {
+        selectionTriangle = new GameObject("SelectionTriangle");
+        selectionTriangle.transform.SetParent(transform, false);
+        selectionTriangle.transform.localPosition = new Vector3(0f, 0.6f, 0f);
+
+        float s = SelectionTriangleSize;
+        Mesh mesh = new Mesh();
+        mesh.vertices = new Vector3[]
+        {
+            new Vector3(-s, s * 0.866f, 0f), // top left
+            new Vector3( s, s * 0.866f, 0f), // top right
+            new Vector3(0f, -s * 0.866f, 0f) // bottom tip (points down at the player)
+        };
+        mesh.triangles = new int[] { 0, 1, 2 };
+
+        selectionTriangle.AddComponent<MeshFilter>().mesh = mesh;
+        MeshRenderer mr = selectionTriangle.AddComponent<MeshRenderer>();
+        mr.material = new Material(Shader.Find("Sprites/Default")) { color = Color.white };
+        mr.sortingOrder = 50;
+
+        selectionTriangle.SetActive(false);
     }
 
     // Create a self-contained power bar (a thick LineRenderer) above the player.
@@ -108,6 +149,13 @@ public class PlayerMovement : MonoBehaviour
 
     void Update()
     {
+        if (selectionTriangle != null && selectionTriangle.activeSelf != IsActive)
+            selectionTriangle.SetActive(IsActive);
+
+        // Sprint input only counts on the human-controlled player; the frozen /
+        // excluded branches below force it back off before they return.
+        sprintHeld = IsActive && Input.GetKey(KeyCode.LeftShift);
+
         // If we lost the ball (e.g. it was stolen), our parent link is gone — clear
         // the stale holding flag before anything reads it, so we don't stay green/aiming.
         if (isHolding && ball != null && ball.transform.parent != transform)
@@ -117,6 +165,8 @@ public class PlayerMovement : MonoBehaviour
         // — EXCEPT the active penalty shooter, who may only charge & shoot (Space), no moving.
         if (MatchContext.Instance != null && MatchContext.Instance.PlayFrozen)
         {
+            sprintHeld = false; IsLooseHold = false; // no sprinting while play is frozen
+
             bool penaltyShooter = PenaltyManager.Instance != null &&
                                   PenaltyManager.Instance.IsActiveShooter(transform);
             if (penaltyShooter && isHolding)
@@ -146,7 +196,6 @@ public class PlayerMovement : MonoBehaviour
                         chargeMode = Charging.None;
                     }
                 }
-                if (sprite != null) sprite.color = holdingColor;
                 UpdateAimLine();
                 UpdatePowerBar();
                 return;
@@ -162,11 +211,11 @@ public class PlayerMovement : MonoBehaviour
         // Excluded → fully inert: no control, charge, steal, or aim visuals.
         if (Excluded)
         {
+            sprintHeld = false; IsLooseHold = false;
             input = Vector2.zero;
             chargeMode = Charging.None; currentPower = 0f; passPower = 0f;
             if (aimLine != null) aimLine.enabled = false;
             if (powerBar != null) powerBar.enabled = false;
-            if (sprite != null) sprite.color = inactiveColor;
             return;
         }
 
@@ -253,11 +302,8 @@ public class PlayerMovement : MonoBehaviour
             input = Vector2.zero;
         }
 
-        if (sprite != null)
-        {
-            if (isHolding) sprite.color = holdingColor;
-            else sprite.color = IsActive ? activeColor : inactiveColor;
-        }
+        // Re-derive AFTER input handling so a grab/steal/shoot this frame is reflected.
+        IsLooseHold = sprintHeld && isHolding;
 
         UpdateAimLine();
         UpdatePowerBar();
@@ -270,18 +316,24 @@ public class PlayerMovement : MonoBehaviour
         { rb.linearVelocity = Vector2.zero; return; } // frozen during duel / goal settle
         if (Excluded) { rb.linearVelocity = Vector2.zero; return; } // frozen in the corner
         if (!IsActive) return;
+        if (Time.time < keeperPushUntil) // shoved off a ball-holding keeper
+        {
+            rb.linearVelocity = keeperPushDir * moveSpeed;
+            return;
+        }
         float speed = isHolding ? holdMoveSpeed : moveSpeed;
+        if (sprintHeld && input != Vector2.zero) speed *= sprintMultiplier; // Shift sprint
         rb.linearVelocity = input * speed;
         if (MatchContext.Instance != null)
             WaterPoloBrain.ClampX(rb, MatchContext.Instance.PlayerLimitX); // can't cross the goal line
     }
 
-    // Short triangle that points along lastDirection, sitting just in front of the player.
+    // Soft chevron that points along lastDirection, sitting just in front of the player.
     void UpdateAimLine()
     {
         if (aimLine == null) return;
 
-        bool show = isHolding;
+        bool show = IsActive && isHolding; // only the human-controlled player aims
         aimLine.enabled = show;
         if (!show) return;
 
@@ -359,9 +411,25 @@ public class PlayerMovement : MonoBehaviour
 
         Transform carrier = ball.transform.parent;
         if (carrier == null) return;
-        if (carrier.GetComponent<Goalkeeper>() != null) return; // can't steal from a keeper
+        if (carrier.GetComponent<Goalkeeper>() != null)
+        {
+            // can't steal from a keeper — and trying inside the protect radius shoves
+            // us back out (FixedUpdate drives the push for KeeperPushSeconds).
+            Vector2 away = (Vector2)transform.position - (Vector2)carrier.position;
+            if (away.magnitude < KeeperProtectRadius)
+            {
+                if (away.sqrMagnitude < 1e-4f) away = Vector2.down;
+                keeperPushDir = away.normalized;
+                keeperPushUntil = Time.time + KeeperPushSeconds;
+            }
+            return;
+        }
 
         if (Vector2.Distance(transform.position, ball.position) > stealDistance) return;
+
+        // In range = a real attempt: play the snatch animation NOW, before the facing
+        // gate or the dice roll, so EVERY attempt is visible (success or not).
+        if (playerAnimator != null) playerAnimator.TriggerSteal();
 
         // Must approach the carrier from its front, not from behind.
         Vector2 carrierFacing = Vector2.zero;

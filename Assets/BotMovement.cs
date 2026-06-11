@@ -5,6 +5,9 @@ using UnityEngine;
 [RequireComponent(typeof(Rigidbody2D))]
 public class BotMovement : MonoBehaviour, IAgentBody
 {
+    // Blue-kit bot: BotAnimator reads this in Awake and swaps to BlueAnimation.controller.
+    public bool isBlueTeam;
+
     [SerializeField] private TeamSide myTeam;
     [SerializeField] private float chaseSpeed = 3f;
     [SerializeField] private float carrySpeed = 1.8f;
@@ -14,6 +17,7 @@ public class BotMovement : MonoBehaviour, IAgentBody
     [SerializeField] private float shootRange = 4f;
     [SerializeField] private float shootPower = 11f;
     [SerializeField] private float stealChance = 0.2f;
+    [SerializeField] private float looseHoldStealBonus = 0.15f; // extra chance vs a sprinting (loose-hold) carrier
     [SerializeField] private float defenseEvalPoll = 0.5f; // how often to poke the team's defense evaluator
 
     private Rigidbody2D rb;
@@ -74,6 +78,7 @@ public class BotMovement : MonoBehaviour, IAgentBody
     public float ShootRange => shootRange;
     public float ShootPower => shootPower;
     public float StealChance => stealChance;
+    public float LooseHoldStealBonus => looseHoldStealBonus;
     public float HoldStartTime { get => holdStartTime; set => holdStartTime = value; }
     public float NextStealTime { get => nextStealTime; set => nextStealTime = value; }
     public Transform CurrentMark { get => currentMark; set => currentMark = value; }

@@ -23,7 +23,7 @@
 
 A **2D top-down water polo game** in **Unity 6 (6000.4.7f1), C#**, targeting **Android + iOS** (later). Originally conceived as a 3D Dream-League-style game; **retargeted to 2D** for solo-dev scope and hardware. Built brick-by-brick with step-by-step guidance.
 
-**Current state: a working 6v6 match with full defensive AI.** Core gameplay works (role-based positioning, marking, dynamic mark-switching, and a press/zone toggle); menus/economy/career are not built yet.
+**Current state: a working 6v6 match with full defensive AI and a complete Visual Pass 1 animation system.** Core gameplay works (role-based positioning, marking, dynamic mark-switching, press/zone toggle, sprint mechanic, steal animation, proximity-based defend animation); menus/economy/career not built yet.
 
 ## A2. Developer & environment
 
@@ -60,8 +60,8 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 | `PlayerMovement.cs` | Human control of the active player: move, grab (E), shoot (hold Space), aim line. Ball held via **parenting** to the player; reports possession to MatchContext. Has `TakeOverHeldBall()` for clean control transfer. |
 | `TeammateAI.cs` | Thin component on each player. When NOT human-controlled, runs the shared `WaterPoloBrain`. Implements `IAgentBody`. |
 | `BotMovement.cs` | Thin component on each bot. Always runs `WaterPoloBrain`. Implements `IAgentBody`. |
-| `WaterPoloAI.cs` | **The shared brain** + `IAgentBody` interface. All AI decisions live here once: carrier (shoot/pass/dribble), support (get open), presser (nearest chases), defender (hold shape). Nothing is attached to this file — pure logic the others call. **This is C# state-machine AI — NOT an LLM.** |
-| `TeamSide.cs` | One per team. Holds goals + roster (`members`), formation math (auto-spreads ANY number of players), passing/positioning logic, **attacking-spacing + tactics tunables (center-feed, counter, shot-quality threshold, free-throw clearance), shot-quality + pass-risk scoring, and 4 defense modes — Press/Zone/Drop/MPress — incl. man-up 4-2 umbrella + man-down zone shapes**. Scales 2v2 → 6v6 with no code change. |
+| `WaterPoloAI.cs` | **The shared brain** + `IAgentBody` interface. All AI decisions live here once: carrier (shoot/pass/**drive**/dribble), support (get open), presser (nearest chases), defender (hold shape). 🟡 New: **drives** (beaten marker + clear lane → burst to 2m, shoot/kick-out/abort) and **picks/screens** (nominated screener plants on the carrier's marker; rubbing past = short "beaten" boost). Works, needs tuning. **This is C# state-machine AI — NOT an LLM.** |
+| `TeamSide.cs` | One per team. Holds goals + roster (`members`), formation math (auto-spreads ANY number of players), passing/positioning logic, **attacking-spacing + tactics tunables (center-feed, counter, shot-quality threshold, free-throw clearance), shot-quality + pass-risk scoring, and 4 defense modes — Press/Zone/Drop/MPress — incl. man-up 4-2 umbrella + man-down zone shapes**. 🟡 New: **dynamic Centre** (fights for inside water goal-side of its guard at 2m), wider lanes + weak-side wing drift, receiver-shot-quality pass bonus, drive/screen helpers (`DrivePoint`, `GetScreenSpot`, `FindScreenerForCarrier`), and **bot adaptive defense** (`EvaluateDefenseMode`, auto-detected `isAI`: Drop when man-down / protecting a late lead / Centre conceded 2+; Press otherwise). Scales 2v2 → 6v6 with no code change. |
 | `MatchContext.cs` | Singleton "match truth": ball position, possession + last toucher (`NoteTouch` for deflections), post-release grab cooldown, freeze flag, shot-clock grab-ban, kickoff-pass flag, **free-throw state, keeper-hold flag, counterattack window, player goal-line clamp (`playerLimitX`)**, halftime `SwapEnds()`, `GiveBallTo()` / `ForceDropHeldBall()`, `EnemyOf()`. |
 | `TeamManager.cs` | On `GameManager`. Auto-switches control to the ball-holder; manual **C** switch (skips excluded); **Z** cycles defense (Press/Zone/Drop/MPress); never auto-activates excluded players. |
 | `Goalkeeper.cs` | Kinematic keeper sliding along its physical goal line tracking ball Y (stays on its goal after the halftime swap). **Grab-and-control:** collects a slow loose ball near its net, holds briefly, then distributes to an open teammate (bot auto-passes; player keeper passes out on **B**). A keeper hold is NOT a possession change — the shot clock keeps ticking until the pass-out. |
@@ -69,13 +69,16 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 | `ScoreManager.cs` | Team-based score (credits the team attacking that net → survives the halftime swap); conceding-team kickoff restart; **ignores held-ball goals**. |
 | `MatchTimer.cs` | Quarters (90s) + win/lose/draw; pauses the clock during freezes; triggers the sprint duel each quarter; halftime swap; `ForfeitMatch()`. |
 | `ShotClock.cs` | 30s per-possession clock (singleton): resets on possession change / goal / defensive exclusion; turnover + grab-ban at 0; pauses when frozen, **during a free throw**, or match over; **a keeper hold does NOT reset it (keeps ticking until the keeper distributes)**. |
-| `ExclusionManager.cs` | Fouls + exclusions (singleton): failed steal = foul → **free throw** to the fouled team; 2 fouls in 10s → 5s exclusion (roster slot nulled → AI auto-adapts) **or a PENALTY if the victim was in the 2m zone**; 3rd → removal; forfeit < 4 players; HUD countdowns. |
+| `ExclusionManager.cs` | Fouls + exclusions (singleton): failed steal = foul → **free throw** to the fouled team; 2 fouls in 10s → 5s exclusion (roster slot nulled → AI auto-adapts) **or a PENALTY if the victim was in the 2m zone**; 3rd → removal; forfeit < 4 players; HUD countdowns. 🟡 New: **virtual foul** when the victim is an inside-water Centre (Centres draw exclusions/penalties faster; toggle `centerFoulBoost` — may be too hot, watch in testing). |
 | `SprintDuel.cs` | Quarter-start duel (singleton): line-up + freeze, whistle, two sprinters race (human mashes Space), winner grabs → kickoff pass. |
 | `EventFeed.cs` | Rolling last-5 event log (singleton): goals, exclusions, turnovers, out-of-bounds, forfeit, halftime. |
 | `BallOutOfBounds.cs` | Top/bottom-wall out rule: a loose ball at the edge → possession to the nearest player of the team that didn't touch it last. |
 | `PenaltyManager.cs` | Penalty shot (singleton, B16.11): on an exclusion-level foul inside the 2m zone, freezes play, puts the fouled shooter on the penalty spot (|x|≈2.47) facing the open corner, lines everyone else up **behind the shooter**. Human charges with **Space** within an aim cone; AI auto-fires after a delay (with a miss chance). The freeze lifts on the shot; a goal flows through the normal `Goal` path. |
 | `GoalLineOut.cs` | Goal-line out rule (B16.11): a LOOSE ball crossing a goal line outside the mouth → re-enter just inside, nearest opponent gets it; a CARRIER pressing the end line → **corner restart** (ball + receiver placed at that corner). Awards to the team that didn't touch it last (deflection-aware via `LastTouchTeam`). |
 | `BallTouchTracker.cs` | Sits on the **Ball**. Records the last team to physically touch a LOOSE ball, so a shot/pass that deflects off an opponent and goes out is awarded correctly. Ignores keeper touches and held-ball contacts. |
+| `PlayerAnimator.cs` | Drives Animator for the human player. Reads speed from Rigidbody2D, IsHolding from PlayerMovement. Fires IsShooting trigger on fast release, IsStealing trigger on every grab attempt. Flips SpriteRenderer horizontally based on velocity.x. Defend animation triggers only when enemy carrier is within 1.5 units. |
+| `BotAnimator.cs` | Drives Animator for AI bots. Reads state via IAgentBody. Same steal/defend/flip logic as PlayerAnimator. Reads isBlueTeam from BotMovement and swaps Animator controller to BlueAnimation.controller at Awake() if true. |
+| `AnimationClipBuilder.cs` | Editor tool (Tools menu). Builds 7 animation clips (idle/swim/sprint/hold/throw/defend/steal) from sliced sprite sheets, assigns them to the Animator controller states, and wires all transitions. Two menu items: Tools/Build Water Polo Animations (red) and Tools/Build Blue Team Animations (blue). Creates BlueAnimation.controller programmatically if missing. |
 
 **Architecture rule for any AI:** keep `TeamSide` + `MatchContext` + `WaterPoloBrain`. It is roster-size-agnostic by design. To scale teams: add player/bot objects, drop them into the team `members` arrays + TeamManager arrays; formation & AI scale automatically.
 
@@ -124,9 +127,57 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 **UI — Canvas (TextMeshPro), + EventSystem (auto)**
 - **ScoreText** ("YOU 0 - 0 BOT"), **TimerText** ("1:30"), **QuarterText** ("Q1"), **ResultText** (hidden until full time), **DefenseModeText** ("DEFENSE: PRESS/ZONE"), **ExclusionText** (exclusion countdowns), **ShotClockText** ("30"), **EventFeedText** (last 5 events), **PenaltyText** ("PENALTY!", hidden until a penalty; wired into `PenaltyManager.Penalty Text`).
 
-## A7. Controls (keyboard — for PC testing; touch comes later)
+## A7. Animation system (Visual Pass 1 — COMPLETE)
+
+**Two Animator controllers:**
+- `Assets/Sprites/PlayerAnimation.controller` — red team (Player, Player2–Player6)
+- `Assets/Sprites/BlueAnimation.controller` — blue team (Bot, Bot2–Bot6)
+
+**7 animation states per controller:**
+idle, swim, sprint, hold, throw, defend, steal
+
+**Animator parameters:**
+- Speed (float) — driven by Rigidbody2D.linearVelocity.magnitude
+- IsHolding (bool) — from PlayerMovement.IsHolding / IAgentBody.IsHolding
+- IsSprinting (bool) — Shift held + speed > 0.1 (player) / IsDriving (bot)
+- IsDefending (bool) — enemy carrier within 1.5 units proximity check
+- IsExcluded (bool) — from ExclusionManager
+- IsShooting (trigger) — fires on fast ball release
+- IsStealing (trigger) — fires on EVERY grab/steal attempt, hit or miss
+
+**Sprite sheets — Red team:** `Assets/Sprites/Players/RedTeam/`
+**Sprite sheets — Blue team:** `Assets/Sprites/Players/BlueTeam/`
+Each sheet: 6 frames, 2048px wide, sliced Grid By Cell Count C:6 R:1,
+Filter Mode: Bilinear, Max Size: 4096
+
+**File naming convention:**
+- `idle_floating_in_water__gentle_arm_movement[_blue].png`
+- `swimming_forward__arms_mid-stroke[_blue].png`
+- `sprinting__arms_in_fast_crawl_stroke[_blue].png`
+- `holding_ball_raised_in_right_hand[_blue].png`
+- `throwing_ball_overhead__arm_extended[_blue].png`
+- `defensive_stance__arms_out_wide[_blue].png`
+- `steal_snatch_attempt[_blue].png`
+
+**Sprint mechanic:**
+- Player: Shift key = 2x speed multiplier. Shift + ball = IsLooseHold true
+  (ball stays in hand but grab distance for enemies doubles — easier to strip)
+- Bots: sprint decided by WaterPoloBrain IsDriving logic, unchanged
+
+**SpriteRenderer flipping:**
+- velocity.x > 0.1 → flipX = false (faces right, default)
+- velocity.x < -0.1 → flipX = true (mirror)
+- near zero → hold last value
+
+**Known remaining issues (fix later):**
+- Sprint animation not triggering correctly in all cases (IsSprinting threshold tuning needed)
+- Idle/swim sprite size inconsistency (swim sprites slightly smaller — art fix needed in ChatGPT)
+- Goalkeeper animations not yet built
+
+## A8. Controls (keyboard — for PC testing; touch comes later)
 
 - **WASD / arrows** — move active player.
+- **Hold LeftShift** — **sprint** (2x speed while moving). Sprinting WITH the ball = **loose hold**: you keep the ball but opponents get 2x steal range + a steal-chance bonus (`looseHoldStealBonus` 0.15 on BotMovement/TeammateAI).
 - **E** — grab / drop a loose ball.
 - **Hold Space** — charge & shoot (release to fire).
 - **Hold B** — charge & pass; auto-targets the teammate you're facing (nearest teammate as fallback).
@@ -134,7 +185,7 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 - **C** — manual player switch (mostly redundant: control auto-follows the ball-carrier).
 - **Z** — cycle team defense: **Press → Zone → Drop → MPress**.
 
-## A8. What's working today (DONE)
+## A9. What's working today (DONE)
 
 Movement, ball carry (parented), charged shoot, aim line; passing with control hand-off; two AI teammates + two AI bots on ONE shared C# brain (carrier shoots/passes/dribbles, nearest presses, others hold a spread formation, support gets open); AI shoots at the goal CORNER via direct velocity (mass-independent); post-release grab cooldown (0.35s) so shots/passes travel; goalkeepers block shots; pool walls; two team-aware goals; on-screen scoreboard; formation spacing that auto-spreads any roster; **auto-switch control to whoever on your team holds the ball.**
 
@@ -176,7 +227,15 @@ Also now DONE:
 - **Drop + MPress defense modes** — **Z** now cycles four modes (Press → Zone → Drop → MPress): Drop = help defense fronting the centre with a sagging helper, MPress = press with one centre dropper.
 - **Shot-quality + pass-risk decision logic** — the carrier scores shot quality (distance / angle / clear lane / pressure) against a threshold (0.42) to decide shoot-vs-pass, and weighs pass risk by pass distance (longer passes need a wider-open lane).
 
-## A9. Known issues / tuning notes
+Also now 🟡 **WORKING (first pass — improve later, not 100% done):**
+- **Drives** — a carrier with a beaten marker (or fresh screen boost) and a clear lane bursts to the 2m point at 1.35× carry speed; finishes with a shot, kicks out to the open man if help comes, aborts if the marker recovers. (Effectively bot-only: player-team carriers are human-controlled.)
+- **Picks/screens** — a nominated wing/flat plants a screen on the carrier's marker; the carrier rubbing past gets a 0.5s "marker beaten" boost feeding the drive trigger; screener rotates out after the pick. Works for the human carrier as a physical block.
+- **Bot adaptive defense** — bots re-pick Press/Drop every ~4s with hysteresis (Drop when man-down / sitting on a late lead / your Centre scored 2+; Press otherwise); changes logged in the event feed.
+- **Dynamic Centre + wider offense** — the Centre fights for inside water (goal-side of its guard at the 2m point); wings/flats hold wider lanes, weak-side wing drifts wider; stronger anti-cluster spacing; passes also score the RECEIVER's shot quality + double bonus for an inside-water Centre feed.
+- **Centre draws fouls** — steals on an inside-water Centre fail more often + a virtual foul on the offender → exclusions/penalties come faster (tunable/toggleable).
+- New plumbing: `MatchContext.LastReleaser` (who released the ball) → `ScoreManager` tracks Centre goals per conceding team; `MatchTimer.RemainingSeconds()` + `MatchTimer`/`ScoreManager` singletons.
+
+## A10. Known issues / tuning notes
 
 - At 2v2, **passing is rare by design** (few open teammates) — comes alive at 6v6.
 - Bots can feel **too strong** — lower Chase/Carry/Support speeds to tune.
@@ -185,12 +244,13 @@ Also now DONE:
 
 **KNOWN ISSUES / NEXT:**
 - Residual **clustering only when the ball + multiple players + an opponent genuinely converge** on the same spot — acceptable/realistic, not the old "everyone bunches" bug.
-- **Done since last update:** free throws (with clearance); penalties (2m zone, aiming cone, behind-shooter formation); goal-line out + corner restart; player goal-line clamp; deflection-aware last touch (`BallTouchTracker`); keeper grab-and-control (clock keeps ticking through the hold); counterattack window; man-up 4-2 umbrella + man-down zone; Drop + MPress defense modes (Z cycles 4); shot-quality + pass-risk decision logic.
-- **Next brick:** **drives + picks + bot adaptive Drop** (design below in A10), then a **tuning pass**, then **VISUAL PASS 1** (sprites/caps/names/HUD), then touch controls.
+- **Done since last update:** drives + picks/screens + bot adaptive Drop + dynamic Centre (inside water) + wider spacing + Centre-draws-fouls — all 🟡 first-pass working, to be improved/tuned later (NOT counted 100% done).
+- **Tuning watch-list:** `centerFoulBoost` virtual foul can make the first foul on an inside Centre escalate instantly (usually a penalty) — toggle it off or raise Fouls For Exclusion if too hot; drive trigger/lane radii; screen timings; Centre inside depth (1.2 from goal).
+- **Next brick:** **tuning pass** (above + speeds, steal chances, shot quality threshold), then **VISUAL PASS 1** (sprites/caps/names/HUD), then touch controls.
 - **Deferred visuals** (secondary per dev priority): keeper art/animation; crowd/stadium; camera zoom-out; water-flow effects. (Pool zone lines now exist as `PoolLines`.)
 - **Other deferred:** per-player stamina system; weak no-hold deflection shot (a ball struck without a settled hold should be weaker than a settled one); corners on KEEPER deflections; referee.
 
-## A10. Immediate roadmap (next bricks, rough order)
+## A11. Immediate roadmap (next bricks, rough order)
 
 1. **Scale teams** — 4v4 first (verify formation+AI), then 6v6. Mostly cloning objects + adding to lists. ✅ **DONE** (now 6v6).
 2. **Match timer + win condition** — game currently never ends. ✅ **DONE** (4 quarters, 30s each tunable, win/lose/draw at full time).
@@ -202,9 +262,9 @@ Also now DONE:
 8. Then the whole shell: menus, onboarding, currencies, career/divisions, store (Part B §1–15).
 9. Android build/test (Build Support module + phone over USB). iOS needs a Mac later.
 
-### A10.1 NEXT BRICK DESIGN (in order)
+### A11.1 NEXT BRICK DESIGN (in order)
 
-**(a) Drives + picks + bot adaptive Drop** — the next attacking/defensive layer:
+**(a) Drives + picks + bot adaptive Drop — 🟡 BUILT (first pass, June 2026; improve later):**
 - **Drives.** A perimeter carrier with a step on its marker and a clear lane attacks the cage: a timed burst toward the goal that draws help; if a second defender commits, kick to the now-open man. Hook into the carrier branch of `WaterPoloBrain` — when shot-quality is low but the marker is beaten (carrier has a lateral/forward step + lane toward 2m), set a **drive target** instead of holding the role spot. End the drive on: reaching ~2m (shoot), a help defender stepping in (pass to the vacated man), or losing the step.
 - **Picks (screens).** An off-ball attacker sets a screen on the carrier's marker — moves adjacent to that defender on the side the carrier wants to attack, holds, and the carrier rubs off it. Add `ScreenSpot(carrier, marker)` to `TeamSide` plus a "set screen / use screen" role pair in the brain; the pick frees either the driver or a pop-out shooter.
 - **Bot adaptive Drop.** Bots currently always Press. Give the bot `TeamSide` an evaluator that re-picks `defenseMode` every few seconds (with hysteresis): **Drop/MPress** when man-down, protecting a late lead, or the player's centre keeps getting deep 2m feeds; **Press** when chasing or man-up. Same `defenseMode` plumbing the player's Z cycle already uses, just automated.
@@ -326,7 +386,8 @@ Also now DONE:
 ### B16.13 Post-Match ⬜
 - Final whistle → earn coins; if enough progress, pass rewards + daily task rewards.
 
-## B17. Art & Character Notes 🟡 (placeholders now; real art is a later phase)
+## B17. Art & Character Notes 🟡 (basic sprite animation DONE & working in-engine; full art still a later phase)
+- **Visual Pass 1 COMPLETE:** 7-state animation system fully working in-engine for both red and blue teams. Red team: PlayerAnimation.controller on Player1–6. Blue team: BlueAnimation.controller on Bot1–6, blue cap sprites in BlueTeam folder. AnimationClipBuilder editor tool builds and wires everything (Tools menu). Steal animation fires on every grab attempt. Defend animation proximity-gated (1.5 units). Sprint mechanic with loose-hold strip bonus. SpriteRenderer horizontal flipping. **Remaining art:** goalkeeper animations; scale consistency between idle and swim/sprint sprites; 15 total animation states planned (7 done).
 - Believable body types/faces. In live play faces not detailed (Dream-League style). Goal replays use close-up → detailed faces matter there. **2D approach:** small simple sprites in-match; higher-detail 2D portraits for cards/managers/replays/celebrations. Art is deliberately deferred until gameplay is locked. (Old SceneKit/3D-mesh/GLTF notes are obsolete — this is a 2D Unity game.)
 
 ---
@@ -339,4 +400,10 @@ Also now DONE:
 - Don't suggest: Swift/SDL2/SceneKit, LLM-driven bots, web deployment, Stripe/PayPal, Tailwind. Mobile payments = Apple/Google billing, later.
 - Nikoloz has **Claude Code in VS Code** — big multi-file AI work goes there; single-file features + guidance happen in chat.
 - Commit routine: `git add . && git commit -m "..." && git push`. GitHub: https://github.com/Nikoloz-Todua
-- Current focus: core match rules are in (6v6, sprint duel, shot clock, halftime swap, exclusions/forfeit, out-of-bounds, free throws, penalties, goal-line out + corner restart, keeper grab-and-control, counterattack, Drop/MPress + man-up/down shapes, shot-quality logic). **Next: drives + picks + bot adaptive Drop (see A10.1), then a tuning pass, then VISUAL PASS 1, then touch controls.** Everything in Part B tagged ⬜ is future.
+- Current focus: Visual Pass 1 complete (see A7). Next priorities:
+  (1) sprint animation threshold fix,
+  (2) touch controls (B16.3),
+  (3) goalkeeper animations,
+  (4) player name labels above heads (B16.4),
+  (5) HUD improvements (B16.6).
+  Everything in Part B tagged ⬜ is future.

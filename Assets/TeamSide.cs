@@ -34,6 +34,8 @@ public class TeamSide : MonoBehaviour
     public float supportPassRange = 5.0f;    // an off-ball attacker only offers a support outlet within this of the carrier
     public float supportBlend = 0.5f;        // how far an open, in-range attacker blends role-spot → support (0..1)
     public float passOpennessWeight = 1.5f;  // how strongly the carrier prefers WIDE-open pass targets (e.g. wings)
+    public float formationAnchorStrength = 0.7f; // how strongly support players are pulled back to their role spot (0 = free drift, 1 = glued)
+    public float formationAnchorRadius = 1.5f;   // hard cap: a support player's target never strays further than this from its role spot
 
     [Header("Tactics")]
     public float centerFeedWeight = 3f;      // extra pass score for feeding an open, deep Centre (inside)
@@ -271,9 +273,11 @@ public class TeamSide : MonoBehaviour
     public Vector2 AttackTarget(Transform me, Vector2 ballPos, TeamSide enemy)
     {
         if (me == null) return ballPos;
-        Vector2 spot = AttackPositionFor(me, ballPos, enemy); // role shape = primary
+        Vector2 roleSpot = AttackPositionFor(me, ballPos, enemy); // role shape = primary
+        Vector2 spot = roleSpot;
 
-        // the Centre's inside fight IS its job — no support-blend / spacing dilution
+        // the Centre (hole set) fights for inside water regardless — its role spot IS
+        // dynamic and ball-independent, so no support-blend / spacing / anchor dilution
         if (RoleOf(me) == Role.Center) return spot;
 
         // blend toward support ONLY if this attacker is genuinely useful: open AND within
@@ -288,6 +292,15 @@ public class TeamSide : MonoBehaviour
         }
 
         spot = ApplyTeammateSpacing(me, spot, ballPos);
+
+        // FORMATION ANCHOR (anti-cluster): pull the drifted target back toward the role
+        // spot, then hard-cap the stray so support players HOLD the formation instead of
+        // collapsing onto the ball. 0 strength = old free drift, 1 = glued to the spot.
+        spot = Vector2.Lerp(spot, roleSpot, Mathf.Clamp01(formationAnchorStrength));
+        Vector2 stray = spot - roleSpot;
+        if (stray.magnitude > formationAnchorRadius)
+            spot = roleSpot + stray.normalized * formationAnchorRadius;
+
         return ClampToField(spot);
     }
 
