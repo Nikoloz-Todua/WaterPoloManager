@@ -4,6 +4,8 @@ using TMPro;
 
 public class ScoreManager : MonoBehaviour
 {
+    public static ScoreManager Instance { get; private set; }
+
     [SerializeField] private Rigidbody2D ball;
     [SerializeField] private TMP_Text scoreText;
     [SerializeField] private TeamSide playerTeam;
@@ -16,6 +18,8 @@ public class ScoreManager : MonoBehaviour
     // public read-only access for other systems (e.g. MatchTimer's win condition)
     public int HomeScore => homeScore;
     public int AwayScore => awayScore;
+
+    void Awake() { Instance = this; }
 
     void Start()
     {
@@ -46,6 +50,14 @@ public class ScoreManager : MonoBehaviour
 
         // The team that CONCEDED restarts with possession.
         TeamSide conceding = (scorer == playerTeam) ? botTeam : playerTeam;
+
+        // Centre-goal tracking (Feature 3): if the scorer team's CENTRE released the
+        // shot, the conceding team remembers it — feeds the bot's adaptive Drop defense.
+        Transform shooter = MatchContext.Instance != null ? MatchContext.Instance.LastReleaser : null;
+        if (scorer != null && conceding != null && shooter != null &&
+            scorer.Contains(shooter) && scorer.RoleOf(shooter) == TeamSide.Role.Center)
+            conceding.goalsConcededFromCenter++;
+
         RestartAfterGoal(conceding);
     }
 

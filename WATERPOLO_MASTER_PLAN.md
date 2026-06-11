@@ -61,18 +61,21 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 | `TeammateAI.cs` | Thin component on each player. When NOT human-controlled, runs the shared `WaterPoloBrain`. Implements `IAgentBody`. |
 | `BotMovement.cs` | Thin component on each bot. Always runs `WaterPoloBrain`. Implements `IAgentBody`. |
 | `WaterPoloAI.cs` | **The shared brain** + `IAgentBody` interface. All AI decisions live here once: carrier (shoot/pass/dribble), support (get open), presser (nearest chases), defender (hold shape). Nothing is attached to this file — pure logic the others call. **This is C# state-machine AI — NOT an LLM.** |
-| `TeamSide.cs` | One per team. Holds goals + roster (`members`), formation math (auto-spreads ANY number of players), passing/positioning logic. Scales 2v2 → 6v6 with no code change. |
-| `MatchContext.cs` | Singleton "match truth": ball position, possession + last toucher, post-release grab cooldown, freeze flag, shot-clock grab-ban, kickoff-pass flag, halftime `SwapEnds()`, `GiveBallTo()` / `ForceDropHeldBall()`, `EnemyOf()`. |
-| `TeamManager.cs` | On `GameManager`. Auto-switches control to the ball-holder; manual **C** switch (skips excluded); **Z** toggles Press/Zone; never auto-activates excluded players. |
-| `Goalkeeper.cs` | Kinematic keeper sliding along its physical goal line tracking ball Y. Stays on its goal even after the halftime swap. |
+| `TeamSide.cs` | One per team. Holds goals + roster (`members`), formation math (auto-spreads ANY number of players), passing/positioning logic, **attacking-spacing + tactics tunables (center-feed, counter, shot-quality threshold, free-throw clearance), shot-quality + pass-risk scoring, and 4 defense modes — Press/Zone/Drop/MPress — incl. man-up 4-2 umbrella + man-down zone shapes**. Scales 2v2 → 6v6 with no code change. |
+| `MatchContext.cs` | Singleton "match truth": ball position, possession + last toucher (`NoteTouch` for deflections), post-release grab cooldown, freeze flag, shot-clock grab-ban, kickoff-pass flag, **free-throw state, keeper-hold flag, counterattack window, player goal-line clamp (`playerLimitX`)**, halftime `SwapEnds()`, `GiveBallTo()` / `ForceDropHeldBall()`, `EnemyOf()`. |
+| `TeamManager.cs` | On `GameManager`. Auto-switches control to the ball-holder; manual **C** switch (skips excluded); **Z** cycles defense (Press/Zone/Drop/MPress); never auto-activates excluded players. |
+| `Goalkeeper.cs` | Kinematic keeper sliding along its physical goal line tracking ball Y (stays on its goal after the halftime swap). **Grab-and-control:** collects a slow loose ball near its net, holds briefly, then distributes to an open teammate (bot auto-passes; player keeper passes out on **B**). A keeper hold is NOT a possession change — the shot clock keeps ticking until the pass-out. |
 | `Goal.cs` | Trigger on each net; reports `goalSide` ("Left"/"Right") to ScoreManager. |
 | `ScoreManager.cs` | Team-based score (credits the team attacking that net → survives the halftime swap); conceding-team kickoff restart; **ignores held-ball goals**. |
 | `MatchTimer.cs` | Quarters (90s) + win/lose/draw; pauses the clock during freezes; triggers the sprint duel each quarter; halftime swap; `ForfeitMatch()`. |
-| `ShotClock.cs` | 30s per-possession clock (singleton): resets on possession change / goal / defensive exclusion; turnover + grab-ban at 0; pauses when frozen or match over. |
-| `ExclusionManager.cs` | Fouls + exclusions (singleton): failed steal = foul; 2 in 10s → 5s exclusion (roster slot nulled → AI auto-adapts); 3rd → removal; forfeit < 4 players; HUD countdowns. |
+| `ShotClock.cs` | 30s per-possession clock (singleton): resets on possession change / goal / defensive exclusion; turnover + grab-ban at 0; pauses when frozen, **during a free throw**, or match over; **a keeper hold does NOT reset it (keeps ticking until the keeper distributes)**. |
+| `ExclusionManager.cs` | Fouls + exclusions (singleton): failed steal = foul → **free throw** to the fouled team; 2 fouls in 10s → 5s exclusion (roster slot nulled → AI auto-adapts) **or a PENALTY if the victim was in the 2m zone**; 3rd → removal; forfeit < 4 players; HUD countdowns. |
 | `SprintDuel.cs` | Quarter-start duel (singleton): line-up + freeze, whistle, two sprinters race (human mashes Space), winner grabs → kickoff pass. |
 | `EventFeed.cs` | Rolling last-5 event log (singleton): goals, exclusions, turnovers, out-of-bounds, forfeit, halftime. |
 | `BallOutOfBounds.cs` | Top/bottom-wall out rule: a loose ball at the edge → possession to the nearest player of the team that didn't touch it last. |
+| `PenaltyManager.cs` | Penalty shot (singleton, B16.11): on an exclusion-level foul inside the 2m zone, freezes play, puts the fouled shooter on the penalty spot (|x|≈2.47) facing the open corner, lines everyone else up **behind the shooter**. Human charges with **Space** within an aim cone; AI auto-fires after a delay (with a miss chance). The freeze lifts on the shot; a goal flows through the normal `Goal` path. |
+| `GoalLineOut.cs` | Goal-line out rule (B16.11): a LOOSE ball crossing a goal line outside the mouth → re-enter just inside, nearest opponent gets it; a CARRIER pressing the end line → **corner restart** (ball + receiver placed at that corner). Awards to the team that didn't touch it last (deflection-aware via `LastTouchTeam`). |
+| `BallTouchTracker.cs` | Sits on the **Ball**. Records the last team to physically touch a LOOSE ball, so a shot/pass that deflects off an opponent and goes out is awarded correctly. Ignores keeper touches and held-ball contacts. |
 
 **Architecture rule for any AI:** keep `TeamSide` + `MatchContext` + `WaterPoloBrain`. It is roster-size-agnostic by design. To scale teams: add player/bot objects, drop them into the team `members` arrays + TeamManager arrays; formation & AI scale automatically.
 
@@ -86,7 +89,7 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 - **PoolLines** — thin decorative strips (2m / 5m / half markings). Visual only, no colliders.
 
 **Ball**
-- **Ball** — Circle (~0.4), yellow, **Tag = "Ball"**, Order 1. Rigidbody2D: Gravity 0, Linear Damping 4, Collision Detection = Continuous. Circle Collider 2D (trigger OFF).
+- **Ball** — Circle (~0.4), yellow, **Tag = "Ball"**, Order 1. Rigidbody2D: Gravity 0, Linear Damping 4, Collision Detection = Continuous. Circle Collider 2D (trigger OFF). Also has **`BallTouchTracker`** (no refs — pulls from MatchContext; tracks loose-ball deflections for the out rules).
 
 **Players (your team, 6) — attack one end / defend the other; sides SWAP at halftime**
 - **Player1 … Player6** — Circles (~0.5), red, Order 1. Each has: Rigidbody2D (Gravity 0, Freeze Rotation Z), Circle Collider 2D, a child **AimLine** (Line Renderer).
@@ -99,25 +102,27 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 
 **Goals & keepers**
 - **GoalRight** (Pos (7,0)) / **GoalLeft** (Pos (-7,0)) — Squares (0.5,3), **Box Collider 2D Is Trigger ON**. `Goal`: Goal Side = "Right"/"Left", **Score Manager = ScoreManager**.
-- **KeeperRight** (~(6.3,0)) / **KeeperLeft** (~(-6.3,0)) — thin tall Squares. Box Collider 2D (trigger OFF) + Rigidbody2D **Kinematic** (Use Full Kinematic Contacts ON, Gravity 0). `Goalkeeper`: **Ball = Ball**, Track Speed, Min/Max Y. Keepers guard their physical goal even after the halftime swap.
+- **KeeperRight** (~(6.3,0)) / **KeeperLeft** (~(-6.3,0)) — thin tall Squares. Box Collider 2D (trigger OFF) + Rigidbody2D **Kinematic** (Use Full Kinematic Contacts ON, Gravity 0). `Goalkeeper`: **Ball = Ball**, Track Speed 4, Min/Max Y, and grab-and-control fields: Keeper Grab Distance 1.2, Keeper Grab Max Speed 3, Keeper Hold 1.5, Player Keeper Max Hold 3, Hold Offset 0.5. Keepers guard their physical goal even after the halftime swap.
 
 **Managers — all components on ONE `GameManager` GameObject:**
-- `MatchContext`: **Ball = Ball, Player Team = PlayerTeam, Bot Team = BotTeam**, Release Grab Delay 0.35.
+- `MatchContext`: **Ball = Ball, Player Team = PlayerTeam, Bot Team = BotTeam**, Release Grab Delay 0.35, Free Throw AI Hold 3, Player Limit X 6.9, Counter Window 4.
 - `TeamManager`: **Players = [Player1..6]**, **Teammate AIs = [Player1..6] (SAME ORDER)**, **Player Team = PlayerTeam**, **Defense Mode Text = DefenseModeText**.
 - `MatchTimer`: **Score Manager = ScoreManager, Timer Text = TimerText, Quarter Text = QuarterText, Result Text = ResultText**, Quarter Length 90, Total Quarters 4.
 - `ShotClock`: **Match Timer = (this GameManager's MatchTimer), Shot Clock Text = ShotClockText**, Shot Clock Seconds 30.
 - `EventFeed`: **Feed Text = EventFeedText, Match Timer = MatchTimer**, Max Lines 5.
 - `SprintDuel`: no required refs (pulls teams/ball from MatchContext); optional **Duel Text**; speed/timing tunables.
 - `BallOutOfBounds`: no refs (pulls from MatchContext); Out Y Threshold 4.2, Reentry Inset 0.5.
+- `PenaltyManager`: optional **Penalty Text = PenaltyText**; Penalty Spot X 2.47, Behind Spot Margin 1, Penalty Aim Cone 70, AI Shoot Delay 1, AI Miss Chance 0.25, AI Miss Offset 1.6, Penalty Shot Speed 13, Max Penalty Seconds 6.
+- `GoalLineOut`: no refs (pulls from MatchContext); Goal Line X 7, Goal Mouth Half Height 1.5, Reentry Inset 0.5, Carrier Out X 6.7, Corner Inset X 6.2, Corner Y 3.5.
 
 **Other manager objects (empty GameObjects)**
-- **PlayerTeam** — `TeamSide`: Name "Player", **Attack Goal = GoalRight, Defend Goal = GoalLeft**, **Members = [Player1..6]**, formation + AI tunables.
+- **PlayerTeam** — `TeamSide`: Name "Player", **Attack Goal = GoalRight, Defend Goal = GoalLeft**, **Members = [Player1..6]**, formation + AI tunables, plus **attacking-spacing** (Teammate Spacing 2, Support Pass Range 5, Support Blend 0.5, Pass Openness Weight 1.5) and **tactics** (Center Feed Weight 3, Counter Runners 2, Drop Sag 0.5, Shot Quality Threshold 0.42, Free Throw Clearance 2.2) fields. (Defense mode is runtime-only, defaults Press.)
 - **BotTeam** — `TeamSide`: Name "Bot", **Attack Goal = GoalLeft, Defend Goal = GoalRight**, **Members = [Bot1..6]**.
 - **ScoreManager** — `ScoreManager`: **Ball = Ball, Score Text = ScoreText, Player Team = PlayerTeam, Bot Team = BotTeam**, Goal Freeze Seconds 1.
-- **ExclusionManager** — `ExclusionManager`: **Match Timer = MatchTimer, Exclusion Text = ExclusionText**; Foul Window 10, Fouls For Exclusion 2, Exclusion 5, Max Exclusions 3, Min Players 4.
+- **ExclusionManager** — `ExclusionManager`: **Match Timer = MatchTimer, Exclusion Text = ExclusionText**; Foul Window 10, Fouls For Exclusion 2, Exclusion 5, Max Exclusions 3, Min Players 4, Foul Steal Lockout 1.5, Penalty Zone X 4.28.
 
 **UI — Canvas (TextMeshPro), + EventSystem (auto)**
-- **ScoreText** ("YOU 0 - 0 BOT"), **TimerText** ("1:30"), **QuarterText** ("Q1"), **ResultText** (hidden until full time), **DefenseModeText** ("DEFENSE: PRESS/ZONE"), **ExclusionText** (exclusion countdowns), **ShotClockText** ("30"), **EventFeedText** (last 5 events).
+- **ScoreText** ("YOU 0 - 0 BOT"), **TimerText** ("1:30"), **QuarterText** ("Q1"), **ResultText** (hidden until full time), **DefenseModeText** ("DEFENSE: PRESS/ZONE"), **ExclusionText** (exclusion countdowns), **ShotClockText** ("30"), **EventFeedText** (last 5 events), **PenaltyText** ("PENALTY!", hidden until a penalty; wired into `PenaltyManager.Penalty Text`).
 
 ## A7. Controls (keyboard — for PC testing; touch comes later)
 
@@ -127,7 +132,7 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 - **Hold B** — charge & pass; auto-targets the teammate you're facing (nearest teammate as fallback).
 - **Space (when NOT holding)** — attempt steal (chance-based; must be in front of the carrier).
 - **C** — manual player switch (mostly redundant: control auto-follows the ball-carrier).
-- **Z** — toggle team defense between **Press** and **Zone**.
+- **Z** — cycle team defense: **Press → Zone → Drop → MPress**.
 
 ## A8. What's working today (DONE)
 
@@ -160,6 +165,16 @@ Also now DONE:
 - **Event feed** — rolling last-5 lines (goals, exclusions, turnovers, out-of-bounds, forfeit, halftime).
 - **Out-of-bounds** off the top/bottom walls → possession to the nearest player of the team that didn't touch it last.
 - **Held balls can't score** — only a released/loose ball (shot, pass, loose) counts.
+- **Free throws with clearance** — an ordinary foul gives the fouled team a free throw: the shot clock pauses, the carrier is protected from steals, and enemies must back off `freeThrowClearance` (2.2).
+- **Penalties (B16.11)** — an exclusion-level foul inside the attacking **2m zone** → penalty shot from |x|≈2.47 with an **aiming cone** and **everyone lined up behind the shooter**; human charges Space / AI auto-fires with a miss chance. (`PenaltyManager`.)
+- **Goal-line out + corner restart** — a loose ball over the goal line (outside the mouth) → nearest opponent re-enters it just inside; a carrier pressing the end line → **corner restart** (ball + receiver placed at that corner). (`GoalLineOut`.)
+- **Player goal-line clamp** — swimmers can't cross the goal line (x clamped to ±`playerLimitX` 6.9); ball + keepers excluded.
+- **Deflection-aware last touch** — `BallTouchTracker` on the ball credits loose-ball deflections to the right team, so out-of-bounds + goal-line awards are correct after a deflection.
+- **Keeper grab-and-control** — the keeper collects a slow loose ball near its net, holds, then distributes to an open teammate (bot auto-passes; player keeper passes out on **B**); the shot clock keeps ticking through the hold.
+- **Counterattack** — winning the ball in your own half opens a fast-break window; the top advanced players sprint forward.
+- **Man-up 4-2 umbrella / man-down zone** — distinct tactical shapes that emerge automatically when a team is up or down a player.
+- **Drop + MPress defense modes** — **Z** now cycles four modes (Press → Zone → Drop → MPress): Drop = help defense fronting the centre with a sagging helper, MPress = press with one centre dropper.
+- **Shot-quality + pass-risk decision logic** — the carrier scores shot quality (distance / angle / clear lane / pressure) against a threshold (0.42) to decide shoot-vs-pass, and weighs pass risk by pass distance (longer passes need a wider-open lane).
 
 ## A9. Known issues / tuning notes
 
@@ -170,22 +185,35 @@ Also now DONE:
 
 **KNOWN ISSUES / NEXT:**
 - Residual **clustering only when the ball + multiple players + an opponent genuinely converge** on the same spot — acceptable/realistic, not the old "everyone bunches" bug.
-- **Done since last update:** sprint duel + kickoff pass; shot clock; halftime side-switch; exclusion system + forfeit; event feed; out-of-bounds; held-ball-goal fix; conceding-team goal restart.
-- **Next brick:** **Penalty inside the 5m zone** (B16.11) — penalty shot when a foul occurs in the 5m area — then **keeper grab-and-control** (keeper collects a stuck ball; player controls the keeper to pass it out, then it returns to the line).
+- **Done since last update:** free throws (with clearance); penalties (2m zone, aiming cone, behind-shooter formation); goal-line out + corner restart; player goal-line clamp; deflection-aware last touch (`BallTouchTracker`); keeper grab-and-control (clock keeps ticking through the hold); counterattack window; man-up 4-2 umbrella + man-down zone; Drop + MPress defense modes (Z cycles 4); shot-quality + pass-risk decision logic.
+- **Next brick:** **drives + picks + bot adaptive Drop** (design below in A10), then a **tuning pass**, then **VISUAL PASS 1** (sprites/caps/names/HUD), then touch controls.
 - **Deferred visuals** (secondary per dev priority): keeper art/animation; crowd/stadium; camera zoom-out; water-flow effects. (Pool zone lines now exist as `PoolLines`.)
-- **Other deferred:** per-player stamina system; weak no-hold deflection shot (a ball struck without a settled hold should be weaker than a settled one); corners on keeper deflections; referee.
+- **Other deferred:** per-player stamina system; weak no-hold deflection shot (a ball struck without a settled hold should be weaker than a settled one); corners on KEEPER deflections; referee.
 
 ## A10. Immediate roadmap (next bricks, rough order)
 
 1. **Scale teams** — 4v4 first (verify formation+AI), then 6v6. Mostly cloning objects + adding to lists. ✅ **DONE** (now 6v6).
 2. **Match timer + win condition** — game currently never ends. ✅ **DONE** (4 quarters, 30s each tunable, win/lose/draw at full time).
 3. **Steal mechanic** — take ball from a holder (key + success chance); ties into fouls. ✅ **DONE** (human steal on Space + AI pressers strip the carrier; fouls not yet wired).
-4. **Keeper grab-and-control** — keeper grabs a stuck carrier's ball, player controls keeper to pass out, keeper returns to line.
-5. Smarter AI: pass backward/around a block, better shot selection.
-6. Rule systems: shot clock, quarters, exclusions (see Part B §16).
+4. **Keeper grab-and-control** — keeper collects a slow loose ball, distributes to an open teammate (bot auto / player on B); clock keeps ticking through the hold. ✅ **DONE**.
+5. Smarter AI: pass backward/around a block, better shot selection. ✅ **DONE** (shot-quality + pass-risk logic, center feed, counterattack, man-up/down shapes, Drop/MPress).
+6. Rule systems: shot clock, quarters, exclusions (see Part B §16). ✅ **DONE** (incl. free throws + penalties + goal-line out).
 7. Touch controls (virtual joystick + A/B/C + hand button) for mobile.
 8. Then the whole shell: menus, onboarding, currencies, career/divisions, store (Part B §1–15).
 9. Android build/test (Build Support module + phone over USB). iOS needs a Mac later.
+
+### A10.1 NEXT BRICK DESIGN (in order)
+
+**(a) Drives + picks + bot adaptive Drop** — the next attacking/defensive layer:
+- **Drives.** A perimeter carrier with a step on its marker and a clear lane attacks the cage: a timed burst toward the goal that draws help; if a second defender commits, kick to the now-open man. Hook into the carrier branch of `WaterPoloBrain` — when shot-quality is low but the marker is beaten (carrier has a lateral/forward step + lane toward 2m), set a **drive target** instead of holding the role spot. End the drive on: reaching ~2m (shoot), a help defender stepping in (pass to the vacated man), or losing the step.
+- **Picks (screens).** An off-ball attacker sets a screen on the carrier's marker — moves adjacent to that defender on the side the carrier wants to attack, holds, and the carrier rubs off it. Add `ScreenSpot(carrier, marker)` to `TeamSide` plus a "set screen / use screen" role pair in the brain; the pick frees either the driver or a pop-out shooter.
+- **Bot adaptive Drop.** Bots currently always Press. Give the bot `TeamSide` an evaluator that re-picks `defenseMode` every few seconds (with hysteresis): **Drop/MPress** when man-down, protecting a late lead, or the player's centre keeps getting deep 2m feeds; **Press** when chasing or man-up. Same `defenseMode` plumbing the player's Z cycle already uses, just automated.
+
+**(b) Tuning pass** — a dedicated balance pass once (a) lands: chase/carry/support speeds, shoot range/power (~20 placeholders), steal chances, shot-quality threshold, free-throw/penalty timings. Goal: bots beatable but not weak.
+
+**(c) VISUAL PASS 1** — first real art/HUD layer: player **sprites** + **caps** (team colours / numbers), **name labels** above each swimmer, directional facing, and a laid-out **HUD** (score with logos, quarter, timer, shot clock, exclusion countdowns). Still 2D, still pre-touch.
+
+**then → touch controls** (virtual joystick + A/B/C + hand button) for mobile.
 
 ---
 
@@ -288,9 +316,9 @@ Also now DONE:
 - **Man-up / man-down:** now emerges automatically — an excluded player's roster slot is nulled, so formation spacing and marking re-solve for the extra/missing man with no special-case code (B16.9 done).
 - **AI is C# state-machine logic (`WaterPoloBrain`), scaled by player stats.** The original "LLM-driven bots (LM Studio/llama.cpp/Claude API)" idea is **ABANDONED** — do not implement it; it's wrong for a real-time game.
 
-### B16.11 Fouls & Rules 🟡 PARTIAL (fouls + exclusions + out-of-bounds + held-ball-goal done; penalties NOT)
-- **Done:** failed-steal fouls + exclusions (see B16.9); **out-of-bounds** off the top/bottom walls (a loose ball at the edge → possession to the nearest player of the team that didn't touch it last, ball re-enters just inside, shot clock resets, "Out - YOU/BOT" feed line); **held-ball goals ignored** (only released/loose balls can score). Minor foul = possession change is approximated by the steal/foul system.
-- **NOT yet:** penalty shot for a foul inside the 5m zone; corners on keeper deflections; poolside referee.
+### B16.11 Fouls & Rules ✅ DONE (free throws + penalties + goal-line out + corner restart; only keeper-deflection corners + referee left)
+- **Done:** failed-steal fouls + exclusions (see B16.9); **free throw** on an ordinary foul (shot clock pauses, the carrier is protected from steals, enemies back off `freeThrowClearance`); **penalty shot** for an exclusion-level foul inside the **2m zone** (`PenaltyManager`: shooter on the penalty spot |x|≈2.47, aim cone, everyone behind the shooter; human charges Space / AI auto-fires with a miss chance); **top/bottom out-of-bounds** (loose ball at the edge → nearest player of the team that didn't touch it last, re-enters just inside, "Out - YOU/BOT" feed); **goal-line out + corner restart** (`GoalLineOut`, deflection-aware via `BallTouchTracker`); **held-ball goals ignored**; **player goal-line clamp**.
+- **NOT yet:** corners specifically on KEEPER deflections; poolside referee.
 
 ### B16.12 Goals & Replays 🟡 PARTIAL (goal detection + scoring DONE; replays/celebrations/sounds not)
 - Goal → auto replay; player can save replay (→ Club highlights); celebrations; specific crowd sounds.
@@ -311,4 +339,4 @@ Also now DONE:
 - Don't suggest: Swift/SDL2/SceneKit, LLM-driven bots, web deployment, Stripe/PayPal, Tailwind. Mobile payments = Apple/Google billing, later.
 - Nikoloz has **Claude Code in VS Code** — big multi-file AI work goes there; single-file features + guidance happen in chat.
 - Commit routine: `git add . && git commit -m "..." && git push`. GitHub: https://github.com/Nikoloz-Todua
-- Current focus: core match rules are in (6v6, sprint duel, shot clock, halftime swap, exclusions/forfeit, out-of-bounds, event feed). **Next: penalty inside the 5m zone (B16.11), then keeper grab-and-control.** Everything in Part B tagged ⬜ is future.
+- Current focus: core match rules are in (6v6, sprint duel, shot clock, halftime swap, exclusions/forfeit, out-of-bounds, free throws, penalties, goal-line out + corner restart, keeper grab-and-control, counterattack, Drop/MPress + man-up/down shapes, shot-quality logic). **Next: drives + picks + bot adaptive Drop (see A10.1), then a tuning pass, then VISUAL PASS 1, then touch controls.** Everything in Part B tagged ⬜ is future.

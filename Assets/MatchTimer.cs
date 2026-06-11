@@ -6,6 +6,8 @@ using TMPro;
 // Reads the score from ScoreManager to decide the winner.
 public class MatchTimer : MonoBehaviour
 {
+    public static MatchTimer Instance { get; private set; }
+
     [Header("References")]
     [SerializeField] private ScoreManager scoreManager;
     [SerializeField] private TMP_Text timerText;   // time left in the quarter, e.g. "0:23"
@@ -22,6 +24,14 @@ public class MatchTimer : MonoBehaviour
 
     // read-only access for other systems (shot clock pauses on this; event feed stamps with it)
     public bool MatchOver => matchOver;
+
+    // Whole-match seconds remaining (rest of this quarter + all quarters still to play).
+    // Used by the bot's adaptive defense ("protect a late lead").
+    public float RemainingSeconds()
+        => matchOver ? 0f
+                     : Mathf.Max(0f, timeLeft) + Mathf.Max(0, totalQuarters - currentQuarter) * quarterLength;
+
+    void Awake() { Instance = this; }
 
     void Start()
     {

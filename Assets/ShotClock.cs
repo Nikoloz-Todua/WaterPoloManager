@@ -49,10 +49,12 @@ public class ShotClock : MonoBehaviour
         TeamSide cur = ctx.PossessingTeam;
 
         // Possession changed to a DIFFERENT team → fresh clock. (A pass within the same
-        // team goes team→loose→same team and does NOT reset.)
+        // team goes team→loose→same team and does NOT reset.) A keeper collecting the ball
+        // is NOT a reset — the clock keeps ticking for the holding team (Part 1); the reset
+        // happens when the keeper distributes (Goalkeeper calls ResetClock()).
         if (cur != null && cur != lastTeam)
         {
-            ResetClock();
+            if (!ctx.KeeperHolding) ResetClock();
             lastTeam = cur;
         }
 
@@ -79,6 +81,7 @@ public class ShotClock : MonoBehaviour
     void Turnover(MatchContext ctx)
     {
         TeamSide violator = ctx.PossessingTeam;
+        ctx.ClearKeeperHold();               // a violation ends any keeper hold too
         ctx.ForceDropHeldBall();             // reuse the shared drop/release path; ball goes loose
         if (violator != null) ctx.SetGrabBan(violator);
         if (EventFeed.Instance != null) EventFeed.Instance.AddEvent("Shot clock - turnover");

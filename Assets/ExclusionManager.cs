@@ -24,6 +24,7 @@ public class ExclusionManager : MonoBehaviour
     [SerializeField] private int minPlayersToContinue = 4;    // below this (after removals) → forfeit
     [SerializeField] private float foulStealLockout = 1.5f;   // steal lockout applied to a fouling agent
     [SerializeField] private float penaltyZoneX = 4.28f;      // victim |x| ≥ this (goal-side) → penalty, not exclusion
+    [SerializeField] private bool centerFoulBoost = true;     // fouls on an inside-water Centre escalate faster
 
     [Header("References")]
     [SerializeField] private MatchTimer matchTimer;           // to end the match on a forfeit
@@ -99,6 +100,17 @@ public class ExclusionManager : MonoBehaviour
     public bool IsExcluded(Transform t)
         => t != null && (excludedNow.Contains(t) || permanentlyOut.Contains(t));
 
+    // How many of `team`'s original roster are currently out — used by the brain for
+    // man-up (enemy short) / man-down (we're short) tactical shapes.
+    public int ExcludedCount(TeamSide team)
+    {
+        if (team == null || !originalRoster.TryGetValue(team, out Transform[] roster)) return 0;
+        int n = 0;
+        foreach (Transform t in roster)
+            if (t != null && (excludedNow.Contains(t) || permanentlyOut.Contains(t))) n++;
+        return n;
+    }
+
     // Called on EVERY failed steal. `victim` = the carrier that was fouled. Carrier keeps
     // the ball; offender is locked out. An ordinary foul gives the victim a FREE THROW;
     // enough fouls escalate to an exclusion — or a PENALTY if the victim was in the 2m zone.
@@ -115,6 +127,19 @@ public class ExclusionManager : MonoBehaviour
         }
         times.Add(Time.time);
         times.RemoveAll(t => Time.time - t > foulWindowSeconds);
+
+        // Feature 5: fouling the enemy CENTRE while he holds inside water counts as an
+        // extra (virtual) foul, so Centres draw exclusions/penalties faster — the payoff
+        // for fighting for (and feeding) inside position.
+        if (centerFoulBoost && victim != null)
+        {
+            MatchContext mctx = MatchContext.Instance;
+            TeamSide victimTeam = mctx != null ? mctx.EnemyOf(team) : null;
+            if (victimTeam != null && victimTeam.Contains(victim) &&
+                victimTeam.RoleOf(victim) == TeamSide.Role.Center &&
+                TeamSide.IsInsideTwoMeter(victim, victimTeam))
+                times.Add(Time.time - 0.1f); // a virtual foul just inside the window
+        }
 
         if (times.Count >= foulsForExclusion)
             Escalate(offender, team, victim); // exclusion, or penalty if in the 2m zone

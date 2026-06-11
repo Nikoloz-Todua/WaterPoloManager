@@ -35,13 +35,39 @@ public class TeamSide : MonoBehaviour
     public float supportBlend = 0.5f;        // how far an open, in-range attacker blends role-spot → support (0..1)
     public float passOpennessWeight = 1.5f;  // how strongly the carrier prefers WIDE-open pass targets (e.g. wings)
 
+    [Header("Tactics")]
+    public float centerFeedWeight = 3f;      // extra pass score for feeding an open, deep Centre (inside)
+    public float counterRunners = 2f;        // how many advanced players sprint on a counterattack
+    public float dropSag = 0.5f;             // help defender's sag blend toward the centre, 0..1 (Drop mode)
+    public float shotQualityThreshold = 0.42f; // min shot-quality (0..1) to take the shot, else pass
+    public float passShotQualityWeight = 1.2f; // pass-score bonus per unit of the RECEIVER's shot quality
+    public float spacingPushMult = 1.4f;       // how hard crowded attackers get pushed apart
+    public float wideLateralMult = 1.2f;       // width multiplier on non-Centre attack lanes (full pool width)
+    public float wingWideBias = 0.2f;          // extra lateral drift for the weak-side wing
+
+    [Header("Adaptive defense (AI team only)")]
+    public float defenseReevalInterval = 4f;      // seconds between defense-mode re-evaluations
+    public float defenseHysteresisSeconds = 1.5f; // min time between unforced mode changes
+
+    // Runtime adaptive-defense state — no Inspector wiring needed.
+    [System.NonSerialized] public bool isAI;                   // true for the bot team (auto-set in Start)
+    [System.NonSerialized] public int goalsConcededFromCenter; // goals WE conceded to the enemy Centre
+    [System.NonSerialized] private float nextDefenseReevalTime;
+    [System.NonSerialized] private float lastDefenseModeChangeTime;
+
     // Fixed tactical roles, assigned by slot index in `members` (0..5).
     public enum Role { Center, CenterBack, LeftWing, RightWing, LeftFlat, RightFlat }
 
-    // Defensive scheme for this team. Press = threat-based 1-to-1 marking;
-    // Zone = everyone holds a goal-side spread. Runtime state (not serialized).
-    public enum DefenseMode { Press, Zone }
+    // Defensive scheme. Press = 1-to-1 marking; Zone = goal-side spread; Drop = help
+    // defense (front the centre, sag a helper); MPress = press with one centre dropper.
+    public enum DefenseMode { Press, Zone, Drop, MPress }
     [System.NonSerialized] public DefenseMode defenseMode = DefenseMode.Press;
+
+    void Start()
+    {
+        // The bot team evaluates its own defense; auto-detected so no Inspector wiring.
+        isAI = MatchContext.Instance != null && MatchContext.Instance.BotTeam == this;
+    }
 
     public Transform ClosestMemberTo(Vector2 point)
     {
@@ -55,6 +81,21 @@ public class TeamSide : MonoBehaviour
             if (d < bestDist) { bestDist = d; best = m; }
         }
         return best;
+    }
+
+    // true if `t` currently sits in this team's roster (excluded slots are null → false)
+    public bool Contains(Transform t)
+    {
+        if (t == null || members == null) return false;
+        foreach (Transform m in members) if (m == t) return true;
+        return false;
+    }
+
+    // Inside the attacking 2m zone = close to the goal `attackingTeam` is attacking.
+    public static bool IsInsideTwoMeter(Transform player, TeamSide attackingTeam)
+    {
+        return player != null && attackingTeam != null && attackingTeam.attackGoal != null &&
+               Vector2.Distance(player.position, attackingTeam.attackGoal.position) < 2.5f;
     }
 
     // returns the role index of a given member (its slot in the formation)
@@ -146,13 +187,16 @@ public class TeamSide : MonoBehaviour
         }
     }
 
-    // ---- attacking: fixed role-based spot (distinct depth + lateral per role) ----
+    // ---- attacking: role-based spot (distinct depth + lateral per role) ----
     // The carrier is handled by the brain's Carry(); only non-carriers use this.
-    // Each role gets its own depth toward the enemy goal and its own lane, so the
-    // team holds a real shape instead of converging on the ball.
-    public Vector2 AttackPositionFor(Transform me, Vector2 ballPos)
+    // The CENTRE is dynamic (fights for inside water at 2m, goal-side of its guard);
+    // every other role holds a wide fixed lane so the team uses the full pool width.
+    public Vector2 AttackPositionFor(Transform me, Vector2 ballPos, TeamSide enemy = null)
     {
         if (attackGoal == null || defendGoal == null) return ballPos;
+
+        Role role = RoleOf(me);
+        if (role == Role.Center) return CenterInsideSpot(enemy); // dynamic inside fight (Feature 4)
 
         Vector2 fwd = Forward();                              // own goal → enemy goal
         Vector2 across = new Vector2(-fwd.y, fwd.x);
@@ -161,9 +205,8 @@ public class TeamSide : MonoBehaviour
 
         float depthFrac;   // 0 = our goal, 1 = enemy goal
         float lateral;     // signed offset along `across`, in laneHeight units
-        switch (RoleOf(me))
+        switch (role)
         {
-            case Role.Center:     depthFrac = 0.80f; lateral =  0.0f; break; // deep, ~2-meter
             case Role.LeftWing:   depthFrac = 0.68f; lateral =  0.9f; break; // forward + wide
             case Role.RightWing:  depthFrac = 0.68f; lateral = -0.9f; break;
             case Role.LeftFlat:   depthFrac = 0.52f; lateral =  0.5f; break; // mid-depth ~5-meter
@@ -172,8 +215,54 @@ public class TeamSide : MonoBehaviour
             default:              depthFrac = 0.50f; lateral =  0.0f; break;
         }
 
+        lateral *= wideLateralMult; // push the lanes wider — use the full pool width
+
+        // ball on one side → the WEAK-SIDE wing drifts even wider (a far-post outlet)
+        if (role == Role.LeftWing || role == Role.RightWing)
+        {
+            float ballAcross = Vector2.Dot(ballPos - ownGoal, across);
+            if (Mathf.Abs(ballAcross) > 0.5f && Mathf.Sign(ballAcross) != Mathf.Sign(lateral))
+                lateral += Mathf.Sign(lateral) * wingWideBias;
+        }
+
         Vector2 spot = ownGoal + fwd * (depthFrac * span) + across * (lateral * laneHeight);
         return ClampToField(spot);
+    }
+
+    // Dynamic Centre positioning (Feature 4): fight for inside water at the 2m point.
+    // If a defender guards that point, take the GOAL SIDE of him; otherwise sit on the
+    // point itself. Y stays near the goal mouth.
+    public Vector2 CenterInsideSpot(TeamSide enemy)
+    {
+        if (attackGoal == null || defendGoal == null) return Vector2.zero;
+        Vector2 goalPos = attackGoal.position;
+        Vector2 goalDir = ((Vector2)goalPos - (Vector2)defendGoal.position).normalized;
+        Vector2 twoM = goalPos - goalDir * 2.0f; // 2 meters in front of the enemy goal
+
+        // the guard = the enemy defender actually near the 2m point (usually the centre-back)
+        Transform guard = null;
+        float best = 3f;
+        if (enemy != null && enemy.members != null)
+        {
+            foreach (Transform e in enemy.members)
+            {
+                if (e == null) continue;
+                float d = Vector2.Distance(e.position, twoM);
+                if (d < best) { best = d; guard = e; }
+            }
+        }
+
+        Vector2 target;
+        if (guard != null)
+        {
+            Vector2 fromGoal = (Vector2)guard.position - goalPos;
+            Vector2 dir = fromGoal.sqrMagnitude > 1e-4f ? fromGoal.normalized : -goalDir;
+            target = goalPos + dir * 1.2f; // inside water: goal-side of the guard
+        }
+        else target = twoM;
+
+        target.y = Mathf.Clamp(target.y, goalPos.y - 2.5f, goalPos.y + 2.5f); // near the mouth
+        return ClampToField(target);
     }
 
     // ---- attacking off-ball target: hold the role shape (width), only drift toward a
@@ -182,7 +271,10 @@ public class TeamSide : MonoBehaviour
     public Vector2 AttackTarget(Transform me, Vector2 ballPos, TeamSide enemy)
     {
         if (me == null) return ballPos;
-        Vector2 spot = AttackPositionFor(me, ballPos); // role shape = primary
+        Vector2 spot = AttackPositionFor(me, ballPos, enemy); // role shape = primary
+
+        // the Centre's inside fight IS its job — no support-blend / spacing dilution
+        if (RoleOf(me) == Role.Center) return spot;
 
         // blend toward support ONLY if this attacker is genuinely useful: open AND within
         // a reasonable pass range of the carrier (otherwise everyone would crowd the ball).
@@ -218,7 +310,7 @@ public class TeamSide : MonoBehaviour
 
             float side = Mathf.Sign(Vector2.Dot((Vector2)me.position - (Vector2)t.position, across));
             if (Mathf.Abs(side) < 0.01f) side = laneSign == 0f ? 1f : laneSign; // tie → my lane
-            target += across * (side * (teammateSpacing - d));
+            target += across * (side * (teammateSpacing - d) * spacingPushMult);
         }
         return target;
     }
@@ -304,6 +396,7 @@ public class TeamSide : MonoBehaviour
 
         Vector2 goal = attackGoal.position;
         float carrierGoalDist = Vector2.Distance(carrier.position, goal);
+        float span = defendGoal != null ? Vector2.Distance(goal, defendGoal.position) : 14f;
 
         Transform best = null;
         float bestScore = float.NegativeInfinity;
@@ -316,8 +409,11 @@ public class TeamSide : MonoBehaviour
             float openness = NearestDistance(mate.position, enemy);
             if (openness < openRadius) continue;
 
-            // the passing lane must be clear of defenders
-            if (!LaneClear(carrier.position, mate.position, enemy, passLaneRadius)) continue;
+            // PASS RISK: longer passes give defenders more time to step into the lane, so
+            // the danger radius grows with the pass distance.
+            float passDist = Vector2.Distance(carrier.position, mate.position);
+            float laneR = passLaneRadius + passDist * 0.05f;
+            if (!LaneClear(carrier.position, mate.position, enemy, laneR)) continue;
 
             float mateGoalDist = Vector2.Distance(mate.position, goal);
             float forwardGain = carrierGoalDist - mateGoalDist;
@@ -325,8 +421,19 @@ public class TeamSide : MonoBehaviour
             // when not under pressure, only pass if it actually advances the ball
             if (!pressured && forwardGain < forwardPassMin) continue;
 
-            // prefer forward + (heavily) open + closer to goal → favours wide-open wings
-            float score = forwardGain * 1.5f + openness * passOpennessWeight - mateGoalDist * 0.1f;
+            // prefer forward + (heavily) open + closer to goal → favours wide-open wings;
+            // the receiver's own look at goal rewards passes that IMPROVE shot quality
+            float score = forwardGain * 1.5f + openness * passOpennessWeight - mateGoalDist * 0.1f
+                        + ShotQuality(mate.position, enemy) * passShotQualityWeight;
+
+            // CENTER FEED: strongly prefer an open, deep Centre (the inside pass to 2m)
+            if (RoleOf(mate) == Role.Center && mateGoalDist < span * 0.32f)
+                score += centerFeedWeight;
+
+            // Centre with INSIDE WATER (deep + open) = the prime feed (Feature 4)
+            if (RoleOf(mate) == Role.Center && mateGoalDist < 2.5f && openness > openRadius)
+                score += centerFeedWeight * 2f;
+
             if (score > bestScore) { bestScore = score; best = mate; }
         }
         return best;
@@ -391,9 +498,224 @@ public class TeamSide : MonoBehaviour
         float minX = Mathf.Min(attackGoal.position.x, defendGoal.position.x);
         float maxX = Mathf.Max(attackGoal.position.x, defendGoal.position.x);
         float midY = (attackGoal.position.y + defendGoal.position.y) * 0.5f;
+        float halfY = Mathf.Min(laneHeight + 0.5f, 4.0f); // let the wings use the full width
         p.x = Mathf.Clamp(p.x, minX + 0.5f, maxX - 0.5f);
-        p.y = Mathf.Clamp(p.y, midY - laneHeight, midY + laneHeight);
+        p.y = Mathf.Clamp(p.y, midY - halfY, midY + halfY);
         return p;
+    }
+
+    // ================= Drives & picks (Features 1–2) =================
+
+    // Where a drive aims: the 2m point in front of the enemy goal, bent no more than
+    // ±1.5 off the driver's current y so the path is a diagonal cut, not a U-turn.
+    public Vector2 DrivePoint(Vector2 from)
+    {
+        if (attackGoal == null || defendGoal == null) return from;
+        Vector2 p = (Vector2)attackGoal.position - Forward() * 2.0f;
+        p.y = Mathf.Clamp(p.y, from.y - 1.5f, from.y + 1.5f);
+        return ClampToField(p);
+    }
+
+    // Where a screener plants: just to the side of the carrier's marker, on the side
+    // the carrier wants to drive toward (the goal side).
+    public Vector2 GetScreenSpot(Vector2 markerPos, Vector2 carrierDir, float screenDistance = 1.2f)
+    {
+        Vector2 dir = carrierDir.sqrMagnitude > 1e-4f ? carrierDir.normalized : Forward();
+        Vector2 perp = new Vector2(-dir.y, dir.x);
+        Vector2 sideA = markerPos + perp * (screenDistance * 0.7f);
+        Vector2 sideB = markerPos - perp * (screenDistance * 0.7f);
+        if (attackGoal == null) return ClampToField(sideA);
+        Vector2 g = attackGoal.position;
+        return ClampToField(Vector2.Distance(sideA, g) <= Vector2.Distance(sideB, g) ? sideA : sideB);
+    }
+
+    // The teammate nominated to screen for the carrier: the one closest to the
+    // carrier's marker (within 3), wings/flats preferred — their lanes naturally sit
+    // near a perimeter carrier. Null when the carrier isn't marked or nobody is near.
+    public Transform FindScreenerForCarrier(Transform carrier, TeamSide enemy)
+    {
+        if (carrier == null || enemy == null || members == null) return null;
+
+        Transform marker = enemy.ClosestMemberTo(carrier.position);
+        if (marker == null || Vector2.Distance(marker.position, carrier.position) > 2f) return null;
+
+        Transform best = null;
+        float bestScore = float.PositiveInfinity;
+        foreach (Transform m in members)
+        {
+            if (m == null || m == carrier) continue;
+            float d = Vector2.Distance(m.position, marker.position);
+            if (d > 3f) continue;
+            Role r = RoleOf(m);
+            bool natural = r == Role.LeftWing || r == Role.RightWing ||
+                           r == Role.LeftFlat || r == Role.RightFlat;
+            float score = d - (natural ? 1f : 0f); // wings/flats get priority
+            if (score < bestScore) { bestScore = score; best = m; }
+        }
+        return best;
+    }
+
+    // ================= Adaptive defense (Feature 3, AI team only) =================
+
+    // Re-pick the defense mode situationally. Only the AI team runs this (the human
+    // cycles modes with Z). Gated by a re-eval interval + hysteresis so it can't flap;
+    // man-up/man-down switches are forced through immediately.
+    public void EvaluateDefenseMode()
+    {
+        if (!isAI) return;
+        if (Time.time < nextDefenseReevalTime) return;
+
+        MatchContext ctx = MatchContext.Instance;
+        ExclusionManager ex = ExclusionManager.Instance;
+        TeamSide enemy = ctx != null ? ctx.EnemyOf(this) : null;
+
+        bool manDown = ex != null && ex.ExcludedCount(this) > 0;
+        bool manUp = ex != null && enemy != null && ex.ExcludedCount(enemy) > 0;
+
+        int myScore = 0, theirScore = 0;
+        if (ScoreManager.Instance != null && ctx != null)
+        {
+            bool weArePlayer = this == ctx.PlayerTeam;
+            myScore = weArePlayer ? ScoreManager.Instance.HomeScore : ScoreManager.Instance.AwayScore;
+            theirScore = weArePlayer ? ScoreManager.Instance.AwayScore : ScoreManager.Instance.HomeScore;
+        }
+        float remaining = MatchTimer.Instance != null ? MatchTimer.Instance.RemainingSeconds()
+                                                      : float.MaxValue;
+
+        DefenseMode desired;
+        if (manDown) desired = DefenseMode.Drop;                                      // protect the cage
+        else if (remaining < 30f && myScore > theirScore) desired = DefenseMode.Drop; // sit on the lead
+        else if (goalsConcededFromCenter >= 2) desired = DefenseMode.Drop;            // their Centre hurts us
+        else if (manUp) desired = DefenseMode.Press;                                  // squeeze the extra man
+        else if (myScore < theirScore && remaining > 30f) desired = DefenseMode.Press;// chase the game
+        else desired = DefenseMode.Press;                                             // default
+
+        nextDefenseReevalTime = Time.time + defenseReevalInterval;
+        if (desired == defenseMode) return;
+
+        bool forced = manDown || manUp;
+        if (!forced && Time.time - lastDefenseModeChangeTime < defenseHysteresisSeconds) return;
+
+        defenseMode = desired;
+        lastDefenseModeChangeTime = Time.time;
+        if (EventFeed.Instance != null)
+            EventFeed.Instance.AddEvent("Bot defense - " + desired.ToString().ToUpper());
+    }
+
+    // ================= Tactical shapes & decisions =================
+
+    // Shot quality (Part 4): distance + angle + lane + pressure, in [0,1].
+    public float ShotQuality(Vector2 from, TeamSide enemy)
+    {
+        if (attackGoal == null) return 0f;
+        Vector2 goal = attackGoal.position;
+        float dist = Vector2.Distance(from, goal);
+        float distScore = Mathf.Clamp01(1f - (dist - 2f) / 6f);      // best ~2m out, fades by ~8m
+        float angleScore = Mathf.Clamp01(1f - Mathf.Abs(from.y - goal.y) / 4f); // off-centre = worse angle
+        float laneMult = LaneClear(from, ShotAimPoint(from), enemy, shotLaneRadius) ? 1f : 0.3f;
+        float pressScore = Mathf.Clamp01(NearestDistance(from, enemy) / Mathf.Max(pressDistance, 0.01f));
+        // angle and a clear lane GATE the shot (multiply); distance + pressure scale it.
+        return angleScore * laneMult * (distScore * 0.7f + pressScore * 0.3f);
+    }
+
+    // Central help spot just in front of our own goal (Drop/MPress dropper sits here).
+    public Vector2 CenterZoneSpot(Vector2 ballPos)
+    {
+        if (defendGoal == null) return ballPos;
+        Vector2 g = defendGoal.position;
+        Vector2 spot = g + Forward() * (defendDepth * 1.3f);
+        float midY = attackGoal != null ? (g.y + attackGoal.position.y) * 0.5f : g.y;
+        spot.y = Mathf.Lerp(midY, ballPos.y, 0.3f);
+        return ClampToField(spot);
+    }
+
+    // Stand on the BALL side of a target to deny the entry feed (front the centre).
+    public Vector2 FrontSpot(Transform target, Vector2 ballPos)
+    {
+        if (target == null) return ballPos;
+        Vector2 tp = target.position;
+        Vector2 toBall = ballPos - tp;
+        Vector2 dir = toBall.sqrMagnitude > 1e-3f ? toBall.normalized : Forward();
+        return ClampToField(tp + dir * 0.8f);
+    }
+
+    // Compact zone tight to our goal (man-down 5-on-6: protect the cage, concede outside).
+    public Vector2 ManDownSpot(Transform me, Vector2 ballPos)
+    {
+        if (defendGoal == null) return ballPos;
+        Vector2 g = defendGoal.position;
+        Vector2 toBall = ballPos - g;
+        Vector2 dir = toBall.sqrMagnitude > 1e-3f ? toBall.normalized : Forward();
+        Vector2 basePos = g + dir * (defendDepth * 0.7f);
+        Vector2 across = new Vector2(-Forward().y, Forward().x);
+        return ClampToField(basePos + across * (RoleSpread(me) * defendWidth * 0.7f));
+    }
+
+    // 4-2 umbrella for man-up 6-on-5: point top-centre, two posts deep, the rest wide.
+    public Vector2 ManUpSpot(Transform me, Vector2 ballPos)
+    {
+        if (attackGoal == null || defendGoal == null) return ballPos;
+        Vector2 fwd = Forward();
+        Vector2 across = new Vector2(-fwd.y, fwd.x);
+        Vector2 ownGoal = defendGoal.position;
+        float span = Vector2.Distance(attackGoal.position, ownGoal);
+
+        float depthFrac, lateral;
+        switch (RoleOf(me))
+        {
+            case Role.Center:     depthFrac = 0.62f; lateral =  0.0f;  break; // point (top centre)
+            case Role.CenterBack: depthFrac = 0.86f; lateral =  0.45f; break; // post
+            case Role.LeftWing:   depthFrac = 0.86f; lateral = -0.45f; break; // post
+            case Role.RightWing:  depthFrac = 0.72f; lateral =  1.05f; break; // wide
+            case Role.LeftFlat:   depthFrac = 0.72f; lateral = -1.05f; break; // wide
+            default:              depthFrac = 0.55f; lateral =  0.7f;  break;
+        }
+        Vector2 spot = ownGoal + fwd * (depthFrac * span) + across * (lateral * laneHeight);
+        return ClampToField(spot);
+    }
+
+    // Is `me` among the top-N most ADVANCED members (nearest the enemy goal), excluding the
+    // carrier — i.e. a counterattack sprinter.
+    public bool IsCounterRunner(Transform me, Transform carrier)
+    {
+        if (me == null || attackGoal == null || members == null) return false;
+        Vector2 goal = attackGoal.position;
+        float myDist = Vector2.Distance(me.position, goal);
+        int ahead = 0;
+        foreach (Transform m in members)
+        {
+            if (m == null || m == me || m == carrier) continue;
+            if (Vector2.Distance(m.position, goal) < myDist) ahead++;
+        }
+        return ahead < Mathf.RoundToInt(counterRunners);
+    }
+
+    // A deep sprint target toward the enemy goal on my own lane (counter runners).
+    public Vector2 CounterRunTarget(Transform me)
+    {
+        if (attackGoal == null || defendGoal == null || me == null)
+            return me != null ? (Vector2)me.position : Vector2.zero;
+        Vector2 fwd = Forward();
+        Vector2 across = new Vector2(-fwd.y, fwd.x);
+        float span = Vector2.Distance(attackGoal.position, defendGoal.position);
+        Vector2 spot = (Vector2)defendGoal.position + fwd * (0.82f * span) + across * (RoleLateralSign(me) * laneHeight * 0.8f);
+        return ClampToField(spot);
+    }
+
+    // The member furthest UP (nearest the enemy goal) — sprints back on counter-prevention.
+    public Transform MostAdvancedMember()
+    {
+        if (members == null || attackGoal == null) return null;
+        Vector2 goal = attackGoal.position;
+        Transform best = null;
+        float bestDist = Mathf.Infinity;
+        foreach (Transform m in members)
+        {
+            if (m == null) continue;
+            float d = Vector2.Distance(m.position, goal);
+            if (d < bestDist) { bestDist = d; best = m; }
+        }
+        return best;
     }
 
     // Kept for compatibility / future use (static formation anchor).

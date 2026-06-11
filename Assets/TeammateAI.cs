@@ -25,6 +25,13 @@ public class TeammateAI : MonoBehaviour, IAgentBody
     private float nextStealTime;
     private Transform currentMark;
     private float nextMarkSwitchTime;
+    private bool isDriving;
+    private Vector2 driveTarget;
+    private bool isSettingScreen;
+    private Vector2 screenTarget;
+    private float screenBoostUntil = -1f;
+    private float screenStartTime = -1f;
+    private float screenSetSince = -1f;
 
     void Awake()
     {
@@ -66,5 +73,12 @@ public class TeammateAI : MonoBehaviour, IAgentBody
     public float NextStealTime { get => nextStealTime; set => nextStealTime = value; }
     public Transform CurrentMark { get => currentMark; set => currentMark = value; }
     public float NextMarkSwitchTime { get => nextMarkSwitchTime; set => nextMarkSwitchTime = value; }
+    public bool IsDriving { get => isDriving; set => isDriving = value; }
+    public Vector2 DriveTarget { get => driveTarget; set => driveTarget = value; }
+    public bool IsSettingScreen { get => isSettingScreen; set => isSettingScreen = value; }
+    public Vector2 ScreenTarget { get => screenTarget; set => screenTarget = value; }
+    public float ScreenBoostUntil { get => screenBoostUntil; set => screenBoostUntil = value; }
+    public float ScreenStartTime { get => screenStartTime; set => screenStartTime = value; }
+    public float ScreenSetSince { get => screenSetSince; set => screenSetSince = value; }
     public bool Suppressed => self != null && self.IsActive; // human is driving this one
 }

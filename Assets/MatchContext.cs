@@ -17,6 +17,8 @@ public class MatchContext : MonoBehaviour
     [SerializeField] private float freeThrowAIHoldSeconds = 3f;
     [Tooltip("Swimmers can't cross the goal line: their x is clamped to ±this during live play (ball/keepers excluded).")]
     [SerializeField] private float playerLimitX = 6.9f;
+    [Tooltip("Counterattack window: winning the ball in your own half starts a fast-break for this long.")]
+    [SerializeField] private float counterWindowSeconds = 4f;
 
     // who currently holds the ball: null = loose
     public TeamSide PossessingTeam { get; private set; }
@@ -24,6 +26,11 @@ public class MatchContext : MonoBehaviour
     // the team that last touched the ball (grab / steal / shoot / pass release) —
     // used by the out-of-bounds rule to award possession to the OTHER team.
     public TeamSide LastTouchTeam { get; private set; }
+
+    // the last SWIMMER to release the ball (shot / pass / drop) — lets ScoreManager
+    // credit a goal to a specific player (Centre-goal tracking for the bot's adaptive D).
+    public Transform LastReleaser { get; private set; }
+    public void NoteRelease(Transform t) { if (t != null) LastReleaser = t; }
 
     // last time the ball was released (shot/passed/dropped); used for the grab cooldown
     private float lastReleaseTime = -10f;
@@ -48,6 +55,15 @@ public class MatchContext : MonoBehaviour
     public float FreeThrowStartTime { get; private set; }
     public float FreeThrowAIHoldSeconds => freeThrowAIHoldSeconds;
 
+    // Keeper hold (Part 1): a keeper collecting the ball is NOT a possession change — the
+    // shot clock keeps ticking for the holding team until the keeper distributes.
+    public bool KeeperHolding { get; private set; }
+    public TeamSide KeeperHoldTeam { get; private set; }
+
+    // Counterattack window (Part 2): a team that just won the ball in its own half.
+    public TeamSide CounterTeam { get; private set; }
+    public float CounterUntilTime { get; private set; }
+
     public Vector2 BallPosition => ball != null ? ball.position : Vector2.zero;
     public Rigidbody2D Ball => ball;
     public TeamSide PlayerTeam => playerTeam;
@@ -63,10 +79,13 @@ public class MatchContext : MonoBehaviour
     // called by a player/bot when it grabs (team) or releases (null) the ball
     public void SetPossession(TeamSide team)
     {
+        TeamSide prev = PossessingTeam;
+        TeamSide prevTouch = LastTouchTeam; // who last touched it BEFORE this grab/release
+
         // remember the last toucher: a grab/steal = the new team; a release (null) = the
         // team that just let go (read the OLD possessor before overwriting it).
         if (team != null) LastTouchTeam = team;
-        else if (PossessingTeam != null) LastTouchTeam = PossessingTeam;
+        else if (prev != null) LastTouchTeam = prev;
 
         PossessingTeam = team;
         if (team == null) lastReleaseTime = Time.time;       // ball was just released → start the cooldown
@@ -77,6 +96,15 @@ public class MatchContext : MonoBehaviour
 
         // any possession change / release ends a free throw (carrier passed/shot/dropped)
         ClearFreeThrow();
+
+        // counterattack: a real WIN (ball last touched by the OTHER team) inside our own
+        // half starts a fast break — NOT a same-team pass reception.
+        if (team != null && prevTouch != null && prevTouch != team && !PlayFrozen && !KeeperHolding &&
+            ball != null && team.defendGoal != null)
+        {
+            float sign = Mathf.Sign(team.defendGoal.position.x);
+            if (sign * ball.position.x > 0f) StartCounter(team);
+        }
     }
 
     // ---- match-flow gates ----
@@ -115,6 +143,14 @@ public class MatchContext : MonoBehaviour
         FreeThrowActive = false;
         FreeThrowCarrier = null;
     }
+
+    // ---- keeper hold (Part 1) ----
+    public void SetKeeperHold(TeamSide team) { KeeperHolding = true; KeeperHoldTeam = team; }
+    public void ClearKeeperHold() { KeeperHolding = false; KeeperHoldTeam = null; }
+
+    // ---- counterattack window (Part 2) ----
+    public void StartCounter(TeamSide team) { CounterTeam = team; CounterUntilTime = Time.time + counterWindowSeconds; }
+    public bool CounterActiveFor(TeamSide team) => team != null && team == CounterTeam && Time.time < CounterUntilTime;
 
     // Physical-touch attribution (used by the out-of-bounds rules so a deflection off an
     // opponent is credited to them). Does NOT change possession.

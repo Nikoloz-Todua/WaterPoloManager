@@ -18,12 +18,11 @@ public class TeamManager : MonoBehaviour
 
     void Update()
     {
-        // Toggle the PLAYER team's defensive scheme (bots always Press).
+        // Cycle the PLAYER team's defensive scheme: Press → Zone → Drop → MPress (bots pick
+        // their own situationally).
         if (Input.GetKeyDown(KeyCode.Z) && playerTeam != null)
         {
-            playerTeam.defenseMode = playerTeam.defenseMode == TeamSide.DefenseMode.Press
-                ? TeamSide.DefenseMode.Zone
-                : TeamSide.DefenseMode.Press;
+            playerTeam.defenseMode = (TeamSide.DefenseMode)(((int)playerTeam.defenseMode + 1) % 4);
             UpdateDefenseModeText();
         }
 
@@ -69,10 +68,12 @@ public class TeamManager : MonoBehaviour
         return -1;
     }
 
-    void UpdateDefenseModeText()
+    // Public so other systems can refresh the label (it shows the PLAYER team's mode;
+    // bot mode changes are reported through the event feed instead).
+    public void UpdateDefenseModeText()
     {
         if (defenseModeText == null || playerTeam == null) return;
-        defenseModeText.text = "DEFENSE: " + (playerTeam.defenseMode == TeamSide.DefenseMode.Zone ? "ZONE" : "PRESS");
+        defenseModeText.text = "DEFENSE: " + playerTeam.defenseMode.ToString().ToUpper();
     }
 
     // returns the index of the player currently holding the ball, or -1

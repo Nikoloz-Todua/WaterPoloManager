@@ -359,6 +359,7 @@ public class PlayerMovement : MonoBehaviour
 
         Transform carrier = ball.transform.parent;
         if (carrier == null) return;
+        if (carrier.GetComponent<Goalkeeper>() != null) return; // can't steal from a keeper
 
         if (Vector2.Distance(transform.position, ball.position) > stealDistance) return;
 
@@ -422,7 +423,10 @@ public class PlayerMovement : MonoBehaviour
         ball.linearVelocity = lastDirection * currentPower;
 
         if (MatchContext.Instance != null)
+        {
+            MatchContext.Instance.NoteRelease(transform); // remember the shooter (Centre-goal tracking)
             MatchContext.Instance.SetPossession(null);
+        }
     }
 
     // Charged pass: speed scales with charge (0..1) between min/max, aimed at the
@@ -448,6 +452,7 @@ public class PlayerMovement : MonoBehaviour
                                   minPassSpeed, maxPassSpeed);
         ball.linearVelocity = dir * speed;
 
+        MatchContext.Instance.NoteRelease(transform);
         MatchContext.Instance.SetPossession(null);
     }
 
