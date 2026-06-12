@@ -48,9 +48,11 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private float powerBarYOffset = 0.9f;
 
     private LineRenderer powerBar;          // built in code, no Inspector wiring needed
-    private GameObject selectionTriangle;   // FIFA-style marker above the active player
+    private SpriteRenderer indicator;       // bouncing marker above the active player
 
-    private const float SelectionTriangleSize = 0.15f;
+    private const float IndicatorBaseY = 1.9f;   // rest height above the player center
+    private const float IndicatorBobSpeed = 3f;  // sine frequency
+    private const float IndicatorBobAmount = 0.12f;
     private const float KeeperProtectRadius = 2.5f; // can't crowd a ball-holding keeper
     private const float KeeperPushSeconds = 0.25f;  // how long the shove-back drives us
 
@@ -130,33 +132,32 @@ public class PlayerMovement : MonoBehaviour
         }
 
         BuildPowerBar();
-        BuildSelectionTriangle();
+        BuildIndicator();
     }
 
-    // Small white equilateral triangle hovering above the player's head, pointing
-    // down at it — shown only while this player is the human-controlled one.
-    void BuildSelectionTriangle()
+    // Bouncing sprite marker above the player's head — shown only while this player
+    // is the human-controlled one (hidden from the start; Update toggles it).
+    void BuildIndicator()
     {
-        selectionTriangle = new GameObject("SelectionTriangle");
-        selectionTriangle.transform.SetParent(transform, false);
-        selectionTriangle.transform.localPosition = new Vector3(0f, 0.6f, 0f);
+        GameObject go = new GameObject("PlayerIndicator");
+        go.transform.SetParent(transform, false);
+        go.transform.localPosition = new Vector3(0f, IndicatorBaseY, 0f);
 
-        float s = SelectionTriangleSize;
-        Mesh mesh = new Mesh();
-        mesh.vertices = new Vector3[]
+        indicator = go.AddComponent<SpriteRenderer>();
+        indicator.sprite = Resources.Load<Sprite>("Sprites/indicator-triangle");
+        indicator.sortingOrder = 60;
+        indicator.enabled = false;
+
+        if (indicator.sprite != null)
         {
-            new Vector3(-s, s * 0.866f, 0f), // top left
-            new Vector3( s, s * 0.866f, 0f), // top right
-            new Vector3(0f, -s * 0.866f, 0f) // bottom tip (points down at the player)
-        };
-        mesh.triangles = new int[] { 0, 1, 2 };
-
-        selectionTriangle.AddComponent<MeshFilter>().mesh = mesh;
-        MeshRenderer mr = selectionTriangle.AddComponent<MeshRenderer>();
-        mr.material = new Material(Shader.Find("Sprites/Default")) { color = Color.white };
-        mr.sortingOrder = 50;
-
-        selectionTriangle.SetActive(false);
+            // scale the sprite to a 1.2 x 1.2 footprint regardless of its pixel size
+            Vector2 s = indicator.sprite.bounds.size;
+            go.transform.localScale = new Vector3(1.2f / s.x, 1.2f / s.y, 1f);
+        }
+        else
+        {
+            Debug.LogWarning("PlayerMovement: Sprites/indicator-triangle not found in a Resources folder.");
+        }
     }
 
     // Create a self-contained power bar (a thick LineRenderer) above the player.
@@ -178,8 +179,13 @@ public class PlayerMovement : MonoBehaviour
 
     void Update()
     {
-        if (selectionTriangle != null && selectionTriangle.activeSelf != IsActive)
-            selectionTriangle.SetActive(IsActive);
+        if (indicator != null)
+        {
+            indicator.enabled = IsActive;
+            if (IsActive) // gentle bounce above the head while controlled
+                indicator.transform.localPosition = new Vector3(
+                    0f, IndicatorBaseY + Mathf.Sin(Time.time * IndicatorBobSpeed) * IndicatorBobAmount, 0f);
+        }
 
         // Stale touch state must never drive a player the human isn't controlling.
         if (!IsActive) ClearTouchInput();
