@@ -24,7 +24,11 @@ public class TouchControls : MonoBehaviour
     [SerializeField] private float knobSize = 120f;
     [SerializeField] private Vector2 joystickPos = new Vector2(230f, 230f);
     [SerializeField] private float buttonSize = 170f;
-    [SerializeField, Range(0f, 1f)] private float uiAlpha = 0.4f;
+
+    [Header("Transparency (labels stay fully opaque)")]
+    [SerializeField, Range(0f, 1f)] private float ringAlpha = 0.10f;   // joystick background
+    [SerializeField, Range(0f, 1f)] private float knobAlpha = 0.25f;
+    [SerializeField, Range(0f, 1f)] private float buttonAlpha = 0.15f;
 
     private GameObject canvasRoot;
     private TouchJoystick joystick;
@@ -80,10 +84,9 @@ public class TouchControls : MonoBehaviour
 
         // --- Joystick, anchored bottom-left ---
         RectTransform bg = MakeImage("JoystickBG", canvasRoot.transform, circle,
-                                     new Vector2(0f, 0f), joystickPos, joystickSize, uiAlpha);
+                                     new Vector2(0f, 0f), joystickPos, joystickSize, ringAlpha);
         RectTransform knob = MakeImage("JoystickKnob", bg, circle,
-                                       new Vector2(0.5f, 0.5f), Vector2.zero, knobSize,
-                                       Mathf.Clamp01(uiAlpha + 0.2f));
+                                       new Vector2(0.5f, 0.5f), Vector2.zero, knobSize, knobAlpha);
         knob.GetComponent<Image>().raycastTarget = false; // the BG receives all pointer events
         joystick = bg.gameObject.AddComponent<TouchJoystick>();
         joystick.Init(bg, knob, (joystickSize - knobSize) * 0.5f);
@@ -122,7 +125,7 @@ public class TouchControls : MonoBehaviour
     TouchButton MakeButton(string label, Vector2 pos, Sprite sprite)
     {
         RectTransform rt = MakeImage("Btn" + label, canvasRoot.transform, sprite,
-                                     new Vector2(1f, 0f), pos, buttonSize, uiAlpha);
+                                     new Vector2(1f, 0f), pos, buttonSize, buttonAlpha);
         Image img = rt.GetComponent<Image>();
         img.type = Image.Type.Sliced; // 9-slice keeps the corners round at any size
 
@@ -137,11 +140,11 @@ public class TouchControls : MonoBehaviour
         txt.fontSize = 34f;
         txt.fontStyle = FontStyles.Bold;
         txt.alignment = TextAlignmentOptions.Center;
-        txt.color = new Color(1f, 1f, 1f, 0.9f);
+        txt.color = Color.white; // labels stay fully visible
         txt.raycastTarget = false;
 
         TouchButton b = rt.gameObject.AddComponent<TouchButton>();
-        b.Init(img, uiAlpha);
+        b.Init(img, buttonAlpha);
         return b;
     }
 

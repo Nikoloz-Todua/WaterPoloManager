@@ -94,18 +94,22 @@ public class MatchTimer : MonoBehaviour
         matchOver = true;
         Time.timeScale = 0f; // freeze all movement + AI
 
-        if (resultText == null) return;
-
         int you = scoreManager != null ? scoreManager.HomeScore : 0;
         int bot = scoreManager != null ? scoreManager.AwayScore : 0;
+        int outcome = you > bot ? 1 : (bot > you ? -1 : 0);
 
-        string outcome;
-        if (you > bot)      outcome = "YOU WIN";
-        else if (bot > you) outcome = "YOU LOSE";
-        else                outcome = "DRAW";
+        // Full result screen (overlay + buttons); the bare text is only a fallback
+        // for a scene without a MatchResultUI component.
+        if (MatchResultUI.Instance != null)
+        {
+            MatchResultUI.Instance.Show("FULL TIME", outcome);
+            return;
+        }
 
+        if (resultText == null) return;
+        string outcomeStr = outcome > 0 ? "YOU WIN" : (outcome < 0 ? "YOU LOSE" : "DRAW");
         resultText.gameObject.SetActive(true);
-        resultText.text = "FULL TIME\n" + outcome + "\n" + you + " - " + bot;
+        resultText.text = "FULL TIME\n" + outcomeStr + "\n" + you + " - " + bot;
     }
 
     // Force an immediate end (e.g. a forfeit from too many exclusions). Reuses the same
@@ -116,6 +120,13 @@ public class MatchTimer : MonoBehaviour
         if (matchOver) return;
         matchOver = true;
         Time.timeScale = 0f;
+
+        // Forfeit outcome is FORCED (not score-based — a team can forfeit while level).
+        if (MatchResultUI.Instance != null)
+        {
+            MatchResultUI.Instance.Show("FORFEIT", playerWins ? 1 : -1);
+            return;
+        }
 
         if (resultText == null) return;
 
