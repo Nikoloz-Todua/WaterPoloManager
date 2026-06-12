@@ -10,6 +10,10 @@ public class TeamManager : MonoBehaviour
 
     private int activeIndex = 0;
 
+    // The human-controlled player right now. TouchControls reads this every frame
+    // to know which PlayerMovement receives the touch input.
+    public static PlayerMovement ActivePlayer { get; private set; }
+
     void Start()
     {
         SetActive(0);
@@ -42,7 +46,8 @@ public class TeamManager : MonoBehaviour
         }
 
         // 2) Manual switch (only useful when nobody on my team holds the ball).
-        if (Input.GetKeyDown(KeyCode.C))
+        // The touch SWITCH button merges into the same check via TouchSwitchDown.
+        if (Input.GetKeyDown(KeyCode.C) || (ActivePlayer != null && ActivePlayer.TouchSwitchDown))
         {
             int next = NextValidIndex(activeIndex);
             if (next != -1) SetActive(next);
@@ -107,5 +112,6 @@ public class TeamManager : MonoBehaviour
             players[i].IsActive = willBeActive;
         }
         activeIndex = index;
+        ActivePlayer = (index >= 0 && index < players.Length) ? players[index] : null;
     }
 }

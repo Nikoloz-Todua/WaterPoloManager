@@ -23,7 +23,7 @@
 
 A **2D top-down water polo game** in **Unity 6 (6000.4.7f1), C#**, targeting **Android + iOS** (later). Originally conceived as a 3D Dream-League-style game; **retargeted to 2D** for solo-dev scope and hardware. Built brick-by-brick with step-by-step guidance.
 
-**Current state: a working 6v6 match with full defensive AI and a complete Visual Pass 1 animation system.** Core gameplay works (role-based positioning, marking, dynamic mark-switching, press/zone toggle, sprint mechanic, steal animation, proximity-based defend animation); menus/economy/career not built yet. Animated pool water background working via custom URP shader (WaterScroll.shader) and WaterScroller.cs script.
+**Current state: a working 6v6 match with full defensive AI and a complete Visual Pass 1 animation system.** Core gameplay works (role-based positioning, marking, dynamic mark-switching, press/zone toggle, sprint mechanic, steal animation, proximity-based defend animation); menus/economy/career not built yet. Animated pool water background working via a URP Shader Graph material (ShaderWaterMaterial / WaterGraph.shadergraph) on the PoolWater object — see A8.
 
 ## A2. Developer & environment
 
@@ -81,6 +81,9 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 | `AnimationClipBuilder.cs` | Editor tool (Tools menu). Builds 7 animation clips (idle/swim/sprint/hold/throw/defend/steal) from sliced sprite sheets, assigns them to the Animator controller states, and wires all transitions. Two menu items: Tools/Build Water Polo Animations (red) and Tools/Build Blue Team Animations (blue). Creates BlueAnimation.controller programmatically if missing. |
 | `GoalkeeperAnimator.cs` | Drives Animator on KeeperLeft and KeeperRight. Reads ball velocity and position from MatchContext to compute DiveState (0–7): idle, dive left/right, dive bottom-left/right, dive top-left/right, save. Single integer Animator parameter DiveState. SpriteRenderer flipX set in Awake based on keeper side. Shot height placeholder (0.5 = mid) ready for future height-zone system. |
 | `GoalkeeperAnimationBuilder.cs` | Editor tool (Tools → Build Goalkeeper Animations). Builds 8 animation clips from goalkeeper_sheet.png frames, assigns them to GoalkeeperAnimation.controller states, wires DiveState int parameter and Any State transitions. Idempotent. |
+| `TouchControls.cs` | Runtime-built mobile touch UI (no prefabs): virtual joystick bottom-left + SHOOT/PASS/SPRINT/SWITCH buttons bottom-right. Feeds the active player via `PlayerMovement.SetTouchInput` (merged with keyboard via `\|\|`); SWITCH consumed by TeamManager. Visible on mobile, or in Editor when `showInEditor`. |
+| `PoolLineFloat.cs` | Standalone gentle bob (±0.04u) + sway (±1.5°) for the 12 pool lane-line sprites; random phase/speed (0.6–0.9 Hz) per object; offsets from the Start pose so it never drifts. |
+| `MainMenuUI.cs` | MainMenu scene. Builds the whole main menu in code at runtime: canvas (1280x720), background + logo from `Assets/Resources/Sprites/`, PLAY/SETTINGS/QUIT buttons with hover scale + cyan-outline TMP labels, 1s fade-in, version footer. PLAY → SampleScene. |
 
 **Architecture rule for any AI:** keep `TeamSide` + `MatchContext` + `WaterPoloBrain`. It is roster-size-agnostic by design. To scale teams: add player/bot objects, drop them into the team `members` arrays + TeamManager arrays; formation & AI scale automatically.
 
@@ -180,16 +183,11 @@ Goalkeeper animations: COMPLETE. goalkeeper_sheet.png (8 frames: idle, dive left
 ## A8. Pool Visual (COMPLETE)
 
 **Water background:**
-- Pool GameObject has animated water texture via custom shader
-- Assets/Shaders/WaterScroll.shader — custom unlit URP shader
-  with _ScrollOffset property for UV scrolling
-- Assets/WaterScroller.cs — scrolls texture diagonally each frame
-  using MaterialPropertyBlock, wraps with Mathf.Repeat
-- Material: Assets/WaterScrollMat — uses WaterScroll shader
-- Texture: Assets/Sprites/Pool/water_sheet.png
-  Wrap Mode: Repeat, Mesh Type: Full Rect
-- Speed tunable via ScrollX/ScrollY fields on WaterScroller component
-- Pool Sprite Renderer: Draw Mode Tiled, Order in Layer -10
+- Old Pool object (Sprite + WaterScroller.cs + WaterScroll.shader) has been removed and replaced
+- New system: a 2D Square GameObject renamed to PoolWater, using a Sprite Renderer with ShaderWaterMaterial (a URP Shader Graph material, `Assets/Sprites/ShaderWaterMaterial.mat`)
+- Shader: `Assets/Sprites/WaterGraph.shadergraph` — Voronoi noise-based procedural water, animated via Time node, creates realistic individual ripple/bubble movement across the pool surface. Far more realistic than the old scrolling texture approach
+- Known: Sprite Renderer shows a _MainTex warning — cosmetic only, does not affect gameplay. Will be fixed later by swapping to MeshRenderer
+- WaterScroller.cs and WaterScroll.shader were unused and have been deleted (June 2026). `Assets/Sprites/Pool/WaterScrollMat.mat` is also now unused (will render pink if applied) — candidate for later cleanup
 
 **Remaining pool visuals (not started):**
 - Lane lines (2m, 5m, 7m markings)
@@ -298,6 +296,80 @@ Also now 🟡 **WORKING (first pass — improve later, not 100% done):**
 
 **then → touch controls** (virtual joystick + A/B/C + hand button) for mobile.
 
+## Animation Overhaul Plan
+
+**Art style:** High quality semi-realistic cartoon. Characters are ~200px wide, shown from waist up, emerging from water. No legs visible.
+
+**Approach:** Single bone rig per character type (field player / goalkeeper). Swap face sprite and cap color per player. All 240 players share the same animations.
+
+**Body parts to rig separately:**
+- Head with cap (cap color swappable)
+- Face (swappable per player)
+- Torso
+- Left upper arm
+- Left forearm and hand
+- Right upper arm
+- Right forearm and hand
+- Water splash (separate child sprite, animates independently)
+- Ball (separate sprite, hidden when loose, visible when holding)
+
+**Ball visibility rule:** When player is holding the ball, hide the physics ball object and show the ball baked into the holding animation. When released, show physics ball again and hide animation ball.
+
+**Full animation list — field players:**
+1. Idle/floating — gentle upper body bob, water splash slow
+2. Swimming — arms alternate stroke, faster splash
+3. Sprinting — faster arm movement, bigger splash
+4. Holding ball — ball raised in right hand, left arm out for balance
+5. Charge shot — wind-up, arm pulls back further each frame
+6. Shoot release — explosive forward throw, follow-through
+7. Pass — side arm throw, lower than shot
+8. Lob pass — high arc release, arm goes fully overhead
+9. Skip shot — low fast release, arm comes down not up
+10. Receiving/catching — both arms extend forward, close around ball
+11. Steal attempt — one arm lunges sideways
+12. Defending idle — both arms raised, blocking stance
+13. Blocking shot — one arm shoots straight up
+14. Foul committed — arms spread slightly, guilty pose
+15. Celebration — fist pump, one arm raises
+16. Excluded/ejected — arms down, swimming to corner
+
+**Full animation list — goalkeeper:**
+1. Idle — slight sway, hands at water level
+2. Ready stance — arms wide, alert
+3. Dive left/right/up/left-up/right-up/left-down/right-down/down — 8 directions (already partially done)
+4. Save reaction — arms extended in save direction, hold pose
+5. Distribution throw — same as field player pass
+6. Celebration — same as field player
+
+**Water splash rules:**
+- Generate water splash as separate sprite sheet
+- Idle = small slow ripple
+- Swimming = medium directional splash
+- Sprinting = large aggressive splash
+- Receiving = small splash as player lunges
+
+**Per-country customization:**
+- Cap color changes per country (inspector color tint)
+- Face sprite swaps per player (16 countries x 15 players = 240 faces)
+- Skin tone adjusted via color tint on torso/arms
+- Body shape stays identical across all players
+
+**Difficulty notes:**
+- Bone rigging: 2-3 days for one character
+- Animating all states: 1-2 weeks
+- Multiplying to 240 players: near zero extra work if rig is shared correctly
+- Goalkeeper rig: separate 2-3 days
+- Water splash sheet: 1 day
+- Ball hide/show system: needs code change in PlayerMovement.cs and BotMovement.cs
+
+**Next immediate steps:**
+1. Generate body part sprites using AI (same style as current) — parts listed above, transparent background, consistent lighting
+2. Import into Unity 2D Animation package
+3. Rig one field player
+4. Build all animations on that one rig
+5. Test in game
+6. Then clone and swap faces/caps for all 240 players
+
 ---
 
 # PART B — FULL FEATURE VISION (the whole game)
@@ -321,7 +393,9 @@ Also now 🟡 **WORKING (first pass — improve later, not 100% done):**
 ## B5. Returning User ✅ DONE-equivalent (concept)
 - If onboarding complete, after loading screen go straight to Main Menu. (No onboarding/menu built yet, but the "skip to game" idea is trivial once menus exist.)
 
-## B6. Main Screen Layout ⬜ NOT STARTED
+## B6. Main Screen Layout 🟡 PARTIAL (basic main menu DONE; full economy layout not started)
+- ✅ **DONE (June 2026):** `MainMenu` scene with `MainMenuUI.cs` — entire menu built in code at runtime (no prefabs): full-screen canvas (1280x720 scale-with-screen), background + logo from `Assets/Resources/Sprites/` via `Resources.Load<Sprite>`, PLAY / SETTINGS / QUIT buttons (navy, white bold TMP with cyan outline, 1.05x hover scale), 1s fade-in, "Water Polo Manager v0.1" footer. PLAY loads SampleScene; SETTINGS is a stub (logs "coming soon"); QUIT quits.
+- **Still future (the full vision):**
 - **Top horizontal tab (always visible):** Settings icon + social link icon; Claim Rewards; Diamond currency (diamond + cyan bg + number); Gold currency (coin + number); Club logo + Team name.
 - **Large buttons:** Career; Live ("Coming Soon", inactive).
 - **Smaller buttons:** TEAM, TRANSFERS, My Club, Challenges.

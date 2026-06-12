@@ -87,6 +87,21 @@ public class PlayerMovement : MonoBehaviour
     private bool sprintHeld = false;
     private PlayerAnimator playerAnimator; // optional; fires the steal animation on attempts
 
+    // --- Touch input (written by TouchControls.SetTouchInput every frame; each field is
+    // merged into its matching keyboard check with || so keyboard keeps working as-is) ---
+    private Vector2 touchAxis;
+    private bool touchShootHeld;
+    private bool touchShootDown;
+    private bool touchShootUp;
+    private bool touchPassHeld;
+    private bool touchPassDown;
+    private bool touchPassUp;
+    private bool touchSprintHeld;
+    private bool touchSwitchDown;
+
+    // TeamManager merges this with the C key for manual player switching.
+    public bool TouchSwitchDown => touchSwitchDown;
+
     // True while this player is serving (or permanently out of) an exclusion → inert.
     private bool Excluded => ExclusionManager.Instance != null && ExclusionManager.Instance.IsExcluded(transform);
 
@@ -166,9 +181,12 @@ public class PlayerMovement : MonoBehaviour
         if (selectionTriangle != null && selectionTriangle.activeSelf != IsActive)
             selectionTriangle.SetActive(IsActive);
 
+        // Stale touch state must never drive a player the human isn't controlling.
+        if (!IsActive) ClearTouchInput();
+
         // Sprint input only counts on the human-controlled player; the frozen /
         // excluded branches below force it back off before they return.
-        sprintHeld = IsActive && Input.GetKey(KeyCode.LeftShift);
+        sprintHeld = IsActive && (Input.GetKey(KeyCode.LeftShift) || touchSprintHeld);
 
         // If we lost the ball (e.g. it was stolen), our parent link is gone — clear
         // the stale holding flag before anything reads it, so we don't stay green/aiming.
@@ -188,7 +206,7 @@ public class PlayerMovement : MonoBehaviour
                 // AIM with movement keys: rotate the shot within a cone toward the goal
                 // (never move the body — position stays on the spot).
                 Vector2 goalDir = PenaltyManager.Instance.ShooterGoalDir();
-                Vector2 aimIn = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
+                Vector2 aimIn = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical")) + touchAxis;
                 if (aimIn.sqrMagnitude > 0.01f && goalDir.sqrMagnitude > 1e-4f)
                 {
                     float cone = PenaltyManager.Instance.AimCone;
@@ -197,16 +215,16 @@ public class PlayerMovement : MonoBehaviour
                 }
 
                 input = Vector2.zero; // planted on the penalty spot — aiming only
-                if (chargeMode == Charging.None && Input.GetKeyDown(KeyCode.Space))
+                if (chargeMode == Charging.None && (Input.GetKeyDown(KeyCode.Space) || touchShootDown))
                 { chargeMode = Charging.Shoot; skipCharge = Input.GetKey(KeyCode.Q); }
                 if (chargeMode == Charging.Shoot)
                 {
-                    if (Input.GetKey(KeyCode.Space))
+                    if (Input.GetKey(KeyCode.Space) || touchShootHeld)
                     {
                         currentPower = Mathf.Min(currentPower + chargeRate * Time.deltaTime, maxShootPower);
                         ChargeHeight();
                     }
-                    if (Input.GetKeyUp(KeyCode.Space))
+                    if (Input.GetKeyUp(KeyCode.Space) || touchShootUp)
                     {
                         Shoot();
                         currentPower = 0f;
@@ -243,7 +261,8 @@ public class PlayerMovement : MonoBehaviour
         {
             float x = Input.GetAxisRaw("Horizontal");
             float y = Input.GetAxisRaw("Vertical");
-            input = new Vector2(x, y).normalized;
+            input = new Vector2(x, y).normalized + touchAxis; // analog joystick adds in
+            if (input.sqrMagnitude > 1f) input = input.normalized;
 
             if (input != Vector2.zero)
                 lastDirection = input;
@@ -269,7 +288,7 @@ public class PlayerMovement : MonoBehaviour
 
             // Space with no ball = attempt steal. If it succeeds, consume this press
             // so releasing Space doesn't instantly fire a shot.
-            if (!isHolding && Input.GetKeyDown(KeyCode.Space))
+            if (!isHolding && (Input.GetKeyDown(KeyCode.Space) || touchShootDown))
             {
                 TrySteal();
                 if (isHolding) stealConsumedSpace = true;
@@ -279,20 +298,20 @@ public class PlayerMovement : MonoBehaviour
             {
                 // Start a charge on key-down only if nothing else is already charging.
                 // Space is blocked while a steal consumed this press.
-                if (chargeMode == Charging.None && !stealConsumedSpace && Input.GetKeyDown(KeyCode.Space))
+                if (chargeMode == Charging.None && !stealConsumedSpace && (Input.GetKeyDown(KeyCode.Space) || touchShootDown))
                 { chargeMode = Charging.Shoot; skipCharge = Input.GetKey(KeyCode.Q); }
-                else if (chargeMode == Charging.None && Input.GetKeyDown(KeyCode.B))
+                else if (chargeMode == Charging.None && (Input.GetKeyDown(KeyCode.B) || touchPassDown))
                     chargeMode = Charging.Pass;
 
                 if (chargeMode == Charging.Shoot)
                 {
-                    if (Input.GetKey(KeyCode.Space))
+                    if (Input.GetKey(KeyCode.Space) || touchShootHeld)
                     {
                         currentPower = Mathf.Min(currentPower + chargeRate * Time.deltaTime, maxShootPower);
                         ChargeHeight();
                     }
 
-                    if (Input.GetKeyUp(KeyCode.Space))
+                    if (Input.GetKeyUp(KeyCode.Space) || touchShootUp)
                     {
                         Shoot();
                         currentPower = 0f;
@@ -301,10 +320,10 @@ public class PlayerMovement : MonoBehaviour
                 }
                 else if (chargeMode == Charging.Pass)
                 {
-                    if (Input.GetKey(KeyCode.B))
+                    if (Input.GetKey(KeyCode.B) || touchPassHeld)
                         passPower = Mathf.Min(passPower + passChargeRate * Time.deltaTime, 1f);
 
-                    if (Input.GetKeyUp(KeyCode.B))
+                    if (Input.GetKeyUp(KeyCode.B) || touchPassUp)
                     {
                         ChargedPass(passPower);
                         passPower = 0f;
@@ -314,7 +333,7 @@ public class PlayerMovement : MonoBehaviour
             }
 
             // once the steal press is released, Space goes back to being shoot
-            if (Input.GetKeyUp(KeyCode.Space))
+            if (Input.GetKeyUp(KeyCode.Space) || touchShootUp)
                 stealConsumedSpace = false;
         }
         else
@@ -488,6 +507,33 @@ public class PlayerMovement : MonoBehaviour
     public void ApplyStealLockout(float seconds)
     {
         lastStealTime = Time.time + Mathf.Max(0f, seconds - stealCooldown);
+    }
+
+    // Called by TouchControls every frame on the active player. SHOOT maps to Space
+    // (so it also steals when not holding), PASS to B, SPRINT to LeftShift, SWITCH to C
+    // (consumed by TeamManager via TouchSwitchDown).
+    public void SetTouchInput(Vector2 axis, bool shootHeld, bool shootDown, bool shootUp,
+                              bool passHeld, bool passDown, bool passUp,
+                              bool sprintHeld, bool switchDown)
+    {
+        touchAxis = axis;
+        touchShootHeld = shootHeld;
+        touchShootDown = shootDown;
+        touchShootUp = shootUp;
+        touchPassHeld = passHeld;
+        touchPassDown = passDown;
+        touchPassUp = passUp;
+        touchSprintHeld = sprintHeld;
+        touchSwitchDown = switchDown;
+    }
+
+    private void ClearTouchInput()
+    {
+        touchAxis = Vector2.zero;
+        touchShootHeld = touchShootDown = touchShootUp = false;
+        touchPassHeld = touchPassDown = touchPassUp = false;
+        touchSprintHeld = false;
+        touchSwitchDown = false;
     }
 
     void DropBall()
