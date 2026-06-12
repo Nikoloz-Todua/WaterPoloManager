@@ -68,7 +68,7 @@ public class MainMenuUI : MonoBehaviour
         }
 
         // --- Buttons, vertically centered ---
-        MakeButton("PLAY", new Vector2(0f, 90f), () => SceneManager.LoadScene("SampleScene"));
+        MakeButton("PLAY", new Vector2(0f, 90f), () => SceneManager.LoadScene("HubScene"));
         MakeButton("SETTINGS", new Vector2(0f, 0f), () => Debug.Log("Settings coming soon"));
         MakeButton("QUIT", new Vector2(0f, -90f), Application.Quit);
 

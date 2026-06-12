@@ -83,7 +83,8 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 | `GoalkeeperAnimationBuilder.cs` | Editor tool (Tools → Build Goalkeeper Animations). Builds 8 animation clips from goalkeeper_sheet.png frames, assigns them to GoalkeeperAnimation.controller states, wires DiveState int parameter and Any State transitions. Idempotent. |
 | `TouchControls.cs` | Runtime-built mobile touch UI (no prefabs): virtual joystick bottom-left + SHOOT/PASS/SPRINT/SWITCH buttons bottom-right. Feeds the active player via `PlayerMovement.SetTouchInput` (merged with keyboard via `\|\|`); SWITCH consumed by TeamManager. Visible on mobile, or in Editor when `showInEditor`. Deliberately faint so the pool stays visible: ring alpha 0.10, knob 0.25, buttons 0.15 (Inspector sliders); labels fully opaque. |
 | `PoolLineFloat.cs` | Standalone gentle bob (±0.04u) + sway (±1.5°) for the 12 pool lane-line sprites; random phase/speed (0.6–0.9 Hz) per object; offsets from the Start pose so it never drifts. |
-| `MainMenuUI.cs` | MainMenu scene. Builds the whole main menu in code at runtime: canvas (1280x720), background + logo from `Assets/Resources/Sprites/`, PLAY/SETTINGS/QUIT buttons with hover scale + cyan-outline TMP labels, 1s fade-in, version footer. PLAY → SampleScene. |
+| `MainMenuUI.cs` | MainMenu scene. Builds the whole main menu in code at runtime: canvas (1280x720), background + logo from `Assets/Resources/Sprites/`, PLAY/SETTINGS/QUIT buttons with hover scale + cyan-outline TMP labels, 1s fade-in, version footer. PLAY → **HubScene**. |
+| `NavigationManager.cs` | HubScene. The whole hub-navigation shell built in code (design + navigation only, NO real data): persistent top bar (club logo placeholder, "My Club", gold 1000 + diamond 50 displays, "SET" settings stub — the default TMP font has no ⚙ glyph) + bottom nav (CAREER/TEAM/TRANSFERS/MY CLUB/CHALLENGES, active tab cyan), 5 placeholder screens with 0.3s fade transitions. Career (Division 3 badge, fake 5-team standings, PLAY → SampleScene), Team (7-card 2-3-2 formation, OVR 72), Transfers (3 agent buttons, 6 fake player cards with BUY stubs), My Club (STADIUM/POOL upgrade cards + customize stubs), Challenges (3 daily cards, greyed CLAIM). All buttons log "coming soon". |
 | `MatchResultUI.cs` | Full-time result screen, built in code, hidden until `MatchTimer` calls `Show(title, outcome)`: dark 80% overlay, FULL TIME/FORFEIT title, "YOU n — n BOT" score from ScoreManager, colored winner line (cyan/red/yellow), PLAY AGAIN + MAIN MENU buttons; 0.5s unscaled-time fade-in (timeScale is 0 at match end). Singleton. |
 | `PauseMenuUI.cs` | Pause system, built in code: 70x70 pause button top-right at (-20,-45) (sprite `Resources/Sprites/pause-button`; pulled down to clear the scoreboard), click → `Time.timeScale = 0` + centered 400x350 rounded panel with PAUSED + RESUME / QUIT / TEAM MANAGEMENT. QUIT opens a confirmation sub-panel ("If you quit, this match counts as a loss.") with YES QUIT (→ MainMenu) / CANCEL. TEAM MANAGEMENT is a placeholder (no functionality yet). Ignores clicks after full time (result screen owns the freeze). Works with mouse + touch. |
 
@@ -395,44 +396,45 @@ Also now 🟡 **WORKING (first pass — improve later, not 100% done):**
 ## B5. Returning User ✅ DONE-equivalent (concept)
 - If onboarding complete, after loading screen go straight to Main Menu. (No onboarding/menu built yet, but the "skip to game" idea is trivial once menus exist.)
 
-## B6. Main Screen Layout 🟡 PARTIAL (basic main menu DONE; full economy layout not started)
-- ✅ **DONE (June 2026):** `MainMenu` scene with `MainMenuUI.cs` — entire menu built in code at runtime (no prefabs): full-screen canvas (1280x720 scale-with-screen), background + logo from `Assets/Resources/Sprites/` via `Resources.Load<Sprite>`, PLAY / SETTINGS / QUIT buttons (navy, white bold TMP with cyan outline, 1.05x hover scale), 1s fade-in, "Water Polo Manager v0.1" footer. PLAY loads SampleScene; SETTINGS is a stub (logs "coming soon"); QUIT quits.
+## B6. Main Screen Layout 🟡 PARTIAL (main menu + hub navigation shell DONE; real data/economy not)
+- ✅ **DONE (June 2026):** `MainMenu` scene with `MainMenuUI.cs` — entire menu built in code at runtime (no prefabs): full-screen canvas (1280x720 scale-with-screen), background + logo from `Assets/Resources/Sprites/` via `Resources.Load<Sprite>`, PLAY / SETTINGS / QUIT buttons (navy, white bold TMP with cyan outline, 1.05x hover scale), 1s fade-in, "Water Polo Manager v0.1" footer. PLAY loads **HubScene**; SETTINGS is a stub (logs "coming soon"); QUIT quits.
+- ✅ **DONE (June 2026, shell only):** `HubScene` + `NavigationManager.cs` — full navigation shell for B6–B15: persistent top bar (logo placeholder, team name, gold/diamond displays, settings gear stub) + bottom nav with 5 tabs, Career/Team/Transfers/My Club/Challenges placeholder screens, 0.3s fades. **All numbers are hardcoded placeholders; no economy, saving, or real data.**
 - **Still future (the full vision):**
 - **Top horizontal tab (always visible):** Settings icon + social link icon; Claim Rewards; Diamond currency (diamond + cyan bg + number); Gold currency (coin + number); Club logo + Team name.
 - **Large buttons:** Career; Live ("Coming Soon", inactive).
 - **Smaller buttons:** TEAM, TRANSFERS, My Club, Challenges.
 
-## B7. Settings Screen ⬜ NOT STARTED
+## B7. Settings Screen 🟡 PARTIAL (only the "SET" button stub in the hub top bar — logs "coming soon")
 - Top tab stays; content area swaps; back arrow appears.
 - Options: (1) Language `< >` instant — English/Russian/Georgian (+more). (2) Bot difficulty `< >` — Medium/Hard, default Medium. (3) Account — Log In/Out/Sign Up/Delete (Apple or Google Play); progress saved & synced across devices (Firebase planned). (4) Info links — FAQs, Legal Notices, ToS, System Info (external links).
 
-## B8. Claim Rewards ⬜ NOT STARTED
+## B8. Claim Rewards 🟡 PARTIAL (greyed CLAIM buttons exist on the Challenges shell; no reward logic)
 - Popup: Season Pass + Activate Pass. Split horizontally: top = premium (pass) rewards, bottom = free. Rewards = coins/diamonds/items from wins/goals.
 
-## B9. Currencies 🟡 PARTIAL (scoring exists; economy not)
+## B9. Currencies 🟡 PARTIAL (top-bar gold/diamond displays with placeholder numbers; no economy behind them)
 - **Diamond:** icon + cyan bg + number; rare; buy high-rated random players / upgrade when gold short.
 - **Gold:** coin + number; buy normal/good players, upgrade pool, upgrade players, buy caps/swimwear.
 - Both have **+** → shop popup (real-money items/players via Apple/Google billing); purchase adds item to game.
 
-## B10. Club Logo / Team Name Popup ⬜ NOT STARTED
+## B10. Club Logo / Team Name Popup 🟡 PARTIAL (logo placeholder circle + "My Club" name shown in the hub top bar; popup itself not built)
 - Manager standing, large club logo, overall team rating, changeable nationality flag, **Highlights** (saved goals), **Records** (games, W/L/D, goals for/against, biggest win/loss, win %, trophies).
 
-## B11. Career Screen ⬜ NOT STARTED
+## B11. Career Screen 🟡 PARTIAL (shell built: Division 3 badge, fake 5-team standings, season line, PLAY → SampleScene; no simulation/progression)
 - Full-screen change (not popup); top tab + bottom buttons stay; social icon → Home icon. Shows **Division 3** + ranked teams.
 - **Standings:** other teams play simulated background matches (random scores); better performers rank higher; results visible.
 - **Progression:** Div 3 (20 matches, 1st → cup → Div 2) → Div 2 → Div 1 → Champions League (repeatable).
 - **Match screen (Division clicked):** full-screen; two symmetrical pools (left = you + cards + cup/logo, right = opponent), center Division logo + "Game 1 of 15", **PLAY** button.
 
-## B12. Team Screen ⬜ NOT STARTED
+## B12. Team Screen 🟡 PARTIAL (shell built: 7 empty position cards in a 2-3-2 formation, OVR 72 placeholder; no drag/swap/upgrade)
 - Full-screen; pool with 7 positions in water polo formation + subs. Drag to swap, upgrade, set captain, sell, save lineup.
 
-## B13. Transfers Screen ⬜ NOT STARTED
+## B13. Transfers Screen 🟡 PARTIAL (shell built: 3 agent buttons with diamond prices, 6 fake player cards with BUY stubs, refresh countdown placeholder; no real market)
 - Daily random players (mostly low-level; tiered rare/golden chances). **Agents** cost diamonds → secret player by tier (Common 40 / Rare 150 / Golden 375 diamonds). Not enough diamonds → payment popup.
 
-## B14. My Club Screen ⬜ NOT STARTED
+## B14. My Club Screen 🟡 PARTIAL (shell built: STADIUM + POOL upgrade cards with placeholder levels/costs, CAP COLOR + SWIMWEAR stubs; no upgrade logic)
 - Full-screen. (1) Upgrade Stadium/Pool → more fans → more post-match money (win > loss). (2) Customize cap & swimwear (colors/designs).
 
-## B15. Challenges Screen ⬜ NOT STARTED
+## B15. Challenges Screen 🟡 PARTIAL (shell built: 3 daily challenge cards with progress/rewards + greyed CLAIM, reset countdown placeholder; no tracking)
 - Popup; daily challenges ("Score 3 goals", "Win 5 games") → reward Gold + Diamonds.
 
 ## B16. MATCH GAMEPLAY (the core)
