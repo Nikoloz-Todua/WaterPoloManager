@@ -23,6 +23,8 @@
 
 A **2D top-down water polo game** in **Unity 6 (6000.4.7f1), C#**, targeting **Android + iOS** (later). Originally conceived as a 3D Dream-League-style game; **retargeted to 2D** for solo-dev scope and hardware. Built brick-by-brick with step-by-step guidance.
 
+**Planned backend (not yet integrated):** **Firebase** — Auth (Google / Apple / Email + Guest mode), Firestore (player data + remote config + admin control), Storage (player card images), cloud sync of roster/currencies/career on login with local-JSON-first saves. See **Player System Architecture** (end of Part A) for the full design. Payments stay Apple/Google in-app billing (A3 rule 5).
+
 **Current state: a working 6v6 match with full defensive AI and a complete Visual Pass 1 animation system.** Core gameplay works (role-based positioning, marking, dynamic mark-switching, press/zone toggle, sprint mechanic, steal animation, proximity-based defend animation); menus/economy/career not built yet. Animated pool water background working via a URP Shader Graph material (ShaderWaterMaterial / WaterGraph.shadergraph) on the PoolWater object — see A8.
 
 ## A2. Developer & environment
@@ -373,6 +375,76 @@ Also now 🟡 **WORKING (first pass — improve later, not 100% done):**
 5. Test in game
 6. Then clone and swap faces/caps for all 240 players
 
+## Player System Architecture
+
+> Foundation for B9 (Currencies), B12 (Team Screen), B13 (Transfers). Nothing here is implemented yet — this is the agreed design.
+
+**Two types of players exist in this game:**
+1. **Bot players** — fixed rosters: each national team has 15 players with set stats, ratings, rarity, position, and name. Bot players ship baked-in as Unity assets (ScriptableObject or JSON) as the offline fallback. When the app starts and Firebase is reachable, Firestore is checked for a bot player patch. If a patch exists it overrides local data for that session and is cached. Bot stats can be updated remotely without an app update but the game never breaks if Firebase is unavailable.
+2. **Human roster players** — fully flexible. The user buys, sells, and manages these. Maximum 17 players in a roster. These are stored locally AND synced to Firebase when logged in.
+
+**Player card structure (each player has):**
+- Unique ID (string)
+- Full name
+- Nation / team
+- Position (GK, CB, LW, RW, CF, LF, RF)
+- Overall rating (0-100)
+- Stats: Speed, Shooting, Passing, Defense, Stamina, GoalKeeping
+- Rarity: Common / Rare / Legendary
+- Image URL (stored in Firebase Storage, loaded remotely — never bundled in app)
+- Price in gold coins
+- Is bot player: true/false
+
+**Rarity system:**
+- Common — white border, grey background
+- Rare — blue border, blue gradient background
+- Legendary — gold border, gold gradient background, animated shimmer effect
+
+**Remote config rule:**
+- All player stats, ratings, rarity, image URLs stored in Firestore
+- Developer can change any player's stats, rating, rarity remotely without app update
+- Bot players: see the baked-in + Firestore-patch rule under "Two types of players" above
+- Unity loads player data from Firestore on app start, caches locally
+
+**Save system architecture:**
+- Guest mode: everything stored locally using JSON files in `Application.persistentDataPath`
+- Logged in: local JSON is the primary save, Firebase is the sync backup
+- On login: merge local progress into Firebase (local wins on conflict — player's progress is never wiped)
+- Synced to Firebase: roster, coins, diamonds, career progress, purchased players
+- NOT synced: match state, settings (stored local only)
+- Payments require login — no purchases without an account
+- Ads work for guests — ad revenue does not require login
+- Small persistent reminder shown on profile/hub screen when guest: "Log in to save your progress across devices"
+
+**Login methods (future implementation):**
+- Google Sign-In
+- Apple Sign-In (required for iOS)
+- Email + Password
+- Guest mode (local only, no Firebase)
+
+**Admin control (via Firebase console):**
+- Grant coins/diamonds to specific user by UID
+- Grant specific players to user
+- Change any player's stats/rating/rarity remotely
+- Run events, change shop prices, adjust rewards
+- All without any app update
+
+**National teams planned at launch:**
+- 16 national teams
+- 15 players per team
+- 1 goalkeeper per team
+- Total: 240 players
+
+**Implementation order (future sessions):**
+1. Firebase project setup + Unity SDK integration
+2. Player ScriptableObject structure in Unity
+3. Firestore player data schema
+4. Local JSON save system
+5. Login screen (Google + Apple + Guest)
+6. Roster management UI
+7. Shop / transfers with real player cards
+8. Cloud sync on login
+
 ---
 
 # PART B — FULL FEATURE VISION (the whole game)
@@ -412,6 +484,7 @@ Also now 🟡 **WORKING (first pass — improve later, not 100% done):**
 - Popup: Season Pass + Activate Pass. Split horizontally: top = premium (pass) rewards, bottom = free. Rewards = coins/diamonds/items from wins/goals.
 
 ## B9. Currencies 🟡 PARTIAL (top-bar gold/diamond displays with placeholder numbers; no economy behind them)
+> Foundation: **Player System Architecture** (end of Part A) — coins/diamonds stored in local JSON, synced to Firebase on login; payments require login, ads don't.
 - **Diamond:** icon + cyan bg + number; rare; buy high-rated random players / upgrade when gold short.
 - **Gold:** coin + number; buy normal/good players, upgrade pool, upgrade players, buy caps/swimwear.
 - Both have **+** → shop popup (real-money items/players via Apple/Google billing); purchase adds item to game.
@@ -426,9 +499,11 @@ Also now 🟡 **WORKING (first pass — improve later, not 100% done):**
 - **Match screen (Division clicked):** full-screen; two symmetrical pools (left = you + cards + cup/logo, right = opponent), center Division logo + "Game 1 of 15", **PLAY** button.
 
 ## B12. Team Screen 🟡 PARTIAL (shell built: 7 empty position cards in a 2-3-2 formation, OVR 72 placeholder; no drag/swap/upgrade)
+> Foundation: **Player System Architecture** (end of Part A) — human roster (max 17), player card structure, rarity borders (Common/Rare/Legendary), images from Firebase Storage.
 - Full-screen; pool with 7 positions in water polo formation + subs. Drag to swap, upgrade, set captain, sell, save lineup.
 
 ## B13. Transfers Screen 🟡 PARTIAL (shell built: 3 agent buttons with diamond prices, 6 fake player cards with BUY stubs, refresh countdown placeholder; no real market)
+> Foundation: **Player System Architecture** (end of Part A) — buyable players come from Firestore (remote-patchable stats/prices), card rarity visuals, gold prices per card.
 - Daily random players (mostly low-level; tiered rare/golden chances). **Agents** cost diamonds → secret player by tier (Common 40 / Rare 150 / Golden 375 diamonds). Not enough diamonds → payment popup.
 
 ## B14. My Club Screen 🟡 PARTIAL (shell built: STADIUM + POOL upgrade cards with placeholder levels/costs, CAP COLOR + SWIMWEAR stubs; no upgrade logic)
