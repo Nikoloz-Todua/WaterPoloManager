@@ -55,20 +55,24 @@ public interface IAgentBody
 public static class WaterPoloBrain
 {
     const float ArriveDistance = 0.25f; // close enough to a target spot
-    const float PassFactor = 2.5f;      // pass speed per unit of pass distance
-    const float MinPassSpeed = 6f;
-    const float MaxPassSpeed = 13f;
+    const float PassFactor = 2.2f;      // pass speed per unit of pass distance (was 2.5 — calmer bot passes)
+    const float MinPassSpeed = 5f;      // (was 6)
+    const float MaxPassSpeed = 11f;     // (was 13 — bot passes were zipping too fast to follow)
     const float SteerAwayWeight = 0.8f; // how hard the carrier veers off a defender
     const float SettleDelay = 0.4f;     // must hold the ball this long before shooting
     const float MaxCarrySeconds = 1.8f;    // carrier force-shoots after holding this long (anti-stall / more aggressive)
-    const float CloseShootDistance = 4f;   // within this of goal, prefer shooting over dribbling
+    const float CloseShootDistance = 3.5f; // within this of goal, prefer shooting over dribbling (was 4 — drive closer)
+    const float MaxShootDistance = 3.5f;   // hard cap on a NON-forced shot: bots had ShootRange 20 and fired from anywhere
+    const float PassSettleDelay = 0.35f;   // a bot holds the ball at least this long before relaying (calms ping-pong passing)
+    const float SprintMult = 1.7f;         // speed burst when chasing the ball / covering ground (bots actually sprint now)
+    const float SprintDistance = 2f;       // MoveTo sprints when its target is further than this
     const float StealCooldown = 0.6f;   // min time between steal attempts
     const float StealFacingDot = 0.3f;  // stealer must be within ~70° of the carrier's front
     const float LobInterceptFactor = 0.4f; // enemy lob in flight: steal chance reduced by 60%
     const float IdleDriftFraction = 0.2f; // idle float speed as a fraction of move speed
     const float IdleRadius = 0.35f;       // how far the idle bob point sits from the spot
     const float IdleFreq = 1.2f;          // idle bob speed (rad/s)
-    const float MarkSwitchCooldown = 0.6f; // min time before a defender may switch its man
+    const float MarkSwitchCooldown = 0.35f; // min time before a defender may switch its man (was 0.6 — react faster to a beaten man)
     const float KickoffPassSettle = 0.4f;  // AI carrier settles this long before the kickoff pass
     const float KeeperProtectRadius = 2.5f; // a presser can't crowd a ball-holding keeper
     const float MinTeammateSeparation = 1.2f; // teammates never pack tighter than this (lower priority yields)
@@ -414,6 +418,15 @@ public static class WaterPoloBrain
     {
         a.CurrentMark = null; // we hold the ball → no defensive assignment
 
+        // The human owns the ball on their OWN team (Issue 6: "I should be in charge"). A
+        // player-team AI carrier never auto-passes/shoots/dribbles — it just holds in place
+        // until TeamManager hands control to the human (control auto-follows to the holder).
+        if (ctx.PlayerTeam != null && a.Team == ctx.PlayerTeam)
+        {
+            a.Body.linearVelocity = Vector2.zero;
+            return;
+        }
+
         // Free throw: the fouled AI carrier settles in place (shot clock paused), then
         // decision-making resumes once the hold elapses and the flag clears.
         if (ctx.FreeThrowActive && ctx.FreeThrowCarrier == a.Tf)
@@ -456,7 +469,7 @@ public static class WaterPoloBrain
         //    through to a drive or a pass instead. FORCE a shot if we've stalled on the
         //    ball too long (anti-dribble-forever) — fired immediately, no settle wait.
         bool forceShot = heldTime >= MaxCarrySeconds;
-        if (forceShot || (goalDist <= a.ShootRange && quality >= team.shotQualityThreshold))
+        if (forceShot || (goalDist <= Mathf.Min(a.ShootRange, MaxShootDistance) && quality >= team.shotQualityThreshold))
         {
             a.LastDirection = (aim - pos).normalized;
             if (forceShot || Time.time - a.HoldStartTime >= SettleDelay) Shoot(a, ctx);
@@ -478,7 +491,7 @@ public static class WaterPoloBrain
         bool quick = enemyOut > 0 || ctx.CounterActiveFor(team);
         bool pressured = quick || TeamSide.NearestDistance(pos, enemy) < team.pressDistance;
         Transform mate = team.BestPassTarget(a.Tf, enemy, pressured);
-        if (mate != null) { Pass(a, ctx, mate); return; }
+        if (mate != null && (pressured || heldTime >= PassSettleDelay)) { Pass(a, ctx, mate); return; }
 
         // 2.5) CLOSE RANGE: within CloseShootDistance with no pass available → SHOOT rather
         //      than dribbling in any further (bots were over-dribbling at the cage).
@@ -675,7 +688,7 @@ public static class WaterPoloBrain
             dir = dir.normalized;
             a.LastDirection = dir;
         }
-        a.Body.linearVelocity = dir * a.ChaseSpeed;
+        a.Body.linearVelocity = dir * (a.ChaseSpeed * SprintMult); // sprint onto a loose / contested ball
     }
 
     static void MoveTo(IAgentBody a, Vector2 target, float speed)
@@ -684,7 +697,10 @@ public static class WaterPoloBrain
         if (delta.magnitude < ArriveDistance) { IdleDrift(a, target, speed); return; }
         Vector2 dir = ApplySeparation(a, delta.normalized);
         a.LastDirection = dir;
-        a.Body.linearVelocity = dir * speed;
+        // sprint to cover real distance (recovering on defense, getting open); eases back to a
+        // normal cruise near the spot, then IdleDrift takes over
+        float spd = delta.magnitude > SprintDistance ? speed * SprintMult : speed;
+        a.Body.linearVelocity = dir * spd;
     }
 
     // Anti-stacking: if a HIGHER-priority teammate (closer to the ball; instance id

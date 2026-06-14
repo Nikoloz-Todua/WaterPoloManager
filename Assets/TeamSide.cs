@@ -57,6 +57,10 @@ public class TeamSide : MonoBehaviour
     [System.NonSerialized] private float nextDefenseReevalTime;
     [System.NonSerialized] private float lastDefenseModeChangeTime;
 
+    // Cached on first use (keepers persist for the match). Picked by CURRENT defendGoal side
+    // each call so it stays correct across a halftime ends-swap. No Inspector wiring needed.
+    [System.NonSerialized] private Goalkeeper[] keepersCache;
+
     // Fixed tactical roles, assigned by slot index in `members` (0..5).
     public enum Role { Center, CenterBack, LeftWing, RightWing, LeftFlat, RightFlat }
 
@@ -400,6 +404,19 @@ public class TeamSide : MonoBehaviour
         return new Vector2(c.x, aimY);
     }
 
+    // This team's OWN goalkeeper (the keeper defending OUR goal), or null. Resolved by the
+    // current defendGoal side so it stays right after a halftime swap. Used ONLY as a
+    // heavily-penalised last-resort pass outlet (Task 4).
+    Transform OwnKeeper()
+    {
+        if (defendGoal == null) return null;
+        if (keepersCache == null) keepersCache = FindObjectsByType<Goalkeeper>(FindObjectsSortMode.None);
+        float side = Mathf.Sign(defendGoal.position.x);
+        foreach (Goalkeeper gk in keepersCache)
+            if (gk != null && Mathf.Sign(gk.transform.position.x) == side) return gk.transform;
+        return null;
+    }
+
     // Best open teammate to pass to. Prefers forward progress; when the carrier is
     // pressured it will accept any open mate (incl. lateral/back) to keep possession.
     // Returns null when keeping the ball is better.
@@ -407,12 +424,15 @@ public class TeamSide : MonoBehaviour
     {
         if (members == null || attackGoal == null || carrier == null) return null;
 
+        const float KeeperLastResortOpenness = 0.2f; // a teammate this un-open counts as "covered" (Task 4)
+
         Vector2 goal = attackGoal.position;
         float carrierGoalDist = Vector2.Distance(carrier.position, goal);
         float span = defendGoal != null ? Vector2.Distance(goal, defendGoal.position) : 14f;
 
         Transform best = null;
         float bestScore = float.NegativeInfinity;
+        bool allOthersCovered = true; // is EVERY field teammate smothered? (gates the keeper outlet)
 
         foreach (Transform mate in members)
         {
@@ -420,6 +440,7 @@ public class TeamSide : MonoBehaviour
 
             // must be open (not tightly marked)
             float openness = NearestDistance(mate.position, enemy);
+            if (openness >= KeeperLastResortOpenness) allOthersCovered = false;
             if (openness < openRadius) continue;
 
             // PASS RISK: longer passes give defenders more time to step into the lane, so
@@ -449,6 +470,29 @@ public class TeamSide : MonoBehaviour
 
             if (score > bestScore) { bestScore = score; best = mate; }
         }
+
+        // GOALKEEPER as a heavily-penalised LAST RESORT (Task 4): only when EVERY field
+        // teammate is smothered (openness < 0.2) — i.e. no real outlet exists — and even then
+        // scored at 10% so it can never outrank a genuine pass. Net effect: the keeper almost
+        // never receives a pass. Applies to BOTH teams' AI (this is the shared pass selector;
+        // the keeper's own PassOut excludes itself via the keeper != carrier check below).
+        if (allOthersCovered)
+        {
+            Transform keeper = OwnKeeper();
+            if (keeper != null && keeper != carrier)
+            {
+                float kOpen = NearestDistance(keeper.position, enemy);
+                float kDist = Vector2.Distance(carrier.position, keeper.position);
+                if (LaneClear(carrier.position, keeper.position, enemy, passLaneRadius + kDist * 0.05f))
+                {
+                    float kGoalDist = Vector2.Distance(keeper.position, goal);
+                    float kForward = carrierGoalDist - kGoalDist; // negative — the keeper is behind us
+                    float kScore = (kForward * 1.5f + kOpen * passOpennessWeight - kGoalDist * 0.1f) * 0.1f;
+                    if (kScore > bestScore) { bestScore = kScore; best = keeper; }
+                }
+            }
+        }
+
         return best;
     }
 

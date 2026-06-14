@@ -37,24 +37,25 @@ public class TouchControls : MonoBehaviour
 
     [Header("Action buttons")]
     [Tooltip("Size of the two lower buttons (shoot/defend and pass/block).")]
-    [SerializeField] private float actionButtonSize = 180f;
+    [SerializeField] private float actionButtonSize = 270f; // 1.5x larger
     [Tooltip("Size of the top button (sprint/switch).")]
-    [SerializeField] private float mainButtonSize = 180f;
+    [SerializeField] private float mainButtonSize = 270f;   // 1.5x larger
     [Tooltip("Opacity of the button icons (1 = fully opaque).")]
     [SerializeField, Range(0f, 1f)] private float iconAlpha = 1.0f;
 
     // Anchored from the bottom-right corner (anchor 1,0): X is negative (left of the right
-    // edge), Y is positive (above the bottom edge). The cluster sits well clear of the corner.
-    static readonly Vector2 TopRightPos    = new Vector2(-280f, 280f); // sprint / switch
-    static readonly Vector2 BottomRightPos = new Vector2(-160f, 100f); // shoot / defend
-    static readonly Vector2 BottomLeftPos  = new Vector2(-380f, 100f); // pass / block
+    // edge), Y is positive (above the bottom edge). A TIGHT triangle (~25px gaps between the
+    // 270px buttons) so the cluster reads as one control pad low in the bottom-right corner.
+    static readonly Vector2 TopRightPos    = new Vector2(-362f, 415f); // sprint / switch
+    static readonly Vector2 BottomRightPos = new Vector2(-215f, 160f); // shoot / defend
+    static readonly Vector2 BottomLeftPos  = new Vector2(-510f, 160f); // pass / block
 
     // PASS OUT button: centre-right (anchor 1,0.5), with its label just below it.
-    static readonly Vector2 PassOutPos      = new Vector2(-220f, 40f);
-    static readonly Vector2 PassOutLabelPos = new Vector2(-220f, -75f);
-    const float PassOutSize = 180f;
+    static readonly Vector2 PassOutPos      = new Vector2(-330f, 60f);
+    static readonly Vector2 PassOutLabelPos = new Vector2(-330f, -112.5f);
+    const float PassOutSize = 270f; // 1.5x larger
 
-    const float ModeFadeTime = 0.1f; // fade-out / fade-in on a mode switch
+    const float ModeFadeTime = 0.22f; // smooth fade-out / fade-in on an attack<->defense swap
 
     private GameObject canvasRoot;
     private TouchJoystick joystick;
@@ -73,7 +74,6 @@ public class TouchControls : MonoBehaviour
     private bool modeInitialized;
     private Coroutine modeFade;
     private bool prevTop, prevBR, prevBL; // tap (down/up) edge detection
-    private bool prevPO;                  // PASS OUT tap edge
 
     void Awake()
     {
@@ -86,33 +86,21 @@ public class TouchControls : MonoBehaviour
         if (canvasRoot == null || !canvasRoot.activeSelf) return;
         MatchContext ctx = MatchContext.Instance;
 
-        // --- KEEPER PASS-OUT mode: while the player's OWN keeper holds the ball, swap the 3
-        //     action buttons for a single PASS OUT button. ---
-        bool keeperPassOut = ctx != null && ctx.KeeperHolding && ctx.KeeperHoldTeam == ctx.PlayerTeam;
-        if (actionGroup != null) actionGroup.SetActive(!keeperPassOut);
-        if (passOutGroup != null) passOutGroup.SetActive(keeperPassOut);
-        if (keeperPassOut)
+        // --- KEEPER CONTROL (Task 5): while the player's OWN keeper holds the ball the human
+        //     controls the KEEPER itself with the SAME 3 attack buttons + joystick (routed to
+        //     the Goalkeeper), instead of swapping to a single PASS OUT button. The keeper
+        //     possesses the ball, so the mode logic below already shows the attack icons. ---
+        Goalkeeper keeper = null;
+        if (ctx != null && ctx.KeeperHolding && ctx.KeeperHoldTeam == ctx.PlayerTeam && ctx.Ball != null)
         {
-            if (modeFade != null) { StopCoroutine(modeFade); modeFade = null; }
-
-            // field players can still reposition with the joystick; no button actions
-            PlayerMovement pmk = TeamManager.ActivePlayer;
-            if (pmk != null)
-                pmk.SetTouchInput(joystick.Axis, false, false, false, false, false, false, false, false);
-
-            bool poHeld = passOutBtn.Pressed;
-            if (poHeld && !prevPO) // tap → distribute via the holding keeper
-            {
-                Transform held = ctx.Ball != null ? ctx.Ball.transform.parent : null;
-                Goalkeeper gk = held != null ? held.GetComponent<Goalkeeper>() : null;
-                if (gk != null) gk.RequestPassOut();
-            }
-            prevPO = poHeld;
-
-            modeInitialized = false; // re-sync the 3 buttons instantly (no fade) when they return
-            return;
+            Transform held = ctx.Ball.transform.parent;
+            if (held != null) keeper = held.GetComponent<Goalkeeper>();
         }
-        prevPO = false;
+        bool keeperControl = keeper != null;
+
+        // PASS OUT button is retired — the keeper uses the full action buttons now.
+        if (passOutGroup != null && passOutGroup.activeSelf) passOutGroup.SetActive(false);
+        if (actionGroup != null && !actionGroup.activeSelf) actionGroup.SetActive(true);
 
         // --- decide mode from possession ---
         bool attack = true;
@@ -146,7 +134,18 @@ public class TouchControls : MonoBehaviour
         PlayerMovement pm = TeamManager.ActivePlayer;
         Vector2 axis = joystick.Axis;
 
-        if (pm != null)
+        if (keeperControl)
+        {
+            // Route the 3 attack buttons + joystick to the KEEPER (Task 5):
+            //   top = Sprint (hold), bottom-right = Shoot (tap/hold/release), bottom-left = Pass (tap).
+            keeper.SetTouchInput(axis, brHeld, brDown, brUp, blDown, topHeld);
+
+            // the field player is stood down (PlayerMovement yields to the keeper) — make sure
+            // touch input never drives it either.
+            if (pm != null)
+                pm.SetTouchInput(Vector2.zero, false, false, false, false, false, false, false, false);
+        }
+        else if (pm != null)
         {
             if (attackMode)
             {
@@ -221,7 +220,7 @@ public class TouchControls : MonoBehaviour
         while (t < ModeFadeTime)
         {
             t += Time.unscaledDeltaTime;
-            SetButtonsAlpha(Mathf.Lerp(iconAlpha, 0f, t / ModeFadeTime));
+            SetButtonsAlpha(Mathf.Lerp(iconAlpha, 0f, Mathf.SmoothStep(0f, 1f, t / ModeFadeTime)));
             yield return null;
         }
         ApplySprites(toAttack);
@@ -229,7 +228,7 @@ public class TouchControls : MonoBehaviour
         while (t < ModeFadeTime)
         {
             t += Time.unscaledDeltaTime;
-            SetButtonsAlpha(Mathf.Lerp(0f, iconAlpha, t / ModeFadeTime));
+            SetButtonsAlpha(Mathf.Lerp(0f, iconAlpha, Mathf.SmoothStep(0f, 1f, t / ModeFadeTime)));
             yield return null;
         }
         SetButtonsAlpha(iconAlpha);

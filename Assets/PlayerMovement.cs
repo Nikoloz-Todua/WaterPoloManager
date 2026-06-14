@@ -14,7 +14,9 @@ public class PlayerMovement : MonoBehaviour
 
     [Header("Shooting")]
     [SerializeField] private float maxShootPower = 12f;
-    [SerializeField] private float chargeRate = 8f;
+    [Tooltip("Seconds of holding to reach a FULL-power shot (lower = snappier charge bar). Time-based so it stays fast no matter how high maxShootPower is.")]
+    [SerializeField] private float shotChargeTime = 0.7f;
+    [SerializeField] private float minShootSpeed = 8f;         // a quick tap still fires a real shot, never a limp drop
     [SerializeField] private float highShotSpeedBonus = 1.15f; // height > 0.7 → shot flies this much faster
     [SerializeField] private float skipShotHeight = 0.15f;     // Q+Space skip shot is locked to this LOW height
 
@@ -22,7 +24,8 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private float passFactor = 2.5f; // (legacy; pass speed is charge-based now)
     [SerializeField] private float minPassSpeed = 6f;
     [SerializeField] private float maxPassSpeed = 13f;
-    [SerializeField] private float passChargeRate = 1.5f; // pass charge gained per second (0..1)
+    [Tooltip("Seconds of holding to reach a FULL-power pass (lower = snappier charge bar).")]
+    [SerializeField] private float passChargeTime = 0.45f;
     [SerializeField] private float lobSpeedFactor = 0.7f; // F+B lob travels at this fraction of pass speed
 
     [Header("Pass aim (directional, FIFA-style)")]
@@ -59,6 +62,7 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private float powerBarYOffset = 0.9f;
 
     private LineRenderer powerBar;          // built in code, no Inspector wiring needed
+    private LineRenderer powerBarBG;        // dark rounded track behind the fill
     private SpriteRenderer indicator;       // bouncing marker above the active player
 
     private const float IndicatorBaseY = 1.9f;   // rest height above the player center
@@ -175,13 +179,29 @@ public class PlayerMovement : MonoBehaviour
     // useWorldSpace=false → positions are local, so it follows the player automatically.
     void BuildPowerBar()
     {
+        float half = powerBarWidth * 0.5f;
+
+        // dark rounded track behind the fill, so even a low charge still reads as a bar
+        GameObject bgGo = new GameObject("PowerBarBG");
+        bgGo.transform.SetParent(transform, false);
+        powerBarBG = bgGo.AddComponent<LineRenderer>();
+        powerBarBG.useWorldSpace = false;
+        powerBarBG.positionCount = 2;
+        powerBarBG.numCapVertices = 8;                 // rounded ends
+        powerBarBG.startWidth = powerBarBG.endWidth = powerBarHeight * 1.35f;
+        powerBarBG.material = new Material(Shader.Find("Sprites/Default"));
+        powerBarBG.sortingOrder = 49;
+        powerBarBG.startColor = powerBarBG.endColor = new Color(0f, 0f, 0f, 0.55f);
+        powerBarBG.SetPosition(0, new Vector3(-half, powerBarYOffset, 0f));
+        powerBarBG.SetPosition(1, new Vector3( half, powerBarYOffset, 0f));
+        powerBarBG.enabled = false;
+
         GameObject go = new GameObject("PowerBar");
         go.transform.SetParent(transform, false);
-
         powerBar = go.AddComponent<LineRenderer>();
         powerBar.useWorldSpace = false;
         powerBar.positionCount = 2;
-        powerBar.numCapVertices = 0;
+        powerBar.numCapVertices = 8;                    // rounded fill
         powerBar.startWidth = powerBar.endWidth = powerBarHeight;
         powerBar.material = new Material(Shader.Find("Sprites/Default"));
         powerBar.sortingOrder = 50;
@@ -238,7 +258,7 @@ public class PlayerMovement : MonoBehaviour
                 {
                     if (Input.GetKey(KeyCode.Space) || touchShootHeld)
                     {
-                        currentPower = Mathf.Min(currentPower + chargeRate * Time.deltaTime, maxShootPower);
+                        currentPower = Mathf.Min(currentPower + (maxShootPower / Mathf.Max(shotChargeTime, 0.05f)) * Time.deltaTime, maxShootPower);
                         ChargeHeight();
                     }
                     if (Input.GetKeyUp(KeyCode.Space) || touchShootUp)
@@ -262,6 +282,19 @@ public class PlayerMovement : MonoBehaviour
 
         // Excluded → fully inert: no control, charge, steal, or aim visuals.
         if (Excluded)
+        {
+            sprintHeld = false; IsLooseHold = false;
+            input = Vector2.zero;
+            chargeMode = Charging.None; currentPower = 0f; passPower = 0f;
+            if (aimLine != null) aimLine.enabled = false;
+            if (powerBar != null) powerBar.enabled = false;
+            return;
+        }
+
+        // While our OWN keeper holds the ball, the human controls the KEEPER (Goalkeeper.cs,
+        // Task 5) — stand this field swimmer down so WASD/Space/B don't drive two units at once.
+        MatchContext kctx = MatchContext.Instance;
+        if (kctx != null && kctx.KeeperHolding && kctx.KeeperHoldTeam == kctx.PlayerTeam)
         {
             sprintHeld = false; IsLooseHold = false;
             input = Vector2.zero;
@@ -324,7 +357,7 @@ public class PlayerMovement : MonoBehaviour
                 {
                     if (Input.GetKey(KeyCode.Space) || touchShootHeld)
                     {
-                        currentPower = Mathf.Min(currentPower + chargeRate * Time.deltaTime, maxShootPower);
+                        currentPower = Mathf.Min(currentPower + (maxShootPower / Mathf.Max(shotChargeTime, 0.05f)) * Time.deltaTime, maxShootPower);
                         ChargeHeight();
                     }
 
@@ -338,7 +371,7 @@ public class PlayerMovement : MonoBehaviour
                 else if (chargeMode == Charging.Pass)
                 {
                     if (Input.GetKey(KeyCode.B) || touchPassHeld)
-                        passPower = Mathf.Min(passPower + passChargeRate * Time.deltaTime, 1f);
+                        passPower = Mathf.Min(passPower + (1f / Mathf.Max(passChargeTime, 0.05f)) * Time.deltaTime, 1f);
 
                     if (Input.GetKeyUp(KeyCode.B) || touchPassUp)
                     {
@@ -414,6 +447,7 @@ public class PlayerMovement : MonoBehaviour
 
         bool charging = IsActive && isHolding && chargeMode != Charging.None;
         powerBar.enabled = charging;
+        if (powerBarBG != null) powerBarBG.enabled = charging;
         if (!charging) return;
 
         float fill = chargeMode == Charging.Shoot
@@ -424,7 +458,10 @@ public class PlayerMovement : MonoBehaviour
         powerBar.SetPosition(0, new Vector3(-half, powerBarYOffset, 0f));
         powerBar.SetPosition(1, new Vector3(-half + powerBarWidth * fill, powerBarYOffset, 0f));
 
-        Color col = Color.Lerp(Color.green, Color.red, fill);
+        // green → yellow → red ramp (nicer than a flat green→red lerp)
+        Color col = fill < 0.5f
+            ? Color.Lerp(new Color(0.2f, 1f, 0.3f), new Color(1f, 0.9f, 0.2f), fill * 2f)
+            : Color.Lerp(new Color(1f, 0.9f, 0.2f), new Color(1f, 0.25f, 0.2f), (fill - 0.5f) * 2f);
         powerBar.startColor = powerBar.endColor = col;
     }
 
@@ -656,7 +693,7 @@ public class PlayerMovement : MonoBehaviour
         skipCharge = false;
         if (skip) shotHeight = skipShotHeight; // a skip shot is fast and LOW by definition
 
-        float speed = currentPower;
+        float speed = Mathf.Max(currentPower, minShootSpeed); // a tap still fires a real shot, never a drop
         if (!skip && shotHeight > 0.7f) speed *= highShotSpeedBonus; // high shots fly faster
         ball.linearVelocity = lastDirection * speed;
 
