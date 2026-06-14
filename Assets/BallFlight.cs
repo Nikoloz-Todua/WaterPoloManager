@@ -31,9 +31,12 @@ public class BallFlight : MonoBehaviour
     static readonly Color TrailStartColor = new Color(1f, 1f, 0.6f, 1f); // white-yellow
     static readonly Color TrailEndColor = new Color(1f, 1f, 1f, 0f);     // → transparent
 
-    // ---- spin ----
-    const float SpinMinSpeed = 3f;
-    const float SpinDegPerSec = 180f;
+    // ---- spin (per flight type) ----
+    const float SpinMinSpeed = 3f;        // below this the ball doesn't spin
+    const float ShotSpinSpeed = 8f;       // flight faster than this counts as a SHOT
+    const float ShotSpinDegPerSec = 180f; // shots spin fast
+    const float PassSpinDegPerSec = 60f;  // normal passes spin slower
+    const float LobSpinDegPerSec = 30f;   // lob passes barely spin
 
     // ---- high shot ----
     const float HighShotMaxScale = 1.4f;
@@ -44,8 +47,8 @@ public class BallFlight : MonoBehaviour
 
     // ---- skip bounce ----
     const float SquashSeconds = 0.1f;
-    const float SquashX = 1.3f;
-    const float SquashY = 0.7f;
+    const float SquashX = 1.15f; // subtle squash on the skip bounce (max 1.15x)
+    const float SquashY = 0.87f;
     const float RippleSeconds = 0.3f;
     const float RippleMaxScale = 0.8f;
 
@@ -78,11 +81,17 @@ public class BallFlight : MonoBehaviour
     private float lobStartTime;
     private float lobFlightTime;
 
+    private bool passActive; // a plain pass: NO scale change and NO trail (gentle spin only)
+
     private Vector3 visualMult = Vector3.one; // current sprite-scale multiplier (1 = normal)
 
     public bool LobActive => lobActive;
     public TeamSide LobTeam => lobTeam;
     public bool KeeperFooled { get; private set; }
+
+    // Skip-shot flight state (read by WaterPoloBrain so AI can't intercept a skip mid-air).
+    public bool SkipActive => skipActive;
+    public bool SkipBounced => bounced;
 
     void Awake()
     {
@@ -153,6 +162,15 @@ public class BallFlight : MonoBehaviour
             skipActive = false;
     }
 
+    // Called by PlayerMovement/WaterPoloBrain on a NORMAL pass: a plain throw with no
+    // height/skip/lob effects. Suppresses the swell AND the motion trail (the "bridge"
+    // streak) for the whole flight; spin drops to the gentle pass rate.
+    public void NotePass()
+    {
+        EndFlight();      // clear any prior flight + reset scale
+        passActive = true;
+    }
+
     // Called by PlayerMovement on an F+B lob pass.
     public void NoteLob(TeamSide team, float dist, float speed)
     {
@@ -167,7 +185,7 @@ public class BallFlight : MonoBehaviour
 
     void Update()
     {
-        if (skipActive || lobActive || highShotActive) CheckFlight();
+        if (skipActive || lobActive || highShotActive || passActive) CheckFlight();
         UpdateSpin();
         UpdateTrail();
         ApplyVisuals();
@@ -200,21 +218,31 @@ public class BallFlight : MonoBehaviour
         SpawnRipple();
     }
 
-    // Slow continuous roll during any real flight; snaps upright the moment it's caught.
+    // Spin rate depends on the flight type: shots spin fast, normal passes slowly, lobs barely,
+    // skip shots not at all (a bouncing ball spinning looks wrong). Snaps upright on catch.
     void UpdateSpin()
     {
         bool flying = rb != null && rb.simulated && transform.parent == null &&
                       rb.linearVelocity.magnitude > SpinMinSpeed;
-        if (flying) transform.Rotate(0f, 0f, -SpinDegPerSec * Time.deltaTime);
+        if (flying)
+        {
+            float spin;
+            if (skipActive) spin = 0f;                                         // bouncing ball — no spin
+            else if (lobActive) spin = LobSpinDegPerSec;                       // gentle lob spin
+            else if (passActive) spin = PassSpinDegPerSec;                     // a normal pass (gentle, even if fast)
+            else if (rb.linearVelocity.magnitude > ShotSpinSpeed) spin = ShotSpinDegPerSec; // a shot
+            else spin = PassSpinDegPerSec;                                     // a fast loose ball
+            if (spin != 0f) transform.Rotate(0f, 0f, -spin * Time.deltaTime);
+        }
         else if (transform.parent != null && transform.localEulerAngles.z != 0f)
-            transform.localRotation = Quaternion.identity;
+            transform.localRotation = Quaternion.identity; // caught → stop spinning instantly
     }
 
     void UpdateTrail()
     {
         if (trail == null) return;
-        bool fast = rb != null && rb.simulated && transform.parent == null &&
-                    rb.linearVelocity.magnitude > TrailMinSpeed;
+        bool fast = rb != null && rb.simulated && transform.parent == null && !passActive &&
+                    rb.linearVelocity.magnitude > TrailMinSpeed; // plain passes leave no trail "bridge"
         if (trail.emitting == fast) return;
         trail.emitting = fast;
         if (!fast) trail.Clear(); // vanish instantly on a catch / stop
@@ -333,6 +361,7 @@ public class BallFlight : MonoBehaviour
         highShotActive = false;
         lobActive = false;
         lobTeam = null;
+        passActive = false;
         KeeperFooled = false;
         squashUntil = -10f;
         glowUntil = -10f;

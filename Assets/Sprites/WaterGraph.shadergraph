@@ -690,10 +690,10 @@
         "m_Expanded": true,
         "m_Position": {
             "serializedVersion": "2",
-            "x": -709.9999389648438,
-            "y": 469.33331298828127,
+            "x": -821.3333129882813,
+            "y": 380.0,
             "width": 132.0,
-            "height": 36.000030517578128
+            "height": 36.0
         }
     },
     "m_Slots": [
@@ -1254,8 +1254,8 @@
     "m_PerRendererData": false,
     "m_customAttributes": [],
     "m_Value": {
-        "r": 0.1981130838394165,
-        "g": 0.27241379022598269,
+        "r": 0.0,
+        "g": 0.7415648698806763,
         "b": 1.0,
         "a": 1.0
     },
@@ -1412,7 +1412,7 @@
     "m_Hidden": false,
     "m_ShaderOutputName": "CellDensity",
     "m_StageCapability": 3,
-    "m_Value": 60.0,
+    "m_Value": 200.0,
     "m_DefaultValue": 5.0,
     "m_Labels": [],
     "m_LiteralMode": false

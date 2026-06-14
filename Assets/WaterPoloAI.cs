@@ -60,6 +60,8 @@ public static class WaterPoloBrain
     const float MaxPassSpeed = 13f;
     const float SteerAwayWeight = 0.8f; // how hard the carrier veers off a defender
     const float SettleDelay = 0.4f;     // must hold the ball this long before shooting
+    const float MaxCarrySeconds = 1.8f;    // carrier force-shoots after holding this long (anti-stall / more aggressive)
+    const float CloseShootDistance = 4f;   // within this of goal, prefer shooting over dribbling
     const float StealCooldown = 0.6f;   // min time between steal attempts
     const float StealFacingDot = 0.3f;  // stealer must be within ~70° of the carrier's front
     const float LobInterceptFactor = 0.4f; // enemy lob in flight: steal chance reduced by 60%
@@ -122,6 +124,7 @@ public static class WaterPoloBrain
         // HIGH LOB in flight is hard to pick off — reduced-chance roll inside.
         if (ctx.BallGrabbable && ctx.CanGrab(a.Team) &&
             Vector2.Distance(a.Body.position, ctx.BallPosition) <= a.GrabDistance &&
+            !HumanTeammateCloserToBall(a, ctx) &&
             TryCollectLoose(a, ctx))
             return;
 
@@ -445,21 +448,27 @@ public static class WaterPoloBrain
         float goalDist = Vector2.Distance(pos, goal);
 
         float quality = team.ShotQuality(pos, enemy);
+        float heldTime = Time.time - a.HoldStartTime;
+        bool closeToGoal = goalDist <= CloseShootDistance;
 
         // 1) SHOT SELECTION (Part 4): in range AND good enough quality (distance / angle /
         //    lane / pressure) → square up, then shoot. Bad-angle or blocked looks fall
-        //    through to a drive or a pass instead.
-        if (goalDist <= a.ShootRange && quality >= team.shotQualityThreshold)
+        //    through to a drive or a pass instead. FORCE a shot if we've stalled on the
+        //    ball too long (anti-dribble-forever) — fired immediately, no settle wait.
+        bool forceShot = heldTime >= MaxCarrySeconds;
+        if (forceShot || (goalDist <= a.ShootRange && quality >= team.shotQualityThreshold))
         {
             a.LastDirection = (aim - pos).normalized;
-            if (Time.time - a.HoldStartTime >= SettleDelay) Shoot(a, ctx);
+            if (forceShot || Time.time - a.HoldStartTime >= SettleDelay) Shoot(a, ctx);
             else a.Body.linearVelocity = Vector2.zero; // square up and wait
             return;
         }
 
         // 1.5) DRIVE (Feature 1): the shot isn't there, but our marker is beaten (or a
         //      screen just freed us) and the lane to the 2m point is open → attack the cage.
-        if (quality < team.shotQualityThreshold && TryStartDrive(a, ctx, team, enemy, pos))
+        //      Skipped when we're already close — we'd rather shoot than dribble in further.
+        if (!closeToGoal && quality < team.shotQualityThreshold &&
+            TryStartDrive(a, ctx, team, enemy, pos))
             return;
 
         // 2) PASS: a man-up or a counter wants the ball moved fast (lower threshold); else an
@@ -470,6 +479,16 @@ public static class WaterPoloBrain
         bool pressured = quick || TeamSide.NearestDistance(pos, enemy) < team.pressDistance;
         Transform mate = team.BestPassTarget(a.Tf, enemy, pressured);
         if (mate != null) { Pass(a, ctx, mate); return; }
+
+        // 2.5) CLOSE RANGE: within CloseShootDistance with no pass available → SHOOT rather
+        //      than dribbling in any further (bots were over-dribbling at the cage).
+        if (closeToGoal)
+        {
+            a.LastDirection = (aim - pos).normalized;
+            if (Time.time - a.HoldStartTime >= SettleDelay) Shoot(a, ctx);
+            else a.Body.linearVelocity = Vector2.zero;
+            return;
+        }
 
         // 3) Otherwise dribble toward goal, leaning away from the nearest defender.
         Vector2 dir = (aim - pos).normalized;
@@ -729,9 +748,29 @@ public static class WaterPoloBrain
     // which takes a reduced steal roll (StealChance × LobInterceptFactor, with the
     // normal steal cooldown between tries). The lobbing team's own receivers collect
     // it normally. Returns true if the ball was collected; false = it sails on.
+    // Anti-vulture: a player-team AI won't snatch a loose ball that the HUMAN-controlled
+    // teammate is at least as close to — so a player who just dropped/lost the ball gets
+    // first crack at their own loose ball instead of an AI mate instantly hoovering it up.
+    // No effect for bots (the active player is never on their team). Doesn't block pass
+    // receptions: by the time a pass reaches the receiver, the passer is far from the ball.
+    static bool HumanTeammateCloserToBall(IAgentBody a, MatchContext ctx)
+    {
+        PlayerMovement active = TeamManager.ActivePlayer;
+        if (active == null || a.Team == null || !a.Team.Contains(active.transform)) return false;
+        float mine = Vector2.Distance(a.Body.position, ctx.BallPosition);
+        float human = Vector2.Distance(active.transform.position, ctx.BallPosition);
+        return human <= mine;
+    }
+
     static bool TryCollectLoose(IAgentBody a, MatchContext ctx)
     {
         BallFlight flight = BallFlight.Instance;
+
+        // A SKIP SHOT in mid-air (before its bounce) is too fast + low to grab — AI gets
+        // ZERO intercept. It's a shot at goal, never a pass, so no auto-targeting either.
+        // Only AFTER it bounces is it a normal, collectable loose ball.
+        if (flight != null && flight.SkipActive && !flight.SkipBounced) return false;
+
         bool enemyLob = flight != null && flight.LobActive &&
                         flight.LobTeam != null && flight.LobTeam != a.Team;
         if (!enemyLob) { Grab(a, ctx); return true; }
@@ -868,6 +907,7 @@ public static class WaterPoloBrain
         ctx.NoteRelease(a.Tf);
         DetachBall(ctx);
         ctx.Ball.linearVelocity = dir * Mathf.Clamp(dist * PassFactor, MinPassSpeed, MaxPassSpeed);
+        if (BallFlight.Instance != null) BallFlight.Instance.NotePass(); // plain pass → no swell/trail
         a.IsHolding = false;
         ctx.SetPossession(null); // receiver collects it after the cooldown
     }

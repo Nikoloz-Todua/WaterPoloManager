@@ -1,16 +1,25 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using TMPro;
 
-// Runtime-built mobile touch controls: a virtual joystick (bottom-left) and four
-// buttons — SHOOT / PASS / SPRINT / SWITCH — (bottom-right). Everything (canvas,
-// sprites, pointer handlers) is created in code; no prefabs, no Inspector wiring.
+// Runtime-built mobile touch controls: a virtual joystick (bottom-left, UNCHANGED) plus
+// THREE circular image buttons (bottom-right) that swap icon + behaviour with possession,
+// and a single PASS OUT button shown only while the player's own goalkeeper holds the ball.
 //
-// Each frame the collected state is pushed into the active player via
-// PlayerMovement.SetTouchInput(); PlayerMovement merges it into its keyboard checks
-// with ||, so keyboard controls keep working unchanged. SWITCH is consumed by
-// TeamManager (merged with the C key) through PlayerMovement.TouchSwitchDown.
+//   ATTACK  (we hold the ball, or it's loose):  Sprint (top) / Shoot (bottom-right) / Pass (bottom-left)
+//   DEFENSE (the enemy holds the ball):          Switch (top) / Defend (bottom-right) / Block (bottom-left)
+//
+// Mode is read every frame from MatchContext.Instance.PossessingTeam:
+//   PossessingTeam == PlayerTeam  OR  null  -> ATTACK
+//   PossessingTeam == BotTeam               -> DEFENSE
+//
+// Behaviours route through existing systems (keyboard keeps working via || merges):
+//   Sprint  -> SetTouchInput sprintHeld     Shoot -> SetTouchInput shoot*      Pass -> SetTouchInput pass*
+//   Switch  -> SetTouchInput switchDown (TeamManager)                          Block -> PlayerMovement.TouchBlockSteal()
+//   Defend  -> feeds a chase-the-enemy-carrier movement axis (proximity defend animation fires on its own)
+//   PassOut -> Goalkeeper.RequestPassOut() on the player's holding keeper (same as keyboard B)
 //
 // Visible on mobile builds always; in the Editor only when showInEditor is true.
 [DefaultExecutionOrder(-100)] // write touch state before PlayerMovement / TeamManager read it
@@ -19,21 +28,52 @@ public class TouchControls : MonoBehaviour
     [Header("Visibility")]
     [SerializeField] private bool showInEditor = true;
 
-    [Header("Layout (reference resolution 1920x1080)")]
+    [Header("Joystick (reference resolution 1920x1080) — unchanged")]
     [SerializeField] private float joystickSize = 300f;
     [SerializeField] private float knobSize = 120f;
     [SerializeField] private Vector2 joystickPos = new Vector2(230f, 230f);
-    [SerializeField] private float buttonSize = 170f;
-
-    [Header("Transparency (labels stay fully opaque)")]
     [SerializeField, Range(0f, 1f)] private float ringAlpha = 0.10f;   // joystick background
     [SerializeField, Range(0f, 1f)] private float knobAlpha = 0.25f;
-    [SerializeField, Range(0f, 1f)] private float buttonAlpha = 0.15f;
+
+    [Header("Action buttons")]
+    [Tooltip("Size of the two lower buttons (shoot/defend and pass/block).")]
+    [SerializeField] private float actionButtonSize = 180f;
+    [Tooltip("Size of the top button (sprint/switch).")]
+    [SerializeField] private float mainButtonSize = 180f;
+    [Tooltip("Opacity of the button icons (1 = fully opaque).")]
+    [SerializeField, Range(0f, 1f)] private float iconAlpha = 1.0f;
+
+    // Anchored from the bottom-right corner (anchor 1,0): X is negative (left of the right
+    // edge), Y is positive (above the bottom edge). The cluster sits well clear of the corner.
+    static readonly Vector2 TopRightPos    = new Vector2(-280f, 280f); // sprint / switch
+    static readonly Vector2 BottomRightPos = new Vector2(-160f, 100f); // shoot / defend
+    static readonly Vector2 BottomLeftPos  = new Vector2(-380f, 100f); // pass / block
+
+    // PASS OUT button: centre-right (anchor 1,0.5), with its label just below it.
+    static readonly Vector2 PassOutPos      = new Vector2(-220f, 40f);
+    static readonly Vector2 PassOutLabelPos = new Vector2(-220f, -75f);
+    const float PassOutSize = 180f;
+
+    const float ModeFadeTime = 0.1f; // fade-out / fade-in on a mode switch
 
     private GameObject canvasRoot;
     private TouchJoystick joystick;
-    private TouchButton shootBtn, passBtn, sprintBtn, switchBtn;
-    private bool prevShoot, prevPass, prevSwitch; // for down/up edge detection
+
+    private GameObject actionGroup;   // holds the 3 mode buttons (hidden during keeper pass-out)
+    private GameObject passOutGroup;  // holds the single PASS OUT button + label
+
+    // top, bottom-right, bottom-left buttons + their images (for icon swap / fade)
+    private TouchButton topBtn, brBtn, blBtn, passOutBtn;
+    private Image topImg, brImg, blImg;
+
+    // icons (loaded once from Resources)
+    private Sprite sprSprint, sprShoot, sprPass, sprDefend, sprSwitch, sprBlock;
+
+    private bool attackMode = true;
+    private bool modeInitialized;
+    private Coroutine modeFade;
+    private bool prevTop, prevBR, prevBL; // tap (down/up) edge detection
+    private bool prevPO;                  // PASS OUT tap edge
 
     void Awake()
     {
@@ -44,25 +84,172 @@ public class TouchControls : MonoBehaviour
     void Update()
     {
         if (canvasRoot == null || !canvasRoot.activeSelf) return;
+        MatchContext ctx = MatchContext.Instance;
 
-        bool shootHeld = shootBtn.Pressed;
-        bool passHeld = passBtn.Pressed;
-        bool shootDown = shootHeld && !prevShoot;
-        bool shootUp = !shootHeld && prevShoot;
-        bool passDown = passHeld && !prevPass;
-        bool passUp = !passHeld && prevPass;
-        bool switchDown = switchBtn.Pressed && !prevSwitch;
+        // --- KEEPER PASS-OUT mode: while the player's OWN keeper holds the ball, swap the 3
+        //     action buttons for a single PASS OUT button. ---
+        bool keeperPassOut = ctx != null && ctx.KeeperHolding && ctx.KeeperHoldTeam == ctx.PlayerTeam;
+        if (actionGroup != null) actionGroup.SetActive(!keeperPassOut);
+        if (passOutGroup != null) passOutGroup.SetActive(keeperPassOut);
+        if (keeperPassOut)
+        {
+            if (modeFade != null) { StopCoroutine(modeFade); modeFade = null; }
+
+            // field players can still reposition with the joystick; no button actions
+            PlayerMovement pmk = TeamManager.ActivePlayer;
+            if (pmk != null)
+                pmk.SetTouchInput(joystick.Axis, false, false, false, false, false, false, false, false);
+
+            bool poHeld = passOutBtn.Pressed;
+            if (poHeld && !prevPO) // tap → distribute via the holding keeper
+            {
+                Transform held = ctx.Ball != null ? ctx.Ball.transform.parent : null;
+                Goalkeeper gk = held != null ? held.GetComponent<Goalkeeper>() : null;
+                if (gk != null) gk.RequestPassOut();
+            }
+            prevPO = poHeld;
+
+            modeInitialized = false; // re-sync the 3 buttons instantly (no fade) when they return
+            return;
+        }
+        prevPO = false;
+
+        // --- decide mode from possession ---
+        bool attack = true;
+        if (ctx != null && ctx.PossessingTeam == ctx.BotTeam) // enemy has it -> defense
+            attack = false;                                   // PlayerTeam or loose (null) -> attack
+
+        if (!modeInitialized)
+        {
+            attackMode = attack;
+            ApplySprites(attackMode);
+            SetButtonsAlpha(iconAlpha);
+            modeInitialized = true;
+        }
+        else if (attack != attackMode)
+        {
+            attackMode = attack;
+            if (modeFade != null) StopCoroutine(modeFade);
+            modeFade = StartCoroutine(ModeTransition(attackMode));
+        }
+
+        // --- read buttons + edges ---
+        bool topHeld = topBtn.Pressed;
+        bool brHeld  = brBtn.Pressed;
+        bool blHeld  = blBtn.Pressed;
+        bool topDown = topHeld && !prevTop; // switch tap (defense)
+        bool brDown  = brHeld && !prevBR;
+        bool brUp    = !brHeld && prevBR;
+        bool blDown  = blHeld && !prevBL;
+        bool blUp    = !blHeld && prevBL;
 
         PlayerMovement pm = TeamManager.ActivePlayer;
-        if (pm != null)
-            pm.SetTouchInput(joystick.Axis, shootHeld, shootDown, shootUp,
-                             passHeld, passDown, passUp,
-                             sprintBtn.Pressed, switchDown);
+        Vector2 axis = joystick.Axis;
 
-        prevShoot = shootHeld;
-        prevPass = passHeld;
-        prevSwitch = switchBtn.Pressed;
+        if (pm != null)
+        {
+            if (attackMode)
+            {
+                // top = Sprint (hold), bottom-right = Shoot (tap/hold/release), bottom-left = Pass (tap)
+                pm.SetTouchInput(axis,
+                    brHeld, brDown, brUp,   // shoot
+                    blHeld, blDown, blUp,   // pass
+                    topHeld,                // sprint
+                    false);                 // switch (attack: unused)
+            }
+            else
+            {
+                // DEFENSE: top = Switch (tap), bottom-right = Defend press (hold), bottom-left = Block (tap).
+                // Defend press chases the enemy carrier (or nearest enemy) unless the joystick steers.
+                if (brHeld && axis.sqrMagnitude < 0.04f)
+                {
+                    Vector2 dir = DirToDefendTarget(pm);
+                    if (dir != Vector2.zero) axis = dir;
+                }
+
+                pm.SetTouchInput(axis,
+                    false, false, false,    // shoot off
+                    false, false, false,    // pass off
+                    false,                  // sprint off
+                    topDown);               // top = Switch (tap)
+
+                if (blDown) pm.TouchBlockSteal(); // bottom-left = Block
+            }
+        }
+
+        prevTop = topHeld; prevBR = brHeld; prevBL = blHeld;
     }
+
+    // Defend-press target: the enemy ball carrier if they have it (matches the proximity
+    // defend trigger in PlayerAnimator), otherwise the nearest enemy swimmer.
+    static Vector2 DirToDefendTarget(PlayerMovement pm)
+    {
+        MatchContext ctx = MatchContext.Instance;
+        if (ctx == null) return Vector2.zero;
+        TeamSide enemy = ctx.EnemyOf(ctx.PlayerTeam);
+        if (enemy == null) return Vector2.zero;
+
+        Transform target = null;
+        if (ctx.TeamHasBall(enemy) && ctx.Ball != null)
+        {
+            Transform carrier = ctx.Ball.transform.parent; // the held ball is parented to the carrier
+            if (carrier != null && carrier.GetComponent<Goalkeeper>() == null) target = carrier;
+        }
+        if (target == null) target = enemy.ClosestMemberTo(pm.transform.position);
+        if (target == null) return Vector2.zero;
+
+        Vector2 d = (Vector2)target.position - (Vector2)pm.transform.position;
+        return d.sqrMagnitude > 1e-4f ? d.normalized : Vector2.zero;
+    }
+
+    // ---- mode visuals ----
+
+    void ApplySprites(bool attack)
+    {
+        // top: Sprint (attack) / Switch (defense)
+        // br:  Shoot  (attack) / Defend (defense)
+        // bl:  Pass   (attack) / Block  (defense)
+        if (topImg != null) topImg.sprite = attack ? sprSprint : sprSwitch;
+        if (brImg  != null) brImg.sprite  = attack ? sprShoot  : sprDefend;
+        if (blImg  != null) blImg.sprite  = attack ? sprPass   : sprBlock;
+    }
+
+    // Fade the three icons out, swap to the new mode's sprites, fade back in.
+    IEnumerator ModeTransition(bool toAttack)
+    {
+        float t = 0f;
+        while (t < ModeFadeTime)
+        {
+            t += Time.unscaledDeltaTime;
+            SetButtonsAlpha(Mathf.Lerp(iconAlpha, 0f, t / ModeFadeTime));
+            yield return null;
+        }
+        ApplySprites(toAttack);
+        t = 0f;
+        while (t < ModeFadeTime)
+        {
+            t += Time.unscaledDeltaTime;
+            SetButtonsAlpha(Mathf.Lerp(0f, iconAlpha, t / ModeFadeTime));
+            yield return null;
+        }
+        SetButtonsAlpha(iconAlpha);
+        modeFade = null;
+    }
+
+    void SetButtonsAlpha(float a)
+    {
+        SetImgAlpha(topImg, a);
+        SetImgAlpha(brImg, a);
+        SetImgAlpha(blImg, a);
+    }
+
+    static void SetImgAlpha(Image img, float a)
+    {
+        if (img == null) return;
+        Color c = img.color; c.a = a; img.color = c;
+    }
+
+    // ---- build ----
 
     void BuildUI()
     {
@@ -80,9 +267,8 @@ public class TouchControls : MonoBehaviour
         canvasRoot.AddComponent<GraphicRaycaster>();
 
         Sprite circle = MakeCircleSprite(256);
-        Sprite rounded = MakeRoundedRectSprite(128, 28);
 
-        // --- Joystick, anchored bottom-left ---
+        // --- Joystick, anchored bottom-left (UNCHANGED) ---
         RectTransform bg = MakeImage("JoystickBG", canvasRoot.transform, circle,
                                      new Vector2(0f, 0f), joystickPos, joystickSize, ringAlpha);
         RectTransform knob = MakeImage("JoystickKnob", bg, circle,
@@ -91,11 +277,41 @@ public class TouchControls : MonoBehaviour
         joystick = bg.gameObject.AddComponent<TouchJoystick>();
         joystick.Init(bg, knob, (joystickSize - knobSize) * 0.5f);
 
-        // --- Buttons, anchored bottom-right in a 2x2 grid ---
-        shootBtn  = MakeButton("SHOOT",  new Vector2(-150f, 150f), rounded);
-        passBtn   = MakeButton("PASS",   new Vector2(-350f, 150f), rounded);
-        sprintBtn = MakeButton("SPRINT", new Vector2(-150f, 350f), rounded);
-        switchBtn = MakeButton("SWITCH", new Vector2(-350f, 350f), rounded);
+        // --- load icons ---
+        sprSprint = LoadButtonSprite("sprint");
+        sprShoot  = LoadButtonSprite("shoot");
+        sprPass   = LoadButtonSprite("pass");
+        sprDefend = LoadButtonSprite("Defend"); // capital D on disk
+        sprSwitch = LoadButtonSprite("switch");
+        sprBlock  = LoadButtonSprite("block");
+
+        // --- 3 action buttons (own group so we can hide them as a set); start in ATTACK icons ---
+        actionGroup = MakeFullStretchGroup("ActionButtons");
+        topBtn = MakeImageButton(actionGroup.transform, "BtnTop",         TopRightPos,    mainButtonSize,   sprSprint, out topImg);
+        brBtn  = MakeImageButton(actionGroup.transform, "BtnBottomRight", BottomRightPos, actionButtonSize, sprShoot,  out brImg);
+        blBtn  = MakeImageButton(actionGroup.transform, "BtnBottomLeft",  BottomLeftPos,  actionButtonSize, sprPass,   out blImg);
+
+        // --- single PASS OUT button (hidden until the player's keeper holds the ball) ---
+        passOutGroup = MakeFullStretchGroup("PassOutButton");
+        RectTransform poRt = MakeImage("BtnPassOut", passOutGroup.transform, sprPass,
+                                       new Vector2(1f, 0.5f), PassOutPos, PassOutSize, 1f);
+        Image poImg = poRt.GetComponent<Image>();
+        poImg.type = Image.Type.Simple;
+        poImg.preserveAspect = true;
+        passOutBtn = poRt.gameObject.AddComponent<TouchButton>();
+        passOutBtn.Init(poRt);
+        MakeLabel(passOutGroup.transform, "PASS!", new Vector2(1f, 0.5f), PassOutLabelPos,
+                  new Vector2(240f, 60f), 40f);
+        passOutGroup.SetActive(false);
+    }
+
+    static Sprite LoadButtonSprite(string file)
+    {
+        Sprite s = Resources.Load<Sprite>("Sprites/" + file);
+        if (s == null) s = Resources.Load<Sprite>("Sprites/" + file.ToLowerInvariant()); // case-safe fallback
+        if (s == null)
+            Debug.LogWarning("TouchControls: button sprite 'Sprites/" + file + "' not found in a Resources folder.");
+        return s;
     }
 
     static void EnsureEventSystem()
@@ -104,6 +320,19 @@ public class TouchControls : MonoBehaviour
         GameObject es = new GameObject("EventSystem");
         es.AddComponent<EventSystem>();
         es.AddComponent<StandaloneInputModule>(); // handles both mouse and multi-touch
+    }
+
+    // Full-screen-stretched empty RectTransform child of the canvas; children anchored to a
+    // corner behave exactly as if parented to the canvas, but the whole set toggles together.
+    GameObject MakeFullStretchGroup(string name)
+    {
+        GameObject go = new GameObject(name);
+        RectTransform rt = go.AddComponent<RectTransform>();
+        rt.SetParent(canvasRoot.transform, false);
+        rt.anchorMin = Vector2.zero;
+        rt.anchorMax = Vector2.one;
+        rt.offsetMin = rt.offsetMax = Vector2.zero;
+        return go;
     }
 
     RectTransform MakeImage(string name, Transform parent, Sprite sprite,
@@ -122,33 +351,39 @@ public class TouchControls : MonoBehaviour
         return rt;
     }
 
-    TouchButton MakeButton(string label, Vector2 pos, Sprite sprite)
+    // A circular image button: no background panel, just the icon. Press feedback (scale
+    // pulse) lives in TouchButton.
+    TouchButton MakeImageButton(Transform parent, string name, Vector2 pos, float size, Sprite sprite, out Image img)
     {
-        RectTransform rt = MakeImage("Btn" + label, canvasRoot.transform, sprite,
-                                     new Vector2(1f, 0f), pos, buttonSize, buttonAlpha);
-        Image img = rt.GetComponent<Image>();
-        img.type = Image.Type.Sliced; // 9-slice keeps the corners round at any size
-
-        GameObject t = new GameObject("Label");
-        t.transform.SetParent(rt, false);
-        RectTransform trt = t.AddComponent<RectTransform>();
-        trt.anchorMin = Vector2.zero;
-        trt.anchorMax = Vector2.one;
-        trt.offsetMin = trt.offsetMax = Vector2.zero;
-        TextMeshProUGUI txt = t.AddComponent<TextMeshProUGUI>();
-        txt.text = label;
-        txt.fontSize = 34f;
-        txt.fontStyle = FontStyles.Bold;
-        txt.alignment = TextAlignmentOptions.Center;
-        txt.color = Color.white; // labels stay fully visible
-        txt.raycastTarget = false;
-
+        RectTransform rt = MakeImage(name, parent, sprite, new Vector2(1f, 0f), pos, size, iconAlpha);
+        img = rt.GetComponent<Image>();
+        img.type = Image.Type.Simple;
+        img.preserveAspect = true;
         TouchButton b = rt.gameObject.AddComponent<TouchButton>();
-        b.Init(img, buttonAlpha);
+        b.Init(rt);
         return b;
     }
 
-    // Soft antialiased white circle, tinted via Image.color.
+    // A non-interactive TMP label (e.g. "PASS!" under the pass-out button).
+    void MakeLabel(Transform parent, string text, Vector2 anchor, Vector2 pos, Vector2 size, float fontSize)
+    {
+        GameObject go = new GameObject("Label");
+        go.transform.SetParent(parent, false);
+        RectTransform rt = go.AddComponent<RectTransform>();
+        rt.anchorMin = rt.anchorMax = anchor;
+        rt.pivot = new Vector2(0.5f, 0.5f);
+        rt.anchoredPosition = pos;
+        rt.sizeDelta = size;
+        TextMeshProUGUI t = go.AddComponent<TextMeshProUGUI>();
+        t.text = text;
+        t.fontSize = fontSize;
+        t.fontStyle = FontStyles.Bold;
+        t.alignment = TextAlignmentOptions.Center;
+        t.color = Color.white;
+        t.raycastTarget = false;
+    }
+
+    // Soft antialiased white circle, tinted via Image.color. (Joystick only.)
     static Sprite MakeCircleSprite(int size)
     {
         Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
@@ -165,29 +400,6 @@ public class TouchControls : MonoBehaviour
         tex.SetPixels32(px);
         tex.Apply();
         return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
-    }
-
-    // Rounded white square with a 9-slice border so buttons can be any size.
-    static Sprite MakeRoundedRectSprite(int size, int corner)
-    {
-        Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
-        Color32[] px = new Color32[size * size];
-        float half = size * 0.5f - 0.5f;
-        float inner = half - corner;
-        for (int y = 0; y < size; y++)
-            for (int x = 0; x < size; x++)
-            {
-                float qx = Mathf.Max(Mathf.Abs(x - half) - inner, 0f);
-                float qy = Mathf.Max(Mathf.Abs(y - half) - inner, 0f);
-                float d = Mathf.Sqrt(qx * qx + qy * qy);
-                byte a = (byte)(Mathf.Clamp01(corner - d) * 255f);
-                px[y * size + x] = new Color32(255, 255, 255, a);
-            }
-        tex.SetPixels32(px);
-        tex.Apply();
-        Vector4 border = new Vector4(corner + 2, corner + 2, corner + 2, corner + 2);
-        return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f),
-                             100f, 0, SpriteMeshType.FullRect, border);
     }
 }
 
@@ -229,37 +441,28 @@ class TouchJoystick : MonoBehaviour, IPointerDownHandler, IDragHandler, IPointer
     }
 }
 
-// Press-state holder for one on-screen button; brightens while held.
+// Press-state holder for one on-screen button. Visual feedback is a quick scale pulse to
+// 0.9x while held (returning to 1x on release); alpha is driven by TouchControls so the
+// mode-fade and the press feedback never fight over the same channel.
 class TouchButton : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
 {
     public bool Pressed { get; private set; }
 
-    private Image img;
-    private float restAlpha;
+    private RectTransform rt;
+    const float PressedScale = 0.9f;
+    const float ScaleLerp = 18f;
 
-    public void Init(Image img, float restAlpha)
-    {
-        this.img = img;
-        this.restAlpha = restAlpha;
-    }
+    public void Init(RectTransform rt) { this.rt = rt; }
 
-    public void OnPointerDown(PointerEventData e)
-    {
-        Pressed = true;
-        SetAlpha(Mathf.Clamp01(restAlpha + 0.3f));
-    }
+    public void OnPointerDown(PointerEventData e) { Pressed = true; }
+    public void OnPointerUp(PointerEventData e) { Pressed = false; }
 
-    public void OnPointerUp(PointerEventData e)
+    void Update()
     {
-        Pressed = false;
-        SetAlpha(restAlpha);
-    }
-
-    void SetAlpha(float a)
-    {
-        if (img == null) return;
-        Color c = img.color;
-        c.a = a;
-        img.color = c;
+        if (rt == null) return;
+        float target = Pressed ? PressedScale : 1f;
+        float k = 1f - Mathf.Exp(-ScaleLerp * Time.unscaledDeltaTime);
+        float v = Mathf.Lerp(rt.localScale.x, target, k);
+        rt.localScale = new Vector3(v, v, 1f);
     }
 }

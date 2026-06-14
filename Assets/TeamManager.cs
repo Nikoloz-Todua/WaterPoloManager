@@ -7,8 +7,12 @@ public class TeamManager : MonoBehaviour
     [SerializeField] private TeammateAI[] teammateAIs; // same order as players
     [SerializeField] private TeamSide playerTeam;
     [SerializeField] private TMP_Text defenseModeText; // shows "DEFENSE: PRESS"/"ZONE"
+    [Tooltip("After the active player loses/drops the ball, keep control on them this long before auto-switching to a new holder (so they can chase their own loose ball). Manual C / touch SWITCH is never delayed.")]
+    [SerializeField] private float autoSwitchDelay = 0.5f;
 
     private int activeIndex = 0;
+    private float noAutoSwitchUntil = -10f; // auto-switch-to-holder suppressed until this time
+    private bool activeWasHolding;          // did the active player hold the ball last frame
 
     // The human-controlled player right now. TouchControls reads this every frame
     // to know which PlayerMovement receives the touch input.
@@ -37,9 +41,18 @@ public class TeamManager : MonoBehaviour
             if (v != -1) SetActive(v);
         }
 
-        // 1) If one of my players holds the ball, control auto-follows to them.
+        // When the active player loses/drops the ball, start a short window during which we
+        // DON'T auto-switch to a new holder — so they keep control to chase their own loose
+        // ball instead of the camera snapping to a teammate that grabbed it.
+        bool activeHolds = activeIndex >= 0 && activeIndex < players.Length &&
+                           players[activeIndex] != null && players[activeIndex].IsHolding;
+        if (activeWasHolding && !activeHolds) noAutoSwitchUntil = Time.time + autoSwitchDelay;
+        activeWasHolding = activeHolds;
+
+        // 1) If one of my players holds the ball, control auto-follows to them (after the
+        //    post-loss delay above; manual C in step 2 is never delayed).
         int holder = HolderIndex();
-        if (holder != -1 && holder != activeIndex)
+        if (holder != -1 && holder != activeIndex && Time.time >= noAutoSwitchUntil)
         {
             SetActive(holder);
             return;

@@ -24,7 +24,18 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private float maxPassSpeed = 13f;
     [SerializeField] private float passChargeRate = 1.5f; // pass charge gained per second (0..1)
     [SerializeField] private float lobSpeedFactor = 0.7f; // F+B lob travels at this fraction of pass speed
-    private const float PassConeDot = 0.3f;               // teammate must be within this forward cone
+
+    [Header("Pass aim (directional, FIFA-style)")]
+    [Tooltip("How much the pass bends toward a teammate that lies along the aim. 0 = pure directional (goes exactly where you point), 1 = old auto-home onto the teammate.")]
+    [SerializeField, Range(0f, 1f)] private float passAssist = 0.3f;
+    [Tooltip("Only assist toward teammates within this distance.")]
+    [SerializeField] private float passAssistRange = 8f;
+    [Tooltip("A teammate must be within this cone of the aim (dot) to get any assist — aim away from everyone and the ball just goes there.")]
+    [SerializeField, Range(0f, 1f)] private float passAssistMinDot = 0.5f;
+    [Tooltip("1 = perfect aim. Lower it (or set per-player later) to add random spread for less-accurate passers.")]
+    [SerializeField, Range(0f, 1f)] private float passAccuracy = 1f;
+    [Tooltip("Max random spread (degrees) when passAccuracy is 0.")]
+    [SerializeField] private float passInaccuracyDegrees = 12f;
 
     [Header("Stealing")]
     [SerializeField] private float stealDistance = 1.2f;
@@ -515,6 +526,77 @@ public class PlayerMovement : MonoBehaviour
         lastStealTime = Time.time + Mathf.Max(0f, seconds - stealCooldown);
     }
 
+    // Touch BLOCK button: a lower-RISK steal than the keyboard Space steal. Half the normal
+    // success chance, and on a miss only a 50% chance of being whistled for a foul (a full
+    // Space steal always fouls on a miss). Same cooldown / range / facing / keeper rules as
+    // TrySteal. Keyboard steal (TrySteal) is intentionally left untouched.
+    public void TouchBlockSteal()
+    {
+        if (isHolding || ball == null) return;
+        if (Time.time - lastStealTime < stealCooldown) return;
+
+        MatchContext ctx = MatchContext.Instance;
+        if (ctx == null) return;
+        if (ctx.FreeThrowActive) return; // no steals during a free throw
+
+        TeamSide enemy = ctx.EnemyOf(ctx.PlayerTeam);
+        if (enemy == null || !ctx.TeamHasBall(enemy)) return;
+
+        Transform carrier = ball.transform.parent;
+        if (carrier == null) return;
+        if (carrier.GetComponent<Goalkeeper>() != null)
+        {
+            // can't strip a keeper — getting too close shoves us back out (same as TrySteal).
+            Vector2 away = (Vector2)transform.position - (Vector2)carrier.position;
+            if (away.magnitude < KeeperProtectRadius)
+            {
+                if (away.sqrMagnitude < 1e-4f) away = Vector2.down;
+                keeperPushDir = away.normalized;
+                keeperPushUntil = Time.time + KeeperPushSeconds;
+            }
+            return;
+        }
+
+        // Block reaches slightly further than the keyboard steal (matches the 1.5u defend
+        // proximity in PlayerAnimator): the enemy carrier must be within 1.5 units.
+        const float BlockStealRange = 1.5f;
+        if (Vector2.Distance(transform.position, ball.position) > BlockStealRange) return;
+
+        // In range = a real attempt → play the snatch animation now (success or not).
+        if (playerAnimator != null) playerAnimator.TriggerSteal();
+
+        // Must approach the carrier from its front, not from behind.
+        Vector2 carrierFacing = Vector2.zero;
+        IAgentBody carrierBody = carrier.GetComponent<IAgentBody>();
+        if (carrierBody != null) carrierFacing = carrierBody.LastDirection;
+        else { PlayerMovement cpm = carrier.GetComponent<PlayerMovement>(); if (cpm != null) carrierFacing = cpm.Facing; }
+        Vector2 dirToCarrier = (Vector2)carrier.position - (Vector2)transform.position;
+        if (dirToCarrier.sqrMagnitude > 1e-4f) dirToCarrier.Normalize();
+        if (carrierFacing.sqrMagnitude > 1e-4f &&
+            Vector2.Dot(carrierFacing.normalized, -dirToCarrier) < StealFacingDot)
+            return;
+
+        lastStealTime = Time.time;
+
+        if (Random.value <= stealChance * 0.5f) // HALF the normal success chance
+        {
+            IAgentBody holder = carrier.GetComponent<IAgentBody>();
+            if (holder != null) holder.IsHolding = false;
+
+            isHolding = true;
+            ball.simulated = false;
+            ball.linearVelocity = Vector2.zero;
+            ball.transform.SetParent(transform);
+            ball.transform.localPosition = (Vector3)(lastDirection * holdOffset);
+
+            ctx.SetPossession(ctx.PlayerTeam);
+        }
+        else if (Random.value < 0.5f && ExclusionManager.Instance != null) // only HALF of misses foul
+        {
+            ExclusionManager.Instance.ReportFoul(transform, ctx.PlayerTeam, carrier);
+        }
+    }
+
     // Called by TouchControls every frame on the active player. SHOOT maps to Space
     // (so it also steals when not holding), PASS to B, SPRINT to LeftShift, SWITCH to C
     // (consumed by TeamManager via TouchSwitchDown).
@@ -588,21 +670,39 @@ public class PlayerMovement : MonoBehaviour
         }
     }
 
-    // Charged pass: speed scales with charge (0..1) between min/max, aimed at the
-    // teammate the player is facing.
+    // DIRECTIONAL pass (FIFA-style): the ball goes where the player AIMS — lastDirection,
+    // set by the joystick/WASD and shown by the facing triangle — NOT auto-homed onto a
+    // teammate. A gentle assist (passAssist) bends the throw toward a teammate that lies
+    // roughly along the aim; aim at empty water or the keeper and it goes exactly there.
+    // passAccuracy can add spread. Speed scales with charge; a teammate must actually be in
+    // the ball's path to receive it (so a stray pass can be intercepted or sail out).
     void ChargedPass(float charge)
     {
         if (ball == null || !isHolding) return;
         if (MatchContext.Instance == null) return;
-
         TeamSide myTeam = MatchContext.Instance.PlayerTeam;
-        if (myTeam == null || myTeam.members == null) return;
+        if (myTeam == null) return;
 
-        Transform target = FindPassTarget(myTeam);
-        if (target == null) return;
+        Vector2 aimDir = lastDirection.sqrMagnitude > 1e-4f ? lastDirection.normalized : Vector2.up;
 
-        Vector2 dir = ((Vector2)target.position - (Vector2)transform.position).normalized;
-        if (dir.sqrMagnitude > 1e-6f) lastDirection = dir;
+        // gentle assist toward a teammate that lies along the aim (none → pure directional)
+        Vector2 fireDir = aimDir;
+        Transform assist = FindPassAssistTarget(myTeam, aimDir);
+        if (assist != null && passAssist > 0f)
+        {
+            Vector2 toMate = (Vector2)assist.position - (Vector2)transform.position;
+            if (toMate.sqrMagnitude > 1e-6f)
+                fireDir = Vector2.Lerp(aimDir, toMate.normalized, Mathf.Clamp01(passAssist)).normalized;
+        }
+
+        // imperfect passing: spread grows as accuracy drops (1 = perfect)
+        if (passAccuracy < 1f)
+        {
+            float maxErr = passInaccuracyDegrees * (1f - Mathf.Clamp01(passAccuracy));
+            fireDir = RotateVector(fireDir, Random.Range(-maxErr, maxErr));
+        }
+
+        lastDirection = fireDir;
 
         isHolding = false;
         ball.transform.SetParent(null);
@@ -610,46 +710,50 @@ public class PlayerMovement : MonoBehaviour
         float speed = Mathf.Clamp(Mathf.Lerp(minPassSpeed, maxPassSpeed, Mathf.Clamp01(charge)),
                                   minPassSpeed, maxPassSpeed);
 
-        // F+B = HIGH LOB: slower flight, ball arcs overhead with a water shadow
-        // (BallFlight), and AI interception is gated to a reduced roll (WaterPoloBrain).
+        // F+B = HIGH LOB: slower flight, ball arcs overhead with a water shadow (BallFlight),
+        // AI interception gated to a reduced roll. Otherwise a plain pass: no scaling/trail.
         bool lob = Input.GetKey(KeyCode.F);
         if (lob) speed *= lobSpeedFactor;
-        ball.linearVelocity = dir * speed;
+        ball.linearVelocity = fireDir * speed;
         shotHeight = lob ? 0.9f : 0.5f; // a pass overwrites LastReleaser → keep its height honest
-        if (lob && BallFlight.Instance != null)
+
+        if (BallFlight.Instance != null)
         {
-            float dist = Vector2.Distance(transform.position, target.position);
-            BallFlight.Instance.NoteLob(MatchContext.Instance.PlayerTeam, dist, speed);
+            if (lob)
+            {
+                float dist = assist != null ? Vector2.Distance(transform.position, assist.position) : 5f;
+                BallFlight.Instance.NoteLob(myTeam, dist, speed);
+            }
+            else BallFlight.Instance.NotePass(); // plain pass → no swell, no trail "bridge"
         }
 
         MatchContext.Instance.NoteRelease(transform);
         MatchContext.Instance.SetPossession(null);
     }
 
-    // Teammate best aligned with our facing (within a forward cone); else the nearest,
-    // so a pass never fails silently.
-    Transform FindPassTarget(TeamSide myTeam)
+    // The teammate to lightly assist the pass toward: best-aligned with the aim direction,
+    // within passAssistRange and inside the aim cone (passAssistMinDot). Returns null when
+    // nothing lies along the aim, so the pass flies exactly where the player points.
+    Transform FindPassAssistTarget(TeamSide myTeam, Vector2 aimDir)
     {
-        Vector2 facing = lastDirection.sqrMagnitude > 1e-4f ? lastDirection.normalized : Vector2.up;
+        if (myTeam == null || myTeam.members == null) return null;
         Vector2 myPos = transform.position;
-
-        Transform best = null;       // best within the forward cone
-        float bestDot = PassConeDot; // require dot above the cone threshold
-        Transform nearest = null;    // fallback
-        float nearestDist = Mathf.Infinity;
+        Transform best = null;
+        float bestScore = float.NegativeInfinity;
 
         foreach (Transform m in myTeam.members)
         {
             if (m == null || m == transform) continue;
             Vector2 to = (Vector2)m.position - myPos;
             float dist = to.magnitude;
-            if (dist < 1e-4f) continue;
+            if (dist < 1e-4f || dist > passAssistRange) continue;
 
-            float dot = Vector2.Dot(facing, to / dist);
-            if (dot > bestDot) { bestDot = dot; best = m; }
-            if (dist < nearestDist) { nearestDist = dist; nearest = m; }
+            float dot = Vector2.Dot(aimDir, to / dist);
+            if (dot < passAssistMinDot) continue; // not along the aim → no assist toward it
+            float score = dot - dist * 0.1f;       // prefer aligned + nearer
+            if (score > bestScore) { bestScore = score; best = m; }
         }
-        return best != null ? best : nearest;
+        return best;
     }
 
     public void ReleaseBall()

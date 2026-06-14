@@ -23,7 +23,9 @@ public class Goalkeeper : MonoBehaviour
     [Header("Grab & control (Part 1)")]
     [SerializeField] private float keeperGrabDistance = 1.2f;  // collect a loose ball within this
     [SerializeField] private float keeperGrabMaxSpeed = 3f;    // ...only if it's moving slower than this
-    [SerializeField] private float keeperHoldSeconds = 1.5f;   // bot keeper auto-distributes after this
+    [SerializeField] private float keeperSnatchDistance = 0.8f;// strip an enemy carrier this close — 100%, no roll
+    [SerializeField] private float keeperHoldSeconds = 0.8f;   // bot keeper auto-distributes after this
+    [SerializeField] private float keeperPanicDistance = 2.5f; // bot keeper distributes NOW if an opponent is this close
     [SerializeField] private float playerKeeperMaxHold = 3f;   // player keeper auto-distributes if no B by then
     [SerializeField] private float holdOffset = 0.5f;          // held ball sits this far toward the field
 
@@ -94,8 +96,13 @@ public class Goalkeeper : MonoBehaviour
             rb.MovePosition(pos);
         }
 
-        // collect a slow, loose, nearby ball
         TeamSide team = KeeperTeam();
+
+        // SNATCH (Task 5): an enemy carrier point-blank on the keeper (within
+        // keeperSnatchDistance) is stripped with 100% success — no probability roll.
+        if (ctx != null && team != null && TrySnatchFromCarrier(ctx, team)) return;
+
+        // collect a slow, loose, nearby ball
         if (ctx != null && team != null && ctx.BallGrabbable && ctx.CanGrab(team) &&
             Vector2.Distance(rb.position, ball.position) <= keeperGrabDistance &&
             ball.linearVelocity.magnitude < keeperGrabMaxSpeed)
@@ -130,9 +137,63 @@ public class Goalkeeper : MonoBehaviour
         float toCentre = transform.position.x >= 0f ? -1f : 1f;
         ball.transform.localPosition = new Vector3(toCentre * holdOffset, 0f, 0f);
 
-        // distribute: bot after keeperHoldSeconds; player on B (Update) or a safety timeout
-        float hold = IsPlayerKeeper() ? playerKeeperMaxHold : keeperHoldSeconds;
-        if (Time.time - holdStartTime >= hold) PassOut();
+        if (IsPlayerKeeper())
+        {
+            // player keeper distributes on B (Update) or the touch PASS OUT button; this is
+            // only the safety timeout so a held ball can never get stuck.
+            if (Time.time - holdStartTime >= playerKeeperMaxHold) PassOut();
+        }
+        else
+        {
+            // bot keeper: distribute after the short hold, OR immediately if an opponent is
+            // crowding it (stops attackers swarming the keeper into a stuck situation).
+            if (Time.time - holdStartTime >= keeperHoldSeconds || EnemyCrowding(ctx)) PassOut();
+        }
+    }
+
+    // True while an opponent swimmer sits within keeperPanicDistance of this (bot) keeper.
+    bool EnemyCrowding(MatchContext ctx)
+    {
+        if (ctx == null) return false;
+        TeamSide team = KeeperTeam();
+        if (team == null) return false;
+        TeamSide enemy = ctx.EnemyOf(team);
+        if (enemy == null || enemy.members == null) return false;
+        foreach (Transform m in enemy.members)
+        {
+            if (m == null) continue; // excluded slots are null
+            if (Vector2.Distance(rb.position, m.position) <= keeperPanicDistance) return true;
+        }
+        return false;
+    }
+
+    // Touch PASS OUT button (player keeper): distribute now — same as the keyboard B.
+    public void RequestPassOut()
+    {
+        if (holding) PassOut();
+    }
+
+    // Strip an enemy carrier that comes within keeperSnatchDistance — 100% success, no roll.
+    // (Normal loose-ball collection keeps its slow-speed requirement; this is only for a
+    // carrier driving point-blank into the keeper.) Respects an active free throw.
+    bool TrySnatchFromCarrier(MatchContext ctx, TeamSide team)
+    {
+        if (ctx.FreeThrowActive) return false;                      // a free-throw carrier is protected
+        TeamSide enemy = ctx.EnemyOf(team);
+        if (enemy == null || !ctx.TeamHasBall(enemy)) return false; // only when an ENEMY holds it
+
+        Transform carrier = ball.transform.parent;
+        if (carrier == null || carrier == transform) return false;
+        if (carrier.GetComponent<Goalkeeper>() != null) return false; // not from another keeper
+        if (Vector2.Distance(rb.position, carrier.position) > keeperSnatchDistance) return false;
+
+        // clear the carrier's hold, then take it ourselves (becomes a keeper hold)
+        IAgentBody body = carrier.GetComponent<IAgentBody>();
+        if (body != null) body.IsHolding = false;
+        else { PlayerMovement pm = carrier.GetComponent<PlayerMovement>(); if (pm != null) pm.ReleaseBall(); }
+
+        Grab(ctx, team);
+        return true;
     }
 
     void Grab(MatchContext ctx, TeamSide team)

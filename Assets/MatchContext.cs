@@ -12,7 +12,7 @@ public class MatchContext : MonoBehaviour
 
     [Header("Ball handling")]
     [Tooltip("After a shot/pass/drop the ball can't be re-grabbed for this long, so it has time to travel.")]
-    [SerializeField] private float releaseGrabDelay = 0.35f;
+    [SerializeField] private float releaseGrabDelay = 0.5f;
     [Tooltip("On an ordinary foul, an AI free-throw carrier holds the ball this long, then takes its normal decision (pass/shoot/dribble).")]
     [SerializeField] private float freeThrowAIHoldSeconds = 3f;
     [Tooltip("Swimmers can't cross the goal line: their x is clamped to ±this during live play (ball/keepers excluded).")]

@@ -41,7 +41,7 @@ public class TeamSide : MonoBehaviour
     public float centerFeedWeight = 3f;      // extra pass score for feeding an open, deep Centre (inside)
     public float counterRunners = 2f;        // how many advanced players sprint on a counterattack
     public float dropSag = 0.5f;             // help defender's sag blend toward the centre, 0..1 (Drop mode)
-    public float shotQualityThreshold = 0.42f; // min shot-quality (0..1) to take the shot, else pass
+    public float shotQualityThreshold = 0.3f; // min shot-quality (0..1) to take the shot, else pass (lower = bots shoot more)
     public float passShotQualityWeight = 1.2f; // pass-score bonus per unit of the RECEIVER's shot quality
     public float spacingPushMult = 1.4f;       // how hard crowded attackers get pushed apart
     public float wideLateralMult = 1.2f;       // width multiplier on non-Centre attack lanes (full pool width)

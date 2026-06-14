@@ -786,7 +786,7 @@ MonoBehaviour:
   ball: {fileID: 650185484}
   playerTeam: {fileID: 1812404639}
   botTeam: {fileID: 896660540}
-  releaseGrabDelay: 0.5
+  releaseGrabDelay: 0.35
   freeThrowAIHoldSeconds: 1
   playerLimitX: 6.9
   counterWindowSeconds: 4
@@ -1685,7 +1685,7 @@ MonoBehaviour:
   highShotReactionDelay: 0.2
   keeperGrabDistance: 1.2
   keeperGrabMaxSpeed: 3
-  keeperHoldSeconds: 0.8
+  keeperHoldSeconds: 1.5
   playerKeeperMaxHold: 3
   holdOffset: 0.5
 --- !u!212 &365746330
@@ -3021,7 +3021,7 @@ Rigidbody2D:
   m_UseFullKinematicContacts: 0
   m_UseAutoMass: 0
   m_Mass: 1
-  m_LinearDamping: 2.5
+  m_LinearDamping: 4
   m_AngularDamping: 0.05
   m_GravityScale: 0
   m_Material: {fileID: 0}
@@ -3766,7 +3766,7 @@ MonoBehaviour:
   centerFeedWeight: 3
   counterRunners: 2
   dropSag: 0.5
-  shotQualityThreshold: 0.3
+  shotQualityThreshold: 0.42
   passShotQualityWeight: 1.2
   spacingPushMult: 1.4
   wideLateralMult: 1.2
@@ -7963,7 +7963,7 @@ MonoBehaviour:
   highShotReactionDelay: 0.2
   keeperGrabDistance: 1.2
   keeperGrabMaxSpeed: 3
-  keeperHoldSeconds: 0.8
+  keeperHoldSeconds: 1.5
   playerKeeperMaxHold: 3
   holdOffset: 0.5
 --- !u!212 &1523456036
@@ -9914,7 +9914,7 @@ MonoBehaviour:
   centerFeedWeight: 3
   counterRunners: 2
   dropSag: 0.5
-  shotQualityThreshold: 0.3
+  shotQualityThreshold: 0.42
   passShotQualityWeight: 1.2
   spacingPushMult: 1.4
   wideLateralMult: 1.2
