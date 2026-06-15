@@ -2457,6 +2457,7 @@ GameObject:
   - component: {fileID: 519420031}
   - component: {fileID: 519420029}
   - component: {fileID: 519420030}
+  - component: {fileID: 519420033}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -2464,6 +2465,33 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
+--- !u!114 &519420033
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 519420028}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dae145e9cbe6483d91d4cfc318e8c523, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::CameraFollow
+  followSpeed: 3.5
+  switchSpeed: 8
+  switchSpeedDuration: 0.5
+  baseSize: 4.2
+  maxSize: 5
+  minSize: 3.8
+  zoomSpeed: 2
+  playerWeight: 0.6
+  ballWeight: 0.4
+  boundsMinX: -5.5
+  boundsMaxX: 5.5
+  boundsMinY: -3.2
+  boundsMaxY: 3.2
+  shakeOnGoal: 1
+  shakeOnShot: 1
 --- !u!81 &519420029
 AudioListener:
   m_ObjectHideFlags: 0
