@@ -589,3 +589,27 @@ Also now 🟡 **WORKING (first pass — improve later, not 100% done):**
   (3) high lob pass with arc shadow,
   (4) touch controls (B16.3).
   Everything in Part B tagged ⬜ is future.
+
+---
+
+## SESSION LOG — 2026-06-15 (gameplay polish)
+
+- **Ball scale fixed for good** (`BallFlight.cs`): scale recomputed from a clean base every frame,
+  carrier scale divided out per-axis → always uniform, never drifts. Root cause was bots being
+  non-uniform (`0.2 × 0.25`) — a spinning ball re-parented onto them baked shear that compounded
+  each catch. Effects uniform, capped 1.2×, Lerp-smoothed; spin only > 6 u/s, never on a plain
+  pass, snaps upright on catch.
+- **Player goalkeeper = full player** (`Goalkeeper.cs`): while your own keeper holds the ball it
+  moves freely in 2D (clamped to its half, never crosses its goal line), sprints, charges a shot,
+  and charges a pass (hold-to-charge, scales speed). **No auto-pass** — you're in charge; it
+  returns to its line only after you shoot/pass (shot clock still turns a stalled hold over).
+  On-ball HUD: green triangle + facing chevron + power bar. Bot keeper unchanged.
+- **Charge / UI** (`PlayerMovement.cs`): shot/pass charge is **time-based** (shotChargeTime 0.7s,
+  passChargeTime 0.45s) so it's snappy regardless of the high `maxShootPower`; min shot-speed
+  floor so a tap never "drops"; power bar redesigned (dark rounded track + green→yellow→red).
+- **Touch** (`TouchControls.cs`): tighter button cluster (~25px gaps at 1.5× size), smoother
+  attack↔defense fade (SmoothStep, 0.22s).
+- **Bots / "I'm in charge"** (`WaterPoloAI.cs`): a player-team AI carrier never auto-acts (holds
+  for the human). Bots: calmer passes (13→11, +0.35s settle), shoot within 3.5u not from anywhere
+  (had ShootRange 20), sprint (×1.7) to chase/cover, faster mark switching (0.6→0.35s). Keeper as
+  a pass target stays a 10% last resort.

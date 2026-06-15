@@ -23,6 +23,12 @@ public interface IAgentBody
     float HoldStartTime { get; set; }
     float NextStealTime { get; set; }
 
+    // Stamina hooks (set by StaminaSystem, if present). The body applies these to its own
+    // speed / steal getters; both default to 1 so the AI is unaffected when no StaminaSystem
+    // is attached (the system stays fully optional).
+    float StaminaMult { get; set; }      // multiplies chase/carry/support speed (tired = slower)
+    float StaminaStealMult { get; set; } // multiplies steal chance (tired = worse)
+
     // Dynamic-marking state (anti-oscillation): who we're currently marking and the
     // earliest time we're allowed to switch to a different man.
     Transform CurrentMark { get; set; }
@@ -818,10 +824,10 @@ public static class WaterPoloBrain
         if (Time.time < a.NextStealTime) return false;
         Transform carrier = ctx.Ball.transform.parent;
         if (carrier == null) return false;
-        if (carrier.GetComponent<Goalkeeper>() != null)
+        if (ctx.IsProtectedKeeper(carrier)) // a keeper STILL in its safe zone can't be robbed (Task 5)
         {
-            // can't steal from a keeper — and inside the protect radius we get pushed
-            // straight back out at chase speed (returns true: movement handled).
+            // inside the protect radius we get pushed straight back out at chase speed
+            // (returns true: movement handled).
             Vector2 away = a.Body.position - (Vector2)carrier.position;
             if (away.magnitude < KeeperProtectRadius)
             {
@@ -870,7 +876,12 @@ public static class WaterPoloBrain
         }
         IAgentBody holder = carrier.GetComponent<IAgentBody>();
         if (holder != null) holder.IsHolding = false;
-        else { PlayerMovement pm = carrier.GetComponent<PlayerMovement>(); if (pm != null) pm.ReleaseBall(); }
+        else
+        {
+            Goalkeeper gkHeld = carrier.GetComponent<Goalkeeper>();
+            if (gkHeld != null) gkHeld.OnBallStolen();             // strip a roaming keeper (Task 5)
+            else { PlayerMovement pm = carrier.GetComponent<PlayerMovement>(); if (pm != null) pm.ReleaseBall(); }
+        }
         a.IsHolding = true;
         a.IsSettingScreen = false; // carriers don't screen
         a.HoldStartTime = Time.time;

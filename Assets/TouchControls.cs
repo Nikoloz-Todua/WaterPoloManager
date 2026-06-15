@@ -57,6 +57,12 @@ public class TouchControls : MonoBehaviour
 
     const float ModeFadeTime = 0.22f; // smooth fade-out / fade-in on an attack<->defense swap
 
+    // Singleton so the Goalkeeper can read the live joystick aim for its directional pass/shot.
+    public static TouchControls Instance { get; private set; }
+
+    // Live analog joystick vector (magnitude 0..1). Zero when the canvas is inactive / untouched.
+    public Vector2 JoystickAxis => joystick != null ? joystick.Axis : Vector2.zero;
+
     private GameObject canvasRoot;
     private TouchJoystick joystick;
 
@@ -75,8 +81,22 @@ public class TouchControls : MonoBehaviour
     private Coroutine modeFade;
     private bool prevTop, prevBR, prevBL; // tap (down/up) edge detection
 
+    // --- Stamina HUD: a panel above the joystick — player number (or "GK" when the human controls
+    //     the keeper) + a fill bar. It reads PlayerMovement.StaminaPercent01 /
+    //     Goalkeeper.StaminaPercent01 + TeamManager.ActivePlayerIndex, so it carries NO reference to
+    //     the StaminaSystem type — remove that system and this HUD simply shows a full bar. ---
+    private TMP_Text staminaLabel;
+    private Image staminaFill;
+    private RectTransform staminaFillRt;
+    private float shownStamina = 1f;
+    private string shownLabel;
+    static readonly Vector2 StaminaPanelPos = new Vector2(230f, 425f); // above the joystick (bottom-left)
+    static readonly Vector2 StaminaPanelSize = new Vector2(220f, 55f);
+    const float StaminaBarMaxWidth = 144f;   // inner fill width inside the track
+
     void Awake()
     {
+        Instance = this;
         BuildUI();
         canvasRoot.SetActive(Application.isMobilePlatform || (Application.isEditor && showInEditor));
     }
@@ -97,6 +117,10 @@ public class TouchControls : MonoBehaviour
             if (held != null) keeper = held.GetComponent<Goalkeeper>();
         }
         bool keeperControl = keeper != null;
+
+        // HUD panel: show the keeper's stamina while the human controls the keeper, else the
+        // active field player's (independent of attack/defense mode).
+        UpdateStaminaHud(keeperControl ? keeper : null);
 
         // PASS OUT button is retired — the keeper uses the full action buttons now.
         if (passOutGroup != null && passOutGroup.activeSelf) passOutGroup.SetActive(false);
@@ -138,7 +162,7 @@ public class TouchControls : MonoBehaviour
         {
             // Route the 3 attack buttons + joystick to the KEEPER (Task 5):
             //   top = Sprint (hold), bottom-right = Shoot (tap/hold/release), bottom-left = Pass (tap).
-            keeper.SetTouchInput(axis, brHeld, brDown, brUp, blDown, topHeld);
+            keeper.SetTouchInput(axis, brHeld, brDown, brUp, blHeld, blDown, blUp, topHeld);
 
             // the field player is stood down (PlayerMovement yields to the keeper) — make sure
             // touch input never drives it either.
@@ -302,6 +326,110 @@ public class TouchControls : MonoBehaviour
         MakeLabel(passOutGroup.transform, "PASS!", new Vector2(1f, 0.5f), PassOutLabelPos,
                   new Vector2(240f, 60f), 40f);
         passOutGroup.SetActive(false);
+
+        BuildStaminaHud();
+    }
+
+    // ---- Stamina HUD (Task 3) ----
+
+    // Panel above the joystick: dark rounded rect holding the player number ("P1") on the left
+    // and a green→yellow→red fill bar (with a subtle dark border) filling the rest. Plus a
+    // full-screen red vignette, hidden until the active player's stamina hits 0%.
+    void BuildStaminaHud()
+    {
+        Sprite panelSpr = MakeRoundedRectSprite((int)StaminaPanelSize.x, (int)StaminaPanelSize.y, 16);
+        Sprite barSpr   = MakeRoundedRectSprite(80, 24, 6);
+
+        // panel background (anchored bottom-left, above the joystick)
+        RectTransform panel = MakeUIImage("StaminaPanel", canvasRoot.transform, panelSpr,
+            new Vector2(0f, 0f), new Vector2(0.5f, 0.5f), StaminaPanelPos, StaminaPanelSize,
+            new Color(0.05f, 0.05f, 0.15f, 0.75f));
+
+        // "P1" label (white, bold) on the left
+        GameObject lblGo = new GameObject("StaminaLabel");
+        lblGo.transform.SetParent(panel, false);
+        RectTransform lblRt = lblGo.AddComponent<RectTransform>();
+        lblRt.anchorMin = lblRt.anchorMax = new Vector2(0.5f, 0.5f);
+        lblRt.pivot = new Vector2(0.5f, 0.5f);
+        lblRt.anchoredPosition = new Vector2(-76f, 0f);
+        lblRt.sizeDelta = new Vector2(54f, 46f);
+        staminaLabel = lblGo.AddComponent<TextMeshProUGUI>();
+        staminaLabel.text = "P1";
+        staminaLabel.fontSize = 32f;
+        staminaLabel.fontStyle = FontStyles.Bold;
+        staminaLabel.alignment = TextAlignmentOptions.Center;
+        staminaLabel.color = Color.white;
+        staminaLabel.raycastTarget = false;
+
+        // bar track + subtle dark border, to the right of the label
+        RectTransform track = MakeUIImage("StaminaBarBG", panel, barSpr, new Vector2(0.5f, 0.5f),
+            new Vector2(0.5f, 0.5f), new Vector2(28f, 0f), new Vector2(150f, 26f),
+            new Color(0.12f, 0.12f, 0.12f, 0.92f));
+
+        // fill, anchored to the track's LEFT edge so it grows rightward
+        GameObject fillGo = new GameObject("StaminaBarFill");
+        fillGo.transform.SetParent(track, false);
+        staminaFillRt = fillGo.AddComponent<RectTransform>();
+        staminaFillRt.anchorMin = staminaFillRt.anchorMax = new Vector2(0f, 0.5f);
+        staminaFillRt.pivot = new Vector2(0f, 0.5f);
+        staminaFillRt.anchoredPosition = new Vector2(3f, 0f);
+        staminaFillRt.sizeDelta = new Vector2(StaminaBarMaxWidth, 20f);
+        staminaFill = fillGo.AddComponent<Image>();
+        staminaFill.sprite = barSpr;
+        staminaFill.color = HudStaminaColor(1f);
+        staminaFill.raycastTarget = false;
+    }
+
+    // keeper != null → the human is controlling the goalkeeper, so show ITS stamina (labelled "GK");
+    // otherwise show the active field player's ("P{n}").
+    void UpdateStaminaHud(Goalkeeper keeper)
+    {
+        if (staminaFillRt == null) return;
+
+        float pct;
+        string label;
+        if (keeper != null)
+        {
+            pct = Mathf.Clamp01(keeper.StaminaPercent01);
+            label = "GK";
+        }
+        else
+        {
+            PlayerMovement act = TeamManager.ActivePlayer;
+            pct = act != null ? Mathf.Clamp01(act.StaminaPercent01) : 1f;
+            label = "P" + (TeamManager.ActivePlayerIndex + 1);
+        }
+
+        // label — updates instantly on a switch (only re-set when it changes)
+        if (staminaLabel != null && label != shownLabel)
+        {
+            staminaLabel.text = label;
+            shownLabel = label;
+        }
+
+        // smooth fill width (Lerp speed 5 — never snaps)
+        shownStamina = Mathf.Lerp(shownStamina, pct, Time.unscaledDeltaTime * 5f);
+        Vector2 sz = staminaFillRt.sizeDelta;
+        sz.x = StaminaBarMaxWidth * Mathf.Clamp01(shownStamina);
+        staminaFillRt.sizeDelta = sz;
+        if (staminaFill != null) staminaFill.color = HudStaminaColor(shownStamina);
+
+        // below 20% the label pulses red↔white (~1s cycle)
+        if (staminaLabel != null)
+            staminaLabel.color = pct < 0.20f
+                ? Color.Lerp(Color.white, new Color(1f, 0.2f, 0.2f), Mathf.PingPong(Time.unscaledTime / 0.5f, 1f))
+                : Color.white;
+    }
+
+    // Same green→yellow→red ramp as the world bar (kept local so TouchControls has no
+    // dependency on the StaminaSystem type).
+    static Color HudStaminaColor(float pct)
+    {
+        Color green  = new Color(0f, 0.8f, 0.2f);
+        Color yellow = new Color(1f, 0.85f, 0f);
+        Color red    = new Color(0.9f, 0.1f, 0.1f);
+        if (pct >= 0.5f) return Color.Lerp(yellow, green, (pct - 0.5f) / 0.5f);
+        return Color.Lerp(red, yellow, Mathf.Clamp01(Mathf.InverseLerp(0.2f, 0.5f, pct)));
     }
 
     static Sprite LoadButtonSprite(string file)
@@ -399,6 +527,47 @@ public class TouchControls : MonoBehaviour
         tex.SetPixels32(px);
         tex.Apply();
         return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+    }
+
+    // A rectangular UI image with explicit anchor / pivot / position / size / tint.
+    // (MakeImage forces a square; the stamina HUD needs rectangles.)
+    RectTransform MakeUIImage(string name, Transform parent, Sprite sprite, Vector2 anchor,
+                              Vector2 pivot, Vector2 pos, Vector2 size, Color color)
+    {
+        GameObject go = new GameObject(name);
+        go.transform.SetParent(parent, false);
+        RectTransform rt = go.AddComponent<RectTransform>();
+        rt.anchorMin = rt.anchorMax = anchor;
+        rt.pivot = pivot;
+        rt.anchoredPosition = pos;
+        rt.sizeDelta = size;
+        Image img = go.AddComponent<Image>();
+        img.sprite = sprite;
+        img.color = color;
+        img.raycastTarget = false; // HUD readout — never eats touches meant for the buttons below
+        return rt;
+    }
+
+    // Soft white rounded rectangle (tinted via Image.color). Drawn at its display size so a
+    // Simple-mode Image keeps crisp corners; the thin fill bar stretches with negligible distortion.
+    static Sprite MakeRoundedRectSprite(int w, int h, int radius)
+    {
+        Texture2D tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
+        Color32[] px = new Color32[w * h];
+        float r = Mathf.Clamp(radius, 0, Mathf.Min(w, h) / 2);
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+            {
+                float cx = Mathf.Clamp(x, r, w - 1 - r);
+                float cy = Mathf.Clamp(y, r, h - 1 - r);
+                float d = Vector2.Distance(new Vector2(x, y), new Vector2(cx, cy));
+                float a = d <= r - 1f ? 1f : Mathf.Clamp01(r - d); // 1px AA on the rounded corners
+                px[y * w + x] = new Color32(255, 255, 255, (byte)(a * 255f));
+            }
+        tex.SetPixels32(px);
+        tex.Apply();
+        tex.wrapMode = TextureWrapMode.Clamp;
+        return Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(0.5f, 0.5f), 100f);
     }
 }
 

@@ -18,6 +18,9 @@ public class TeamManager : MonoBehaviour
     // to know which PlayerMovement receives the touch input.
     public static PlayerMovement ActivePlayer { get; private set; }
 
+    // Roster slot of the active player (0-based). The touch HUD shows it as "P{index+1}".
+    public static int ActivePlayerIndex { get; private set; }
+
     void Start()
     {
         SetActive(0);
@@ -125,6 +128,7 @@ public class TeamManager : MonoBehaviour
             players[i].IsActive = willBeActive;
         }
         activeIndex = index;
+        ActivePlayerIndex = index;
         ActivePlayer = (index >= 0 && index < players.Length) ? players[index] : null;
     }
 }

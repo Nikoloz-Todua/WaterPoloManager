@@ -35,6 +35,8 @@ public class BotMovement : MonoBehaviour, IAgentBody
     private float screenStartTime = -1f;
     private float screenSetSince = -1f;
     private float nextDefenseEvalTime;
+    private float staminaMult = 1f;      // 1 = unaffected; StaminaSystem lowers it when tired
+    private float staminaStealMult = 1f;
 
     void Awake() { rb = GetComponent<Rigidbody2D>(); }
 
@@ -70,15 +72,17 @@ public class BotMovement : MonoBehaviour, IAgentBody
     public TeamSide Team => myTeam;
     public bool IsHolding { get => isHolding; set => isHolding = value; }
     public Vector2 LastDirection { get => lastDirection; set => lastDirection = value; }
-    public float ChaseSpeed => chaseSpeed;
-    public float CarrySpeed => carrySpeed;
-    public float SupportSpeed => supportSpeed;
+    public float ChaseSpeed => chaseSpeed * staminaMult;       // stamina scales movement
+    public float CarrySpeed => carrySpeed * staminaMult;
+    public float SupportSpeed => supportSpeed * staminaMult;
     public float GrabDistance => grabDistance;
     public float HoldOffset => holdOffset;
     public float ShootRange => shootRange;
     public float ShootPower => shootPower;
-    public float StealChance => stealChance;
+    public float StealChance => stealChance * staminaStealMult; // stamina scales steal chance
     public float LooseHoldStealBonus => looseHoldStealBonus;
+    public float StaminaMult { get => staminaMult; set => staminaMult = value; }
+    public float StaminaStealMult { get => staminaStealMult; set => staminaStealMult = value; }
     public float HoldStartTime { get => holdStartTime; set => holdStartTime = value; }
     public float NextStealTime { get => nextStealTime; set => nextStealTime = value; }
     public Transform CurrentMark { get => currentMark; set => currentMark = value; }

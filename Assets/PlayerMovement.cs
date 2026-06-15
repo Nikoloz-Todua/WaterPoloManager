@@ -57,8 +57,9 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private float aimTriangleLineWidth = 0.05f;
 
     [Header("Power bar")]
-    [SerializeField] private float powerBarWidth = 1.0f;
-    [SerializeField] private float powerBarHeight = 0.12f;
+    [Tooltip("World-unit width of the charge bar. Kept clearly longer than the keeper's 0.55u bar (>2x) so the player's shoot/pass charge reads at a glance. Grows left→right.")]
+    [SerializeField] private float powerBarWidth = 1.2f;   // >2x the goalkeeper's hold bar (HudBarW = 0.55)
+    [SerializeField] private float powerBarHeight = 0.07f; // matches the goalkeeper's hold bar (HudBarH)
     [SerializeField] private float powerBarYOffset = 0.9f;
 
     private LineRenderer powerBar;          // built in code, no Inspector wiring needed
@@ -90,6 +91,16 @@ public class PlayerMovement : MonoBehaviour
 
     // Raw Shift state, honoured only on the human-controlled player (PlayerAnimator reads this).
     public bool SprintHeld => IsActive && sprintHeld;
+
+    // ---- Stamina hooks (driven by StaminaSystem, if present) ----
+    // NEUTRAL by default so the game plays identically with no StaminaSystem on the object;
+    // StaminaSystem writes these each frame. Properties (not fields) → not serialized, no
+    // Inspector clutter, and nothing here references the StaminaSystem type (it stays optional).
+    public float StaminaSpeedMult { get; set; } = 1f;       // scales base swim speed
+    public float StaminaSprintMult { get; set; } = 1f;      // scales the sprint multiplier
+    public bool StaminaSprintBlocked { get; set; } = false; // true at 0% stamina → no sprint
+    public float StaminaStealMult { get; set; } = 1f;       // scales steal success chance
+    public float StaminaPercent01 { get; set; } = 1f;       // 0..1, mirrored for the touch HUD
 
     private Rigidbody2D rb;
     private Vector2 input;
@@ -411,7 +422,11 @@ public class PlayerMovement : MonoBehaviour
             return;
         }
         float speed = isHolding ? holdMoveSpeed : moveSpeed;
-        if (sprintHeld && input != Vector2.zero) speed *= sprintMultiplier; // Shift sprint
+        speed *= StaminaSpeedMult;                                          // tired = slower (stamina)
+        // Shift sprint — disabled outright at 0% stamina ("normal swim only"), else the
+        // sprint multiplier is scaled by stamina too (both move speed AND sprint cut when tired).
+        if (sprintHeld && input != Vector2.zero && !StaminaSprintBlocked)
+            speed *= sprintMultiplier * StaminaSprintMult;
         rb.linearVelocity = input * speed;
         if (MatchContext.Instance != null)
             WaterPoloBrain.ClampX(rb, MatchContext.Instance.PlayerLimitX); // can't cross the goal line
@@ -504,10 +519,9 @@ public class PlayerMovement : MonoBehaviour
 
         Transform carrier = ball.transform.parent;
         if (carrier == null) return;
-        if (carrier.GetComponent<Goalkeeper>() != null)
+        if (ctx.IsProtectedKeeper(carrier)) // a keeper STILL in its safe zone can't be robbed (Task 5)
         {
-            // can't steal from a keeper — and trying inside the protect radius shoves
-            // us back out (FixedUpdate drives the push for KeeperPushSeconds).
+            // trying inside the protect radius shoves us back out (FixedUpdate drives the push).
             Vector2 away = (Vector2)transform.position - (Vector2)carrier.position;
             if (away.magnitude < KeeperProtectRadius)
             {
@@ -537,10 +551,11 @@ public class PlayerMovement : MonoBehaviour
 
         lastStealTime = Time.time;
 
-        if (Random.value <= stealChance)
+        if (Random.value <= stealChance * StaminaStealMult) // tired hands steal worse (stamina)
         {
             IAgentBody holder = carrier.GetComponent<IAgentBody>();
             if (holder != null) holder.IsHolding = false;
+            else { Goalkeeper gkHeld = carrier.GetComponent<Goalkeeper>(); if (gkHeld != null) gkHeld.OnBallStolen(); } // strip a roaming keeper (Task 5)
 
             isHolding = true;
             ball.simulated = false;
@@ -581,9 +596,9 @@ public class PlayerMovement : MonoBehaviour
 
         Transform carrier = ball.transform.parent;
         if (carrier == null) return;
-        if (carrier.GetComponent<Goalkeeper>() != null)
+        if (ctx.IsProtectedKeeper(carrier)) // a keeper STILL in its safe zone can't be robbed (Task 5)
         {
-            // can't strip a keeper — getting too close shoves us back out (same as TrySteal).
+            // getting too close shoves us back out (same as TrySteal).
             Vector2 away = (Vector2)transform.position - (Vector2)carrier.position;
             if (away.magnitude < KeeperProtectRadius)
             {
@@ -615,10 +630,11 @@ public class PlayerMovement : MonoBehaviour
 
         lastStealTime = Time.time;
 
-        if (Random.value <= stealChance * 0.5f) // HALF the normal success chance
+        if (Random.value <= stealChance * 0.5f * StaminaStealMult) // HALF success, and tired = worse
         {
             IAgentBody holder = carrier.GetComponent<IAgentBody>();
             if (holder != null) holder.IsHolding = false;
+            else { Goalkeeper gkHeld = carrier.GetComponent<Goalkeeper>(); if (gkHeld != null) gkHeld.OnBallStolen(); } // strip a roaming keeper (Task 5)
 
             isHolding = true;
             ball.simulated = false;

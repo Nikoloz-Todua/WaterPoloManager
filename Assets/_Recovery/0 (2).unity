@@ -1660,7 +1660,6 @@ GameObject:
   - component: {fileID: 365746332}
   - component: {fileID: 365746333}
   - component: {fileID: 365746334}
-  - component: {fileID: 365746335}
   m_Layer: 0
   m_Name: KeeperRight
   m_TagString: Untagged
@@ -1684,21 +1683,15 @@ MonoBehaviour:
   trackSpeed: 4
   minY: -2
   maxY: 2
-  trackingRange: 3.5
-  maxYOffset: 2.5
   shotSpeedThreshold: 4
   highShotReactionDelay: 0.2
-  baseSaveChance: 0.65
-  highShotSavePenalty: 0.25
-  powerSavePenalty: 0.15
-  skipShotSavePenalty: 0.35
-  missedSaveCooldown: 1.5
   keeperGrabDistance: 1.2
+  keeperGrabMaxSpeed: 3
   keeperSnatchDistance: 0.8
   keeperHoldSeconds: 0.8
   keeperPanicDistance: 2.5
   holdOffset: 0.5
-  keeperMoveSpeed: 4
+  keeperMoveSpeed: 1.6
   keeperShootPower: 12
   keeperChargeRate: 8
   keeperSprintMultiplier: 1.8
@@ -1871,33 +1864,6 @@ Animator:
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorStateOnDisable: 0
   m_WriteDefaultValuesOnDisable: 0
---- !u!114 &365746335
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 365746328}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 03ecf45bef86a5c42990b99379dbb97a, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::StaminaSystem
-  maxStamina: 100
-  idleRecovery: 8
-  swimDrain: 3
-  holdMoveDrain: 5
-  sprintDrain: 12
-  restRecovery: 15
-  idleSpeed: 0.5
-  keeperTrackDrain: 2
-  keeperHoldDrain: 1
-  keeperIdleRecovery: 10
-  restBoostAfter: 5
-  sprintFatigueAfter: 3
-  sprintFatigueDrain: 18
-  secondWindStopTime: 2
-  secondWindAmount: 15
 --- !u!1 &372005729
 GameObject:
   m_ObjectHideFlags: 0
@@ -3470,7 +3436,7 @@ BoxCollider2D:
     drawMode: 0
     adaptiveTiling: 0
   m_AutoTiling: 0
-  m_Size: {x: 4, y: 15}
+  m_Size: {x: 1, y: 1}
   m_EdgeRadius: 0
 --- !u!212 &773787452
 SpriteRenderer:
@@ -4077,8 +4043,8 @@ MonoBehaviour:
   aimTriangleWidth: 0.2
   aimTriangleGap: 0.5
   aimTriangleLineWidth: 0.08
-  powerBarWidth: 1.2
-  powerBarHeight: 0.07
+  powerBarWidth: 1
+  powerBarHeight: 0.12
   powerBarYOffset: 0.9
   IsActive: 0
 --- !u!58 &945807557
@@ -4419,8 +4385,8 @@ MonoBehaviour:
   aimTriangleWidth: 0.2
   aimTriangleGap: 0.5
   aimTriangleLineWidth: 0.08
-  powerBarWidth: 1.2
-  powerBarHeight: 0.07
+  powerBarWidth: 1
+  powerBarHeight: 0.12
   powerBarYOffset: 0.9
   IsActive: 0
 --- !u!58 &965530506
@@ -5261,8 +5227,8 @@ MonoBehaviour:
   aimTriangleWidth: 0.2
   aimTriangleGap: 0.5
   aimTriangleLineWidth: 0.08
-  powerBarWidth: 1.2
-  powerBarHeight: 0.07
+  powerBarWidth: 1
+  powerBarHeight: 0.12
   powerBarYOffset: 0.9
   IsActive: 0
 --- !u!58 &1204470615
@@ -5487,8 +5453,8 @@ MonoBehaviour:
   aimTriangleWidth: 0.2
   aimTriangleGap: 0.5
   aimTriangleLineWidth: 0.08
-  powerBarWidth: 1.2
-  powerBarHeight: 0.07
+  powerBarWidth: 1
+  powerBarHeight: 0.12
   powerBarYOffset: 0.9
   IsActive: 0
 --- !u!58 &1227050016
@@ -7229,8 +7195,8 @@ MonoBehaviour:
   aimTriangleWidth: 0.2
   aimTriangleGap: 0.5
   aimTriangleLineWidth: 0.08
-  powerBarWidth: 1.2
-  powerBarHeight: 0.07
+  powerBarWidth: 1
+  powerBarHeight: 0.12
   powerBarYOffset: 0.9
   IsActive: 0
 --- !u!58 &1480314583
@@ -8007,7 +7973,6 @@ GameObject:
   - component: {fileID: 1523456038}
   - component: {fileID: 1523456039}
   - component: {fileID: 1523456040}
-  - component: {fileID: 1523456041}
   m_Layer: 0
   m_Name: KeeperLeft
   m_TagString: Untagged
@@ -8031,21 +7996,15 @@ MonoBehaviour:
   trackSpeed: 4
   minY: -2
   maxY: 2
-  trackingRange: 3.5
-  maxYOffset: 2.5
   shotSpeedThreshold: 4
   highShotReactionDelay: 0.2
-  baseSaveChance: 0.65
-  highShotSavePenalty: 0.25
-  powerSavePenalty: 0.15
-  skipShotSavePenalty: 0.35
-  missedSaveCooldown: 1.5
   keeperGrabDistance: 1.2
+  keeperGrabMaxSpeed: 3
   keeperSnatchDistance: 0.8
   keeperHoldSeconds: 0.8
   keeperPanicDistance: 2.5
   holdOffset: 0.5
-  keeperMoveSpeed: 4
+  keeperMoveSpeed: 1.6
   keeperShootPower: 12
   keeperChargeRate: 8
   keeperSprintMultiplier: 1.8
@@ -8218,33 +8177,6 @@ Animator:
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorStateOnDisable: 0
   m_WriteDefaultValuesOnDisable: 0
---- !u!114 &1523456041
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1523456034}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 03ecf45bef86a5c42990b99379dbb97a, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::StaminaSystem
-  maxStamina: 100
-  idleRecovery: 8
-  swimDrain: 3
-  holdMoveDrain: 5
-  sprintDrain: 12
-  restRecovery: 15
-  idleSpeed: 0.5
-  keeperTrackDrain: 2
-  keeperHoldDrain: 1
-  keeperIdleRecovery: 10
-  restBoostAfter: 5
-  sprintFatigueAfter: 3
-  sprintFatigueDrain: 18
-  secondWindStopTime: 2
-  secondWindAmount: 15
 --- !u!1 &1572314168
 GameObject:
   m_ObjectHideFlags: 0
@@ -9146,7 +9078,7 @@ BoxCollider2D:
     drawMode: 0
     adaptiveTiling: 0
   m_AutoTiling: 0
-  m_Size: {x: 4, y: 15}
+  m_Size: {x: 1, y: 1}
   m_EdgeRadius: 0
 --- !u!212 &1781417089
 SpriteRenderer:
@@ -9478,8 +9410,8 @@ MonoBehaviour:
   aimTriangleWidth: 0.3
   aimTriangleGap: 0.5
   aimTriangleLineWidth: 0.08
-  powerBarWidth: 1.2
-  powerBarHeight: 0.07
+  powerBarWidth: 1
+  powerBarHeight: 0.12
   powerBarYOffset: 0.9
   IsActive: 0
 --- !u!58 &1804307261

@@ -148,6 +148,17 @@ public class MatchContext : MonoBehaviour
     public void SetKeeperHold(TeamSide team) { KeeperHolding = true; KeeperHoldTeam = team; }
     public void ClearKeeperHold() { KeeperHolding = false; KeeperHoldTeam = null; }
 
+    // Steal rule (Task 5): a goalkeeper carrying the ball can't be robbed WHILE it stays in its
+    // safe zone (within 1.5u of its goal line). The moment it carries the ball out of that zone it
+    // becomes fair game for the rest of the possession (Goalkeeper.LeftSafeZone). Returns true only
+    // while `carrier` is a keeper that is STILL protected — the three steal paths skip those.
+    public bool IsProtectedKeeper(Transform carrier)
+    {
+        if (carrier == null) return false;
+        Goalkeeper gk = carrier.GetComponent<Goalkeeper>();
+        return gk != null && !gk.LeftSafeZone;
+    }
+
     // ---- counterattack window (Part 2) ----
     public void StartCounter(TeamSide team) { CounterTeam = team; CounterUntilTime = Time.time + counterWindowSeconds; }
     public bool CounterActiveFor(TeamSide team) => team != null && team == CounterTeam && Time.time < CounterUntilTime;

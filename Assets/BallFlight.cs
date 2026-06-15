@@ -95,6 +95,10 @@ public class BallFlight : MonoBehaviour
     public TeamSide LobTeam => lobTeam;
     public bool KeeperFooled { get; private set; }
 
+    // Height (0..1) of the current shot's flight (set on NoteShot; low < 0.3, high > 0.7).
+    // Read by Goalkeeper to weight its save chance against high shots.
+    public float ShotHeight => shotHeight;
+
     // Skip-shot flight state (read by WaterPoloBrain so AI can't intercept a skip mid-air).
     public bool SkipActive => skipActive;
     public bool SkipBounced => bounced;
