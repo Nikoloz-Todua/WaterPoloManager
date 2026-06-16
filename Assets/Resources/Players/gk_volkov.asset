@@ -1,0 +1,30 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 89ff3f0669253db4589c22d28ca1524c, type: 3}
+  m_Name: gk_volkov
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerData
+  id: gk_volkov
+  fullName: A. Volkov
+  nation: Russia
+  position: 0
+  overall: 77
+  stats:
+    speed: 64
+    shooting: 59
+    passing: 66
+    defense: 74
+    stamina: 72
+    goalKeeping: 82
+  rarity: 1
+  portrait: {fileID: 0}
+  priceGold: 990
+  isBot: 0

@@ -22,6 +22,7 @@ public class NavigationManager : MonoBehaviour
     private static Sprite roundedSprite; // cached; regenerated after domain reload
 
     private Transform canvasRoot;
+    private TextMeshProUGUI goldLabel, diamondLabel; // top-bar currency, fed by RosterManager
     private readonly GameObject[] screens = new GameObject[5];
     private readonly CanvasGroup[] screenGroups = new CanvasGroup[5];
     private readonly TextMeshProUGUI[] navLabels = new TextMeshProUGUI[5];
@@ -89,12 +90,23 @@ public class NavigationManager : MonoBehaviour
         MakeText(settings.transform, "SET", 20f, new Vector2(0.5f, 0.5f), Vector2.zero,
                  new Vector2(50f, 50f), Color.white, TextAlignmentOptions.Center);
 
-        MakeText(bar.transform, "50", 18f, new Vector2(1f, 0.5f), new Vector2(-95f, 0f),
+        diamondLabel = MakeText(bar.transform, "0", 18f, new Vector2(1f, 0.5f), new Vector2(-95f, 0f),
                  new Vector2(60f, 40f), Color.white, TextAlignmentOptions.Left);
         MakeIcon(bar.transform, "Sprites/diamond-coin", new Vector2(1f, 0.5f), new Vector2(-145f, 0f), 40f);
-        MakeText(bar.transform, "1000", 18f, new Vector2(1f, 0.5f), new Vector2(-225f, 0f),
+        goldLabel = MakeText(bar.transform, "0", 18f, new Vector2(1f, 0.5f), new Vector2(-225f, 0f),
                  new Vector2(70f, 40f), Color.white, TextAlignmentOptions.Left);
         MakeIcon(bar.transform, "Sprites/gold-coin", new Vector2(1f, 0.5f), new Vector2(-275f, 0f), 40f);
+
+        RefreshCurrency(); // show the real saved balances, not placeholders
+    }
+
+    // Re-read the player's balances into the top bar. Called on build and by TeamScreenUI
+    // after a buy / sell / upgrade so the persistent bar never drifts from the real roster.
+    public void RefreshCurrency()
+    {
+        RosterManager rm = RosterManager.Instance;
+        if (goldLabel != null) goldLabel.text = rm.Coins.ToString();
+        if (diamondLabel != null) diamondLabel.text = rm.Diamonds.ToString();
     }
 
     void BuildBottomNav()
@@ -227,33 +239,12 @@ public class NavigationManager : MonoBehaviour
 
     // ---------------------------------------------------------------- 2. TEAM
 
+    // The real Team screen (B12) lives in TeamScreenUI (its own script) so it can pull live data
+    // from RosterManager / PlayerDatabase. We just attach it and let it build itself.
     void BuildTeamScreen(Transform root)
     {
-        MakeTitle(root, "TEAM");
-
-        MakeText(root, "OVR 72", 30f, new Vector2(0.5f, 0.5f), new Vector2(330f, 170f),
-                 new Vector2(160f, 44f), Gold, TextAlignmentOptions.Center);
-        MakeText(root, "Formation: 2-3-2", 18f, new Vector2(0.5f, 0.5f), new Vector2(-330f, 170f),
-                 new Vector2(200f, 30f), Color.white, TextAlignmentOptions.Center);
-
-        // 2-3-2 formation, attacking upward: wings high, mid three, backs + keeper low.
-        (string pos, Vector2 at)[] slots =
-        {
-            ("LW", new Vector2(-110f, 110f)), ("RW", new Vector2(110f, 110f)),
-            ("LF", new Vector2(-180f, -15f)), ("CF", new Vector2(0f, -15f)), ("RF", new Vector2(180f, -15f)),
-            ("CB", new Vector2(-110f, -150f)), ("GK", new Vector2(110f, -150f)),
-        };
-        foreach (var s in slots)
-        {
-            Image card = MakePanel(root, new Vector2(80f, 110f), s.at);
-            Outline border = card.gameObject.AddComponent<Outline>();
-            border.effectColor = Color.white;
-            border.effectDistance = new Vector2(2f, 2f);
-            MakeText(card.transform, s.pos, 20f, new Vector2(0.5f, 1f), new Vector2(0f, -24f),
-                     new Vector2(76f, 26f), Color.white, TextAlignmentOptions.Center);
-            MakeText(card.transform, "TAP TO\nADD", 11f, new Vector2(0.5f, 0.5f), new Vector2(0f, -14f),
-                     new Vector2(76f, 40f), new Color(1f, 1f, 1f, 0.6f), TextAlignmentOptions.Center);
-        }
+        TeamScreenUI ui = root.gameObject.AddComponent<TeamScreenUI>();
+        ui.Build(root, this);
     }
 
     // ----------------------------------------------------------- 3. TRANSFERS

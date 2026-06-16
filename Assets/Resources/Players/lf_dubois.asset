@@ -1,0 +1,30 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 89ff3f0669253db4589c22d28ca1524c, type: 3}
+  m_Name: lf_dubois
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerData
+  id: lf_dubois
+  fullName: P. Dubois
+  nation: France
+  position: 5
+  overall: 69
+  stats:
+    speed: 67
+    shooting: 67
+    passing: 73
+    defense: 70
+    stamina: 67
+    goalKeeping: 42
+  rarity: 0
+  portrait: {fileID: 0}
+  priceGold: 550
+  isBot: 0

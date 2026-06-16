@@ -1,0 +1,30 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 89ff3f0669253db4589c22d28ca1524c, type: 3}
+  m_Name: cf_tanaka
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerData
+  id: cf_tanaka
+  fullName: K. Tanaka
+  nation: Japan
+  position: 4
+  overall: 91
+  stats:
+    speed: 90
+    shooting: 96
+    passing: 92
+    defense: 88
+    stamina: 88
+    goalKeeping: 63
+  rarity: 2
+  portrait: {fileID: 0}
+  priceGold: 1890
+  isBot: 0

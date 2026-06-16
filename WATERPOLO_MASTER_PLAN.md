@@ -86,7 +86,13 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 | `TouchControls.cs` | Runtime-built mobile touch UI (no prefabs), **singleton** (`Instance` + `JoystickAxis`, read by the keeper for its aim): virtual joystick bottom-left + **3 circular image buttons** bottom-right (`actionButtonSize`/`mainButtonSize` 270) that swap icon + behaviour with possession. **Attack** (we hold / loose): Sprint (top) / Shoot (bottom-right) / Pass (bottom-left). **Defense** (enemy holds): Switch (top) / Defend (bottom-right) / Block (bottom-left). Mode read each frame from `MatchContext.PossessingTeam` (==BotTeam → defense), SmoothStep fade-out→swap→fade-in (0.22s); icons from `Resources/Sprites/` (`sprint/shoot/pass/Defend/switch/block`). Attack actions feed `PlayerMovement.SetTouchInput` (merged with keyboard via `\|\|`); Switch rides `TouchSwitchDown`; Block → `TouchBlockSteal()`; Defend feeds a chase-the-carrier axis. **Player-keeper control:** while your own keeper holds the ball the 3 attack buttons + joystick route to the `Goalkeeper` (Shoot/Pass/Sprint) — the old single **PASS OUT** button is RETIRED. **Stamina HUD panel** above the joystick: `P#` (or "GK") + a green→yellow→red fill bar reading `PlayerMovement`/`Goalkeeper.StaminaPercent01` + `TeamManager.ActivePlayerIndex` (Lerp-smoothed; label pulses red below 20%). Press feedback = scale to 0.9x. Visible on mobile, or in Editor when `showInEditor`. |
 | `PoolLineFloat.cs` | Standalone gentle bob (±0.04u) + sway (±1.5°) for the 12 pool lane-line sprites; random phase/speed (0.6–0.9 Hz) per object; offsets from the Start pose so it never drifts. |
 | `MainMenuUI.cs` | MainMenu scene. Builds the whole main menu in code at runtime: canvas (1280x720), background + logo from `Assets/Resources/Sprites/`, PLAY/SETTINGS/QUIT buttons with hover scale + cyan-outline TMP labels, 1s fade-in, version footer. PLAY → **HubScene**. |
-| `NavigationManager.cs` | HubScene. The whole hub-navigation shell built in code (design + navigation only, NO real data): persistent top bar (club logo placeholder, "My Club", gold 1000 + diamond 50 displays, "SET" settings stub — the default TMP font has no ⚙ glyph) + bottom nav (CAREER/TEAM/TRANSFERS/MY CLUB/CHALLENGES, active tab cyan), 5 placeholder screens with 0.3s fade transitions. Career (Division 3 badge, fake 5-team standings, PLAY → SampleScene), Team (7-card 2-3-2 formation, OVR 72), Transfers (3 agent buttons, 6 fake player cards with BUY stubs), My Club (STADIUM/POOL upgrade cards + customize stubs), Challenges (3 daily cards, greyed CLAIM). All buttons log "coming soon". |
+| `NavigationManager.cs` | HubScene. The whole hub-navigation shell built in code (design + navigation only, NO real data): persistent top bar (club logo placeholder, "My Club", gold + diamond displays (now LIVE from RosterManager), "SET" settings stub — the default TMP font has no ⚙ glyph) + bottom nav (CAREER/TEAM/TRANSFERS/MY CLUB/CHALLENGES, active tab cyan), 5 placeholder screens with 0.3s fade transitions. Career (Division 3 badge, fake 5-team standings, PLAY → SampleScene), **Team is now REAL** (delegates to `TeamScreenUI` — live roster, not a placeholder), Transfers (3 agent buttons, 6 fake player cards with BUY stubs), My Club (STADIUM/POOL upgrade cards + customize stubs), Challenges (3 daily cards, greyed CLAIM). The non-Team buttons still log "coming soon"; the top bar's gold/diamond read from `RosterManager`. |
+| `PlayerData.cs` | **(Player data foundation, NEW)** ScriptableObject = one player CARD: `id`, `fullName`, `nation`, `position` (enum GK/CB/LW/RW/CF/LF/RF — enum order == starter-slot order), `overall` 0–100, a `Stats` struct (speed/shooting/passing/defense/stamina/goalKeeping 0–100), `rarity` (Common/Rare/Legendary → `RarityColor`), `portrait` (Sprite, null for now → UI draws a silhouette), `priceGold`, `isBot`. `[CreateAssetMenu]` (Create → Water Polo/Player). Static `ComputeOverall(stats,pos)` (GK leans on goalkeeping, field = outfield avg) shared by the generator + UpgradePlayer; `Clone()` so owned cards are mutated as runtime copies, never the source asset. PURELY data — never touched by the match. |
+| `PlayerDatabase.cs` | **(NEW)** Read-only player CATALOG: lazy C# singleton that `Resources.LoadAll`s every `PlayerData` under `Resources/Players/` into a dict by id (`Get`/`Has`/`AllPlayers`/`FirstOfPosition`/`Count`). No scene object. |
+| `Roster.cs` | **(NEW)** `[Serializable]` save payload: `List<string> ownedPlayerIds`, `string[7] starterSlots` (0=GK, 1–6 field by position), `int coins`, `int diamonds`. IDs only → tiny JSON. |
+| `RosterManager.cs` | **(NEW)** Self-bootstrapping singleton MonoBehaviour (DontDestroyOnLoad, no wiring). Loads/saves `Roster` as JSON in `Application.persistentDataPath/roster.json` (guest-mode, no Firebase); seeds a default 7 + bench + coins/diamonds on first run (self-heals if the catalog was empty then). Owned cards held as `Clone()`s so upgrades never corrupt the source asset. API: `BuyPlayer`/`SellPlayer`/`UpgradePlayer` (bump stats + recompute overall, spend/earn gold)/`SetStarter(slot,id)`/`GetOwnedPlayers`/`GetStarters`/`TeamOverall` (avg of filled starters); auto-saves after every mutation. (Upgrades are in-session only — Roster stores ids only; extend later.) |
+| `TeamScreenUI.cs` | **(NEW)** The REAL hub Team screen (B12), built in code in NavigationManager's style (no prefabs/wiring; NavigationManager attaches it + passes itself). Live 2-3-2 formation of the 7 starters, a scrollable owned-bench + buyable-market list, team OVR + gold/diamonds, and working **BUY / SELL / UPGRADE / START** buttons → `RosterManager` (each refreshes the screen + the top-bar currency). Each card: rarity-coloured border (grey/blue/gold) + name/OVR/position + silhouette (or `portrait`). |
+| `SamplePlayerGenerator.cs` | **(NEW, Editor — `Assets/Editor/`)** **Tools → Generate Sample Players**: writes 21 sample `PlayerData` assets to `Resources/Players/` (all 7 positions, mixed rarities/ratings/prices; deterministic → idempotent). Run once so the Team screen has data. |
 | `MatchResultUI.cs` | Full-time result screen, built in code, hidden until `MatchTimer` calls `Show(title, outcome)`: dark 80% overlay, FULL TIME/FORFEIT title, "YOU n — n BOT" score from ScoreManager, colored winner line (cyan/red/yellow), PLAY AGAIN + MAIN MENU buttons; 0.5s unscaled-time fade-in (timeScale is 0 at match end). Singleton. |
 | `QuarterBreakUI.cs` | Between-quarters pause screen (built in code, **self-bootstrapping** via `Get()` — no scene object needed). `MatchTimer` raises it when a quarter ends (but the match isn't over): dimmed overlay + centred dark panel with **"QUARTER N COMPLETE"**, the score, and **RESUME** (→ next quarter's sprint duel) / **QUIT** (→ MainMenu if present, else stop play). Play freezes via `MatchContext.FreezeAll` until RESUME. Singleton. |
 | `PauseMenuUI.cs` | Pause system, built in code: 70x70 pause button top-right at (-20,-45) (sprite `Resources/Sprites/pause-button`; pulled down to clear the scoreboard), click → `Time.timeScale = 0` + centered 400x350 rounded panel with PAUSED + RESUME / QUIT / TEAM MANAGEMENT. QUIT opens a confirmation sub-panel ("If you quit, this match counts as a loss.") with YES QUIT (→ MainMenu) / CANCEL. TEAM MANAGEMENT is a placeholder (no functionality yet). Ignores clicks after full time (result screen owns the freeze). Works with mouse + touch. |
@@ -519,8 +525,9 @@ Also now 🟡 **WORKING (first pass — improve later, not 100% done):**
 - **Progression:** Div 3 (20 matches, 1st → cup → Div 2) → Div 2 → Div 1 → Champions League (repeatable).
 - **Match screen (Division clicked):** full-screen; two symmetrical pools (left = you + cards + cup/logo, right = opponent), center Division logo + "Game 1 of 15", **PLAY** button.
 
-## B12. Team Screen 🟡 PARTIAL (shell built: 7 empty position cards in a 2-3-2 formation, OVR 72 placeholder; no drag/swap/upgrade)
+## B12. Team Screen 🟡 PARTIAL (DATA FOUNDATION DONE: real player cards + local-save roster + a working Team screen; drag-swap, captain, portraits, max-17 enforcement still to do)
 > Foundation: **Player System Architecture** (end of Part A) — human roster (max 17), player card structure, rarity borders (Common/Rare/Legendary), images from Firebase Storage.
+- ✅ **DONE (foundation, 2026-06-17):** `PlayerData` (card SO) + `PlayerDatabase` (Resources catalog) + `Roster`/`RosterManager` (local-JSON guest save, buy/sell/upgrade/set-starter) + `TeamScreenUI` (live formation + bench/market + working buttons) + `SamplePlayerGenerator` (Tools menu, 21 sample cards). Purely additive — the 6v6 match is untouched. Firebase sync, drag-to-swap, portraits, captain, and the max-17 cap are still future.
 - Full-screen; pool with 7 positions in water polo formation + subs. Drag to swap, upgrade, set captain, sell, save lineup.
 
 ## B13. Transfers Screen 🟡 PARTIAL (shell built: 3 agent buttons with diamond prices, 6 fake player cards with BUY stubs, refresh countdown placeholder; no real market)
@@ -733,3 +740,32 @@ conceding-team restart. Off-sprinter swimmers also stop freezing during the duel
   — **Sprinter Forward Offset** (1) and **Formation Move Speed** (3) — with safe defaults; its
   existing fields are untouched. `ScoreManager`'s slots (Ball / score texts / teams) are
   unchanged. No new Inspector references on any object.
+
+## SESSION LOG — 2026-06-17b (player data foundation + real Team screen)
+
+Built the **player data foundation** (B9/B12/B13 groundwork). PURELY ADDITIVE — the 6v6 match
+is untouched (no edits to PlayerMovement/TeammateAI/BotMovement/WaterPoloAI/TeamSide/MatchContext
+or any match-scene object). All new scripts live in `Assets/Scripts/` (+ one Editor tool in
+`Assets/Editor/`); the only existing file changed is `NavigationManager.cs` (hub Team tab + live
+top-bar currency).
+
+- **Data layer (NEW):** `PlayerData` (ScriptableObject card), `PlayerDatabase` (lazy singleton,
+  loads `Resources/Players/`), `Roster` (serializable: owned ids + 7 starter slots + coins +
+  diamonds), `RosterManager` (self-bootstrapping singleton; local-JSON save in
+  `persistentDataPath/roster.json`; `BuyPlayer`/`SellPlayer`/`UpgradePlayer`/`SetStarter`/
+  `GetOwnedPlayers`/`GetStarters`/`TeamOverall`; auto-saves; seeds a default squad + funds on
+  first run and self-heals an empty roster once a catalog exists).
+- **Team screen (NEW):** `TeamScreenUI` replaces the placeholder Team tab — live 2-3-2 formation
+  of the real starters, a scrollable owned-bench + buyable-market list, team OVR + gold/diamonds,
+  and working BUY / SELL / UPGRADE / START buttons. Rarity-coloured card borders + silhouette
+  placeholders. `NavigationManager.BuildTeamScreen` now attaches it; the top bar's gold/diamond
+  read from `RosterManager` and refresh after each transaction.
+- **Editor tool (NEW):** Tools → Generate Sample Players → 21 sample cards into
+  `Resources/Players/` (all positions, mixed rarities/ratings; idempotent). **Run this once**
+  before opening the hub or the Team screen is empty (it shows an on-screen hint if so).
+- **Design notes:** owned cards are runtime `Clone()`s so upgrades never corrupt the source
+  `.asset` (upgrades are therefore in-session only — Roster stores ids; add an upgrade-levels map
+  later to persist them). No Firebase yet (guest-mode local save, per the plan).
+- **Clean console:** zero errors / zero warnings on all new + changed files (IDE diagnostics).
+- **Slot re-check:** nothing to wire — `RosterManager`/`PlayerDatabase` self-bootstrap and
+  `TeamScreenUI` builds itself. No match-scene objects or slots were touched.
