@@ -21,10 +21,24 @@ public class TeamManager : MonoBehaviour
     // Roster slot of the active player (0-based). The touch HUD shows it as "P{index+1}".
     public static int ActivePlayerIndex { get; private set; }
 
+    private static TeamManager instance;
+
+    void Awake() { instance = this; }
+
     void Start()
     {
         SetActive(0);
         UpdateDefenseModeText();
+    }
+
+    // Force control to a specific player (used by the sprint duel so the camera follows the
+    // human sprinter). No-op if the transform isn't one of our players.
+    public static void ActivatePlayer(Transform t)
+    {
+        if (instance == null || t == null) return;
+        for (int i = 0; i < instance.players.Length; i++)
+            if (instance.players[i] != null && instance.players[i].transform == t)
+            { instance.SetActive(i); return; }
     }
 
     void Update()

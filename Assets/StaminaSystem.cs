@@ -13,7 +13,7 @@ using UnityEngine;
 //     floating / idle (speed < idleSpeed) ........ +8%   (doubles to +16% after resting)
 //     normal swimming ............................ -3%
 //     holding the ball + moving .................. -5%
-//     sprinting (IsLooseHold or SprintHeld) ...... -12%  (-18% after 3s continuous)
+//     sprinting (sprintCharge > 0.5) ............. -15%  (0.2-0.5 charge -> -10%)
 //     excluded / out of play ..................... +15%  (resting on the sideline)
 //   Field-swimmer effects: < 40% speed ×0.8 ; < 20% ×0.6 + steal ×0.8 ; 0% sprint disabled.
 //   Second wind: hit 0%, ease off sprinting for 2s → a one-time +15% burst.
@@ -38,7 +38,10 @@ public class StaminaSystem : MonoBehaviour
     [SerializeField] private float idleRecovery = 8f;       // floating (speed < idleSpeed)
     [SerializeField] private float swimDrain = 3f;          // normal swimming
     [SerializeField] private float holdMoveDrain = 5f;      // holding the ball + moving
-    [SerializeField] private float sprintDrain = 12f;       // sprinting
+    [Tooltip("Drain while sprintCharge is high (> 0.5).")]
+    [SerializeField] private float sprintDrainHigh = 15f;   // sprintCharge > 0.5
+    [Tooltip("Drain while sprintCharge is mid (0.2-0.5).")]
+    [SerializeField] private float sprintDrainMid = 10f;    // 0.2 < sprintCharge <= 0.5
     [SerializeField] private float restRecovery = 15f;      // excluded / out of play
     [Tooltip("Speed (units/sec) under which a swimmer/keeper counts as floating/idle.")]
     [SerializeField] private float idleSpeed = 0.5f;
@@ -51,12 +54,13 @@ public class StaminaSystem : MonoBehaviour
     [Header("Tactical depth (field swimmers)")]
     [Tooltip("Idle this many continuous seconds → idle recovery doubles.")]
     [SerializeField] private float restBoostAfter = 5f;
-    [Tooltip("Sprint this many continuous seconds → drain jumps (legs burning).")]
-    [SerializeField] private float sprintFatigueAfter = 3f;
-    [SerializeField] private float sprintFatigueDrain = 18f;
     [Tooltip("After hitting 0%, ease off sprinting this long for a one-time second-wind burst.")]
     [SerializeField] private float secondWindStopTime = 2f;
     [SerializeField] private float secondWindAmount = 15f;
+
+    // sprintCharge thresholds (mirror PlayerMovement): boost begins at 0.2, "high" at 0.5.
+    const float SprintBoostCharge = 0.2f;
+    const float SprintHighCharge = 0.5f;
 
     // ---- public API ----
     public float StaminaPercent => maxStamina > 0f ? Mathf.Clamp01(currentStamina / maxStamina) : 0f;
@@ -72,7 +76,6 @@ public class StaminaSystem : MonoBehaviour
 
     // tactical-depth timers / state (field swimmers)
     private float idleSince = -1f;
-    private float sprintSince = -1f;
     private float exhaustedStopTime;
     private bool secondWindUsed;
 
@@ -148,14 +151,11 @@ public class StaminaSystem : MonoBehaviour
         bool moving = rb != null && rb.linearVelocity.magnitude >= idleSpeed;
         bool holding = (pm != null && pm.IsHolding) || (agent != null && agent.IsHolding);
 
-        // Sprint is a player-only input (bots have no sprint concept). Gate the DRAIN by
-        // stamina so that at 0% the player is "normal swim only" (sprint disabled) and can recover.
-        bool rawSprint = pm != null && (pm.IsLooseHold || pm.SprintHeld);
-        bool sprinting = rawSprint && currentStamina > 0f;
-
-        // continuous-sprint timer (sprint fatigue)
-        if (sprinting) { if (sprintSince < 0f) sprintSince = Time.time; }
-        else sprintSince = -1f;
+        // Tap-charge sprint (Task 5): the player's sprintCharge picks the drain tier. Bots
+        // have no charge (sprintCharge stays 0) so they never hit the sprint tiers. Gated by
+        // stamina so 0% = "normal swim only" (the meter can't drain you while already empty).
+        float charge = pm != null ? pm.SprintCharge : 0f;
+        bool sprinting = charge >= SprintBoostCharge && currentStamina > 0f;
 
         float rate;
         bool idleState = false;
@@ -166,8 +166,7 @@ public class StaminaSystem : MonoBehaviour
         }
         else if (sprinting)
         {
-            bool fatigued = Time.time - sprintSince >= sprintFatigueAfter;
-            rate = -(fatigued ? sprintFatigueDrain : sprintDrain); // legs burning after 3s
+            rate = -(charge > SprintHighCharge ? sprintDrainHigh : sprintDrainMid); // >0.5 vs 0.2-0.5
         }
         else if (holding && moving)
         {
@@ -189,6 +188,7 @@ public class StaminaSystem : MonoBehaviour
         currentStamina = Mathf.Clamp(currentStamina + rate * dt, 0f, maxStamina);
 
         // ---- second wind: at 0%, ease off sprinting for a bit → one-time burst ----
+        bool rawSprint = charge >= SprintBoostCharge; // "easing off" = letting the meter fall below the boost point
         if (currentStamina <= 0f)
         {
             if (!rawSprint) exhaustedStopTime += dt; else exhaustedStopTime = 0f;

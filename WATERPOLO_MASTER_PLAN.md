@@ -59,20 +59,20 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 
 | File | Role |
 |---|---|
-| `PlayerMovement.cs` | Human control of the active player: move, grab (E), shoot (hold Space), aim line, **directional charged pass** (hold B — fires where the facing triangle/joystick points with a tunable `passAssist`, NOT auto-homed; `FindPassAssistTarget`). Ball held via **parenting** to the player; reports possession to MatchContext. Has `TakeOverHeldBall()` for clean control transfer, `TouchBlockSteal()`. |
+| `PlayerMovement.cs` | Human control of the active player: move, grab (E), **charged shoot** (hold Space; time-based `shotChargeTime` 0.7s, min-speed floor so a tap never drops), aim chevron + **power bar** (world-unit `powerBarWidth` 1.2 — >2× the keeper bar, grows left→right), **directional charged pass** (hold B — fires where the facing triangle/joystick points with a tunable `passAssist`, NOT auto-homed; `FindPassAssistTarget` scores teammates by dot with `lastDirection`). **Shot height** (`shotHeight` 0..1, charges in lock-step with power: low 0–0.3 / mid / high 0.7–1; read by Goalkeeper + GoalkeeperAnimator for the dive tier). **Skip shot** (hold Q while charging Space → fast LOW bounce shot via `BallFlight`). **Lob pass** (hold F while passing → high slow arc with a water shadow; AI interception cut ~60%). Ball held via **parenting**; reports possession to MatchContext. `TakeOverHeldBall()` for clean control transfer; `TouchBlockSteal()` (Block button — half steal chance, 50% foul-on-miss). **Stamina hooks** (`StaminaSpeedMult`/`StaminaSprintMult`/`StaminaSprintBlocked`/`StaminaStealMult`/`StaminaPercent01`, neutral 1 by default). |
 | `TeammateAI.cs` | Thin component on each player. When NOT human-controlled, runs the shared `WaterPoloBrain`. Implements `IAgentBody`. |
 | `BotMovement.cs` | Thin component on each bot. Always runs `WaterPoloBrain`. Implements `IAgentBody`. |
 | `WaterPoloAI.cs` | **The shared brain** + `IAgentBody` interface. All AI decisions live here once: carrier (shoot/pass/**drive**/dribble), support (get open), presser (nearest chases), defender (hold shape). 🟡 New: **drives** (beaten marker + clear lane → burst to 2m, shoot/kick-out/abort) and **picks/screens** (nominated screener plants on the carrier's marker; rubbing past = short "beaten" boost). Works, needs tuning. **This is C# state-machine AI — NOT an LLM.** |
 | `TeamSide.cs` | One per team. Holds goals + roster (`members`), formation math (auto-spreads ANY number of players), passing/positioning logic, **attacking-spacing + tactics tunables (center-feed, counter, shot-quality threshold, free-throw clearance), shot-quality + pass-risk scoring, and 4 defense modes — Press/Zone/Drop/MPress — incl. man-up 4-2 umbrella + man-down zone shapes**. 🟡 New: **dynamic Centre** (fights for inside water goal-side of its guard at 2m), wider lanes + weak-side wing drift, receiver-shot-quality pass bonus, drive/screen helpers (`DrivePoint`, `GetScreenSpot`, `FindScreenerForCarrier`), and **bot adaptive defense** (`EvaluateDefenseMode`, auto-detected `isAI`: Drop when man-down / protecting a late lead / Centre conceded 2+; Press otherwise). Scales 2v2 → 6v6 with no code change. |
-| `MatchContext.cs` | Singleton "match truth": ball position, possession + last toucher (`NoteTouch` for deflections), post-release grab cooldown, freeze flag, shot-clock grab-ban, kickoff-pass flag, **free-throw state, keeper-hold flag, counterattack window, player goal-line clamp (`playerLimitX`)**, halftime `SwapEnds()`, `GiveBallTo()` / `ForceDropHeldBall()`, `EnemyOf()`. |
-| `TeamManager.cs` | On `GameManager`. Auto-switches control to the ball-holder; manual **C** switch (skips excluded); **Z** cycles defense (Press/Zone/Drop/MPress); never auto-activates excluded players. |
-| `Goalkeeper.cs` | Kinematic keeper sliding along its physical goal line tracking ball Y (stays on its goal after the halftime swap). **Grab-and-control:** collects a slow loose ball near its net, holds briefly, then distributes to an open teammate. **Snatch:** an enemy carrier within `keeperSnatchDistance` (0.8u) is stripped with 100% success — no roll (`TrySnatchFromCarrier`; respects free throws, not vs another keeper). **Bot keeper** auto-distributes after `keeperHoldSeconds` (0.8s) OR immediately if any opponent is within `keeperPanicDistance` (2.5u) — anti-crowd. **Player keeper** passes out on **B**, the touch **PASS OUT** button (`RequestPassOut()`), or a `playerKeeperMaxHold` (3s) safety timeout. A keeper hold is NOT a possession change — the shot clock keeps ticking until the pass-out. |
+| `MatchContext.cs` | Singleton "match truth": ball position, possession + last toucher (`NoteTouch` for deflections), post-release grab cooldown (`releaseGrabDelay` 0.5s), freeze flag, shot-clock grab-ban, kickoff-pass flag, **free-throw state, keeper-hold flag, counterattack window, player goal-line clamp (`playerLimitX`)**, halftime `SwapEnds()`, `GiveBallTo()` / `ForceDropHeldBall()`, `EnemyOf()`, **`IsProtectedKeeper(carrier)`** (the keeper-steal safe-zone rule — true while a keeper carries the ball inside its safe zone, Task 5). |
+| `TeamManager.cs` | On `GameManager`. Auto-switches control to the ball-holder after `autoSwitchDelay` (0.5s — so you keep control to chase your own loose ball); manual **C** / touch SWITCH (skips excluded); **Z** cycles defense (Press/Zone/Drop/MPress); never auto-activates excluded players. Exposes static **`ActivePlayer`** + **`ActivePlayerIndex`** (read by `CameraFollow` and the stamina HUD). |
+| `Goalkeeper.cs` | Kinematic keeper sliding along its physical goal line tracking ball Y (stays on its goal after the halftime swap). **Save % system:** a fast shot reaching its hands rolls `baseSaveChance` 0.65 minus penalties for HIGH (height >0.7), POWER (>9 u/s) and SKIP shots, plus a stamina penalty when tired; a slow ball is auto-collected. **Snatch:** an enemy carrier within `keeperSnatchDistance` (0.8u) is stripped with 100% success, no roll (`TrySnatchFromCarrier`; respects free throws, not vs another keeper). **Player keeper = full control:** while your own keeper holds the ball it plays like a field swimmer — free **2D movement** at `keeperMoveSpeed` (4), sprint, a charged shot fired in the **joystick/aim** direction (never auto-aimed at goal), and a **directional pass** (`FindKeeperPassTarget` scores ALL teammates by dot(aim,dir)−dist×0.05, no cone; reads the live `TouchControls.Instance` joystick, else `lastDir`). **No auto-pass** — fully manual; it SWIMS back to its line (never teleports) after you shoot/pass. **Safe zone (Task 5):** within `KeeperSafeZoneRadius` (1.5u) of the goal line the carrying keeper is unstealable; carry it OUTSIDE and `keeperLeftSafeZone` latches → enemies steal normally (exposed via `MatchContext.IsProtectedKeeper`; `OnBallStolen()` clears the hold on a successful strip). **Organic idle** (not holding, ball far): small random X drift 0.1–0.3u every 2–4s (≤0.4u off the line) + a subtle ±0.05u Y sine micro-bob. **Bot keeper** auto-distributes after `keeperHoldSeconds` (0.8s) OR immediately if crowded within `keeperPanicDistance` (2.5u) — UNCHANGED. **Stamina-aware** (tired = worse saves, no sprint at 0%). A keeper hold is NOT a possession change — the shot clock keeps ticking until the pass-out. |
 | `Goal.cs` | Trigger on each net; reports `goalSide` ("Left"/"Right") to ScoreManager. |
-| `ScoreManager.cs` | Team-based score (credits the team attacking that net → survives the halftime swap); conceding-team kickoff restart; **ignores held-ball goals**. |
+| `ScoreManager.cs` | Team-based score (credits the team attacking that net → survives the halftime swap) shown on **separate `playerScoreText` + `botScoreText`** TMP fields; **ignores held-ball goals**; exposes `HomeScore`/`AwayScore` (read by the camera's goal-shake). **Goal restart (NOT a quarter start → NO sprint duel):** 4 phases — (1) ball loose at exact (0,0), play freezes, touch UI hidden + `ctx.ResetBallTouch()` (camera → overview), a `goalFreezeSeconds` (1s) celebration; (2) both teams snap into the **natural restart spread** (`TeamSide.SnapToRestartFormation(hasBall)` — conceding = attacking spread, scoring = sat-back defensive, never a rigid line), the **conceding team** is given the ball at exact centre (`ctx.GiveBallTo`) + `ctx.ResetBallTouch()` again to hold the overview through the pause; (3) a **`postGoalPauseSeconds` (3s) silent pause** (frozen, ball held at centre, no UI/countdown); (4) `Unfreeze` + `SetKickoffPass(conceding)` + `ctx.MarkBallTouched()` (camera eases back to follow) + restore UI + reset shot clock — the team in possession begins the attack naturally. |
 | `MatchTimer.cs` | Quarters (90s) + win/lose/draw; pauses the clock during freezes; triggers the sprint duel each quarter; halftime swap; `ForfeitMatch()`. At full time / forfeit it calls `MatchResultUI.Show()` (falls back to the bare `resultText` if no MatchResultUI in the scene). |
 | `ShotClock.cs` | 30s per-possession clock (singleton): resets on possession change / goal / defensive exclusion; turnover + grab-ban at 0; pauses when frozen, **during a free throw**, or match over; **a keeper hold does NOT reset it (keeps ticking until the keeper distributes)**. |
 | `ExclusionManager.cs` | Fouls + exclusions (singleton): failed steal = foul → **free throw** to the fouled team; 2 fouls in 10s → 5s exclusion (roster slot nulled → AI auto-adapts) **or a PENALTY if the victim was in the 2m zone**; 3rd → removal; forfeit < 4 players; HUD countdowns. 🟡 New: **virtual foul** when the victim is an inside-water Centre (Centres draw exclusions/penalties faster; toggle `centerFoulBoost` — may be too hot, watch in testing). |
-| `SprintDuel.cs` | Quarter-start duel (singleton): line-up + freeze, whistle, two sprinters race (human mashes Space), winner grabs → kickoff pass. |
+| `SprintDuel.cs` | Quarter-start duel (singleton), fully rebuilt. Builds its OWN screen-space UI in code (no wiring): a big centred **"5 → 4 → 3 → 2 → 1 → GO!" countdown** (1s each, scale-pulse per number; `countdownStart` 5) + a "TAP SPACE / TAP SPRINT FOR SPEED" hint, then a tall **vertical SPEED bar on the left** (red→orange→green, fills with the human's speed) under a pulsing "TAP FASTER!". Ball is pinned to EXACT (0,0,0) with physics OFF during the countdown, goes live at GO. At GO! the two sprinters race (bot fixed speed; human base speed + each **Space / LeftShift tap OR a tap anywhere on screen** boosts toward a cap, decays) AND **every other swimmer immediately jogs into formation at ~60% speed** (`formationMoveSpeed`, both teams alike — `RestartFormationSpot`, position-based so it ignores the freeze; no statues, no waiting for possession). The designated sprinter starts slightly ahead of its line (`sprinterForwardOffset`) so it's clearly the sprinter, not the keeper, and is made the **active player**. Runs at **quarter starts ONLY** (Q1 via `MatchTimer.Start`, Q2–Q4 via `AdvanceToNextQuarter`) — **never after goals/penalties/turnovers** (a goal restart is a separate, duel-free system in `ScoreManager`). `StartDuel` calls `ctx.ResetBallTouch()` so the camera holds the wide overview until a sprinter grabs. First within grabDistance wins → grabs → un-freeze → kickoff pass; the rest transition straight into normal AI from wherever they jogged to. **Hides the gameplay touch UI** (`TouchControls.SetGameplayVisible(false)`) for the duel's duration and restores it on finish. The TAP-for-speed mechanic lives ONLY here — regular play is hold-to-sprint. |
 | `EventFeed.cs` | Rolling last-5 event log (singleton): goals, exclusions, turnovers, out-of-bounds, forfeit, halftime. |
 | `BallOutOfBounds.cs` | Top/bottom-wall out rule: a loose ball at the edge → possession to the nearest player of the team that didn't touch it last. |
 | `PenaltyManager.cs` | Penalty shot (singleton, B16.11): on an exclusion-level foul inside the 2m zone, freezes play, puts the fouled shooter on the penalty spot (|x|≈2.47) facing the open corner, lines everyone else up **behind the shooter**. Human charges with **Space** within an aim cone; AI auto-fires after a delay (with a miss chance). The freeze lifts on the shot; a goal flows through the normal `Goal` path. |
@@ -81,14 +81,20 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 | `PlayerAnimator.cs` | Drives Animator for the human player. Reads speed from Rigidbody2D, IsHolding from PlayerMovement. Fires IsShooting trigger on fast release, IsStealing trigger on every grab attempt. Flips SpriteRenderer horizontally based on velocity.x. Defend animation triggers only when enemy carrier is within 1.5 units. |
 | `BotAnimator.cs` | Drives Animator for AI bots. Reads state via IAgentBody. Same steal/defend/flip logic as PlayerAnimator. Reads isBlueTeam from BotMovement and swaps Animator controller to BlueAnimation.controller at Awake() if true. |
 | `AnimationClipBuilder.cs` | Editor tool (Tools menu). Builds 7 animation clips (idle/swim/sprint/hold/throw/defend/steal) from sliced sprite sheets, assigns them to the Animator controller states, and wires all transitions. Two menu items: Tools/Build Water Polo Animations (red) and Tools/Build Blue Team Animations (blue). Creates BlueAnimation.controller programmatically if missing. |
-| `GoalkeeperAnimator.cs` | Drives Animator on KeeperLeft and KeeperRight. Reads ball velocity and position from MatchContext to compute DiveState (0–7): idle, dive left/right, dive bottom-left/right, dive top-left/right, save. Single integer Animator parameter DiveState. SpriteRenderer flipX set in Awake based on keeper side. Shot height placeholder (0.5 = mid) ready for future height-zone system. |
+| `GoalkeeperAnimator.cs` | Drives the Animator on KeeperLeft/KeeperRight. Reads ball velocity from MatchContext + the shot's **height** (`PlayerMovement.ShotHeight` via `MatchContext.LastReleaser`; AI shots → 0.5 mid) to compute **DiveState** (0–7): idle, dive left/right, dive bottom-left/right, dive top-left/right, save. Low shot → bottom dive, high → top, mid → side; save when this keeper has caught the ball. A **`BallFlight.KeeperFooled`** skip shot pins it to the mid (side) dive — no reaction. Single int param `DiveState`; SpriteRenderer flipX set in Awake by keeper side. |
 | `GoalkeeperAnimationBuilder.cs` | Editor tool (Tools → Build Goalkeeper Animations). Builds 8 animation clips from goalkeeper_sheet.png frames, assigns them to GoalkeeperAnimation.controller states, wires DiveState int parameter and Any State transitions. Idempotent. |
-| `TouchControls.cs` | Runtime-built mobile touch UI (no prefabs): virtual joystick bottom-left (unchanged) + **3 circular image buttons** bottom-right (all 180x180) that swap icon + behaviour with possession, + a **PASS OUT** button. Positions (from bottom-right anchor): top (-280,280), bottom-right (-160,100), bottom-left (-380,100). **Attack** (we hold / loose): Sprint (top) / Shoot (bottom-right) / Pass (bottom-left). **Defense** (enemy holds): Switch (top) / Defend (bottom-right) / Block (bottom-left). Mode read every frame from `MatchContext.PossessingTeam` (==BotTeam → defense, else attack), 0.1s fade-out→swap→fade-in; icons load from `Resources/Sprites/` (`sprint/shoot/pass/Defend/switch/block`). Attack actions feed `PlayerMovement.SetTouchInput` (merged with keyboard via `\|\|`); Switch rides `TouchSwitchDown` (TeamManager); Block calls `PlayerMovement.TouchBlockSteal()` (half steal chance, 50% foul-on-miss, 1.5u reach); Defend feeds a chase-the-enemy-carrier (else nearest enemy) axis so the proximity defend animation fires. **PASS OUT** (centre-right, `pass.png` + "PASS!" label) shows only while the player's own keeper holds the ball (hides the 3 buttons) → `Goalkeeper.RequestPassOut()`. Press feedback = scale to 0.9x; icon alpha 1.0. Inspector fields: `iconAlpha` 1.0, `actionButtonSize` 180, `mainButtonSize` 180, `ringAlpha`/`knobAlpha` (joystick). Visible on mobile, or in Editor when `showInEditor`. |
+| `TouchControls.cs` | Runtime-built mobile touch UI (no prefabs), **singleton** (`Instance` + `JoystickAxis`, read by the keeper for its aim): virtual joystick bottom-left + **3 circular image buttons** bottom-right (`actionButtonSize`/`mainButtonSize` 270) that swap icon + behaviour with possession. **Attack** (we hold / loose): Sprint (top) / Shoot (bottom-right) / Pass (bottom-left). **Defense** (enemy holds): Switch (top) / Defend (bottom-right) / Block (bottom-left). Mode read each frame from `MatchContext.PossessingTeam` (==BotTeam → defense), SmoothStep fade-out→swap→fade-in (0.22s); icons from `Resources/Sprites/` (`sprint/shoot/pass/Defend/switch/block`). Attack actions feed `PlayerMovement.SetTouchInput` (merged with keyboard via `\|\|`); Switch rides `TouchSwitchDown`; Block → `TouchBlockSteal()`; Defend feeds a chase-the-carrier axis. **Player-keeper control:** while your own keeper holds the ball the 3 attack buttons + joystick route to the `Goalkeeper` (Shoot/Pass/Sprint) — the old single **PASS OUT** button is RETIRED. **Stamina HUD panel** above the joystick: `P#` (or "GK") + a green→yellow→red fill bar reading `PlayerMovement`/`Goalkeeper.StaminaPercent01` + `TeamManager.ActivePlayerIndex` (Lerp-smoothed; label pulses red below 20%). Press feedback = scale to 0.9x. Visible on mobile, or in Editor when `showInEditor`. |
 | `PoolLineFloat.cs` | Standalone gentle bob (±0.04u) + sway (±1.5°) for the 12 pool lane-line sprites; random phase/speed (0.6–0.9 Hz) per object; offsets from the Start pose so it never drifts. |
 | `MainMenuUI.cs` | MainMenu scene. Builds the whole main menu in code at runtime: canvas (1280x720), background + logo from `Assets/Resources/Sprites/`, PLAY/SETTINGS/QUIT buttons with hover scale + cyan-outline TMP labels, 1s fade-in, version footer. PLAY → **HubScene**. |
 | `NavigationManager.cs` | HubScene. The whole hub-navigation shell built in code (design + navigation only, NO real data): persistent top bar (club logo placeholder, "My Club", gold 1000 + diamond 50 displays, "SET" settings stub — the default TMP font has no ⚙ glyph) + bottom nav (CAREER/TEAM/TRANSFERS/MY CLUB/CHALLENGES, active tab cyan), 5 placeholder screens with 0.3s fade transitions. Career (Division 3 badge, fake 5-team standings, PLAY → SampleScene), Team (7-card 2-3-2 formation, OVR 72), Transfers (3 agent buttons, 6 fake player cards with BUY stubs), My Club (STADIUM/POOL upgrade cards + customize stubs), Challenges (3 daily cards, greyed CLAIM). All buttons log "coming soon". |
 | `MatchResultUI.cs` | Full-time result screen, built in code, hidden until `MatchTimer` calls `Show(title, outcome)`: dark 80% overlay, FULL TIME/FORFEIT title, "YOU n — n BOT" score from ScoreManager, colored winner line (cyan/red/yellow), PLAY AGAIN + MAIN MENU buttons; 0.5s unscaled-time fade-in (timeScale is 0 at match end). Singleton. |
+| `QuarterBreakUI.cs` | Between-quarters pause screen (built in code, **self-bootstrapping** via `Get()` — no scene object needed). `MatchTimer` raises it when a quarter ends (but the match isn't over): dimmed overlay + centred dark panel with **"QUARTER N COMPLETE"**, the score, and **RESUME** (→ next quarter's sprint duel) / **QUIT** (→ MainMenu if present, else stop play). Play freezes via `MatchContext.FreezeAll` until RESUME. Singleton. |
 | `PauseMenuUI.cs` | Pause system, built in code: 70x70 pause button top-right at (-20,-45) (sprite `Resources/Sprites/pause-button`; pulled down to clear the scoreboard), click → `Time.timeScale = 0` + centered 400x350 rounded panel with PAUSED + RESUME / QUIT / TEAM MANAGEMENT. QUIT opens a confirmation sub-panel ("If you quit, this match counts as a loss.") with YES QUIT (→ MainMenu) / CANCEL. TEAM MANAGEMENT is a placeholder (no functionality yet). Ignores clicks after full time (result screen owns the freeze). Works with mouse + touch. |
+| `CameraFollow.cs` | **FIFA-style follow camera** on **Main Camera** — self-contained, no Inspector wiring (pulls `TeamManager.ActivePlayer` + `MatchContext`). **Start/post-goal overview (Task 1):** until the ball is first touched after any reset (game start, after a goal, between quarters — `MatchContext.BallTouchedSinceReset`) it holds the wide pool overview centred on (0,0) at **maxSize 5.0**, no following; the first grab eases it smoothly into the normal follow. Tracks a weighted point between the active player (60%) and the ball (40%) — 70/30 when the ball is loose — via `SmoothDamp` (speeds up to `switchSpeed` 8 for 0.5s on a player switch). **Dynamic orthographic zoom** (`Mathf.Lerp`): 4.2 base → 5.0 (player/ball far) → 4.5 (`SprintHeld`) → 3.8 (you control the keeper). HARD pool-boundary clamps on the camera centre (X ±5.5, Y ±3.2); Z locked −10. **Screen shake** (additive): goal 0.15/0.4s (polls `ScoreManager` total), powerful shot (ball >10 u/s) 0.05/0.15s. Managers missing → parks at (0,0,−10) size 5, no errors. All tunables serialized. |
+| `StaminaSystem.cs` | FIFA-style stamina on every field swimmer + keeper. **Auto-installs at runtime** (`RuntimeInitializeOnLoadMethod`) onto any `PlayerMovement`/`IAgentBody`/`Goalkeeper` lacking one → 14 objects (6 players, 6 bots, 2 keepers), zero wiring (the 2 keepers keep a hand-tuned copy). **Field drain/recovery per sec:** idle +8% (×2 after 5s rest), swim −3%, hold+move −5%, sprint −12% (−18% after 3s fatigue), excluded +15%; **second wind** at 0% (ease off sprint 2s → +15% burst). **Effects:** <40% speed ×0.8; <20% speed ×0.6 + steal ×0.8; 0% sprint disabled. **Keeper:** track −2%, hold −1%, idle +10%; tired = worse saves, no sprint at 0%. Writes only neutral hooks (deleting it leaves the game identical); HUD lives in `TouchControls`. |
+| `BallFlight.cs` | Ball VFX, **auto-added to the Ball at runtime** by `PlayerMovement` (no wiring), singleton. Speed-gated **TrailRenderer** (>5 u/s); **high-shot** scale swell (≤1.2×) + warm glow; **skip-shot** bounce 1.5u before the goal (Y jitter, squash + expanding water ripple, 35% `KeeperFooled`); **lob** breathing blue-grey water shadow; **spin** (shots 54°/s, fast loose 18°/s, lobs 9°/s — none on skip / plain pass, only >6 u/s, snaps upright on catch). All scaling uniform, recomputed from a clean base each frame (never drifts on a re-parent). Exposes `ShotHeight`, `SkipActive`/`SkipBounced`, `LobActive`/`LobTeam`, `KeeperFooled`. |
+| `GoalColliderFixer.cs` | Editor tool (**Tools → Fix Goal Colliders**). Resizes GoalRight/GoalLeft Box Collider 2D to the visual goal mouth (size (4,15) → world ≈0.8×3.0u at scale 0.2). Idempotent; marks the scene dirty (Ctrl+S to save). |
+| `PlayerLabel.cs` | ⬜ **NOT YET BUILT** (planned). Future: world-space player-number labels floating above each swimmer. |
 
 **Architecture rule for any AI:** keep `TeamSide` + `MatchContext` + `WaterPoloBrain`. It is roster-size-agnostic by design. To scale teams: add player/bot objects, drop them into the team `members` arrays + TeamManager arrays; formation & AI scale automatically.
 
@@ -101,21 +107,25 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 - **Walls** (empty parent) → `WallTop`/`WallBottom`/`WallLeft`/`WallRight` — Squares, **Box Collider 2D (Is Trigger OFF)** at pool edges (±8 x, ±4.5 y). Top/bottom also act as out-of-bounds lines (handled in code by `BallOutOfBounds` via the ball's y — no wiring); left/right keep normal bounce physics.
 - **PoolLines** — thin decorative strips (2m / 5m / half markings). Visual only, no colliders.
 
+**Camera**
+- **Main Camera** — Orthographic, starts at **Size 5** / Pos (0,0,−10). Has **`CameraFollow`** (self-contained, no wiring): on play it eases the zoom to 4.2 base and follows the weighted active-player/ball point with dynamic zoom (3.8–5.0), hard boundary clamps, and goal/shot screen-shake. Z stays −10. (URP camera.)
+
 **Ball**
-- **Ball** — Circle (~0.4), yellow, **Tag = "Ball"**, Order 1. Rigidbody2D: Gravity 0, **Linear Damping 2.5** (was 4 — passes were dying mid-flight), Angular Damping 0.05, Collision Detection = Continuous. Circle Collider 2D (trigger OFF). Also has **`BallTouchTracker`** (no refs — pulls from MatchContext; tracks loose-ball deflections for the out rules).
+- **Ball** — Circle (~0.4), yellow, **Tag = "Ball"**, Order 1. Rigidbody2D: Gravity 0, **Linear Damping 2.5** (was 4 — passes were dying mid-flight), Angular Damping 0.05, Collision Detection = Continuous. Circle Collider 2D (trigger OFF). Also has **`BallTouchTracker`** (no refs — pulls from MatchContext; tracks loose-ball deflections for the out rules). Plus **`BallFlight`** is auto-added at runtime (trail / skip / lob / high-shot VFX + spin — no wiring).
 
 **Players (your team, 6) — attack one end / defend the other; sides SWAP at halftime**
 - **Player1 … Player6** — Circles (~0.5), red, Order 1. Each has: Rigidbody2D (Gravity 0, Freeze Rotation Z), Circle Collider 2D, a child **AimLine** (Line Renderer).
   - `PlayerMovement`: **Ball = Ball**, **Aim Line = its OWN AimLine child**, speed/grab/shoot/pass/steal tunables.
   - `TeammateAI`: **My Team = PlayerTeam** (+ AI tunables).
   - **Slot index in PlayerTeam.Members = role:** 0 Center, 1 Center-Back, 2/3 Wings, 4/5 Flats.
+  - Also Animator + `PlayerAnimator`, and a **`StaminaSystem`** that **auto-installs at runtime** (no slot to wire).
 
 **Bots (enemy team, 6)**
-- **Bot1 … Bot6** — Circles (~0.5), magenta. Each: Rigidbody2D + Circle Collider 2D + `BotMovement`: **My Team = BotTeam** (+ tunables).
+- **Bot1 … Bot6** — Circles (~0.5), magenta. Each: Rigidbody2D + Circle Collider 2D + `BotMovement`: **My Team = BotTeam** (+ tunables). Plus Animator + `BotAnimator` and a runtime-auto-installed **`StaminaSystem`**.
 
 **Goals & keepers**
-- **GoalRight** (Pos (7,0)) / **GoalLeft** (Pos (-7,0)) — Squares (0.5,3), **Box Collider 2D Is Trigger ON**. `Goal`: Goal Side = "Right"/"Left", **Score Manager = ScoreManager**.
-- **KeeperRight** (~(6.3,0)) / **KeeperLeft** (~(-6.3,0)) — thin tall Squares. Box Collider 2D (trigger OFF) + Rigidbody2D **Kinematic** (Use Full Kinematic Contacts ON, Gravity 0). `Goalkeeper`: **Ball = Ball**, Track Speed 4, Min/Max Y, and grab-and-control fields: Keeper Grab Distance 1.2, Keeper Grab Max Speed 3, **Keeper Snatch Distance 0.8** (strip a point-blank enemy carrier, 100% no roll), **Keeper Hold 0.8** (bot auto-distribute), **Keeper Panic Distance 2.5** (bot distributes now if crowded), Player Keeper Max Hold 3, Hold Offset 0.5. Keepers guard their physical goal even after the halftime swap.
+- **GoalRight** (Pos (7,0)) / **GoalLeft** (Pos (-7,0)) — Squares (0.5,3), **Box Collider 2D Is Trigger ON**, sized to the goal mouth via **Tools → Fix Goal Colliders** (`GoalColliderFixer`: size (4,15) ≈ 0.8×3.0u world at scale 0.2). `Goal`: Goal Side = "Right"/"Left", **Score Manager = ScoreManager**.
+- **KeeperRight** (~(6.3,0)) / **KeeperLeft** (~(-6.3,0)) — thin tall Squares. Box Collider 2D (trigger OFF) + Rigidbody2D **Kinematic** (Use Full Kinematic Contacts ON, Gravity 0). `Goalkeeper`: **Ball = Ball**, Track Speed 4, Min/Max Y, and grab-and-control fields: Keeper Grab Distance 1.2, Base Save Chance 0.65, **Keeper Snatch Distance 0.8** (strip a point-blank enemy carrier, 100% no roll), **Keeper Hold 0.8** (bot auto-distribute), **Keeper Panic Distance 2.5** (bot distributes now if crowded), Hold Offset 0.5, **Keeper Move Speed 4** (free-roam while you hold the ball). Keepers guard their physical goal even after the halftime swap. Each keeper also has an **Animator + `GoalkeeperAnimator`** (DiveState, `GoalkeeperAnimation.controller`) and a hand-added **`StaminaSystem`** (tuned keeper drain rates).
 
 **Managers — all components on ONE `GameManager` GameObject:**
 - `MatchContext`: **Ball = Ball, Player Team = PlayerTeam, Bot Team = BotTeam**, Release Grab Delay 0.5 (was 0.35 — gives passes/drops time to travel), Free Throw AI Hold 3, Player Limit X 6.9, Counter Window 4.
@@ -131,11 +141,11 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 **Other manager objects (empty GameObjects)**
 - **PlayerTeam** — `TeamSide`: Name "Player", **Attack Goal = GoalRight, Defend Goal = GoalLeft**, **Members = [Player1..6]**, formation + AI tunables, plus **attacking-spacing** (Teammate Spacing 2, Support Pass Range 5, Support Blend 0.5, Pass Openness Weight 1.5) and **tactics** (Center Feed Weight 3, Counter Runners 2, Drop Sag 0.5, Shot Quality Threshold 0.30, Free Throw Clearance 2.2) fields. (Defense mode is runtime-only, defaults Press.)
 - **BotTeam** — `TeamSide`: Name "Bot", **Attack Goal = GoalLeft, Defend Goal = GoalRight**, **Members = [Bot1..6]**.
-- **ScoreManager** — `ScoreManager`: **Ball = Ball, Score Text = ScoreText, Player Team = PlayerTeam, Bot Team = BotTeam**, Goal Freeze Seconds 1.
+- **ScoreManager** — `ScoreManager`: **Ball = Ball, Player Score Text = PlayerScoreText, Bot Score Text = BotScoreText, Player Team = PlayerTeam, Bot Team = BotTeam**, Goal Freeze Seconds 1.
 - **ExclusionManager** — `ExclusionManager`: **Match Timer = MatchTimer, Exclusion Text = ExclusionText**; Foul Window 10, Fouls For Exclusion 2, Exclusion 5, Max Exclusions 3, Min Players 4, Foul Steal Lockout 1.5, Penalty Zone X 4.28.
 
 **UI — Canvas (TextMeshPro), + EventSystem (auto)**
-- **ScoreText** ("YOU 0 - 0 BOT"), **TimerText** ("1:30"), **QuarterText** ("Q1"), **ResultText** (hidden until full time), **DefenseModeText** ("DEFENSE: PRESS/ZONE"), **ExclusionText** (exclusion countdowns), **ShotClockText** ("30"), **EventFeedText** (last 5 events), **PenaltyText** ("PENALTY!", hidden until a penalty; wired into `PenaltyManager.Penalty Text`).
+- **ScoreboardBG** (Raw Image, `score-tab.png`) holding **PlayerScoreText** + **BotScoreText** (separate score fields) and **PlayerNameText** + **BotNameText**; **TimerText** ("1:30"), **QuarterText** ("Q1"), **ResultText** (hidden until full time), **DefenseModeText** ("DEFENSE: PRESS/ZONE"), **ExclusionText** (exclusion countdowns), **ShotClockText** ("30"), **EventFeedText** (last 5 events), **PenaltyText** ("PENALTY!", hidden until a penalty; wired into `PenaltyManager.Penalty Text`). The **stamina HUD panel** (P#/GK + bar) is built at runtime inside `TouchControls` — not a Canvas object.
 
 ## A7. Animation system (Visual Pass 1 — COMPLETE)
 
@@ -169,9 +179,17 @@ Filter Mode: Bilinear, Max Size: 4096
 - `defensive_stance__arms_out_wide[_blue].png`
 - `steal_snatch_attempt[_blue].png`
 
-**Sprint mechanic:**
-- Player: Shift key = 2x speed multiplier. Shift + ball = IsLooseHold true
-  (ball stays in hand but grab distance for enemies doubles — easier to strip)
+**Sprint mechanic (HOLD-to-sprint in regular play — June 2026):**
+- Player: HOLD **LEFT SHIFT** (keyboard) or the **Sprint button** (touch) → sprint at
+  `moveSpeed * sprintMultiplier` (2× by default) while moving. Release = stop. `SprintHeld` is
+  the raw held state on the active player; `SprintCharge` is now just a **0/1 proxy** of it
+  (1 = sprinting) so the camera zoom / animator / stamina drain / teammate-hustle keep reading
+  one value. `SprintHeld` + ball = IsLooseHold (enemy grab range doubles). **No head sprint
+  bar** in regular play (removed — it was for the tap charge). Stamina still drains while
+  sprinting and disables sprint at 0%. *(The TAP mechanic now lives ONLY in the sprint duel —
+  see `SprintDuel.cs`.)*
+- Player-team AI mates move 1.2x faster (keep formation, no sprint of their own) while the
+  human holds sprint; the camera zooms out and the swim animation reads as a sprint too.
 - Bots: sprint decided by WaterPoloBrain IsDriving logic, unchanged
 
 **SpriteRenderer flipping:**
@@ -183,7 +201,10 @@ Filter Mode: Bilinear, Max Size: 4096
 - Sprint animation not triggering correctly in all cases (IsSprinting threshold tuning needed)
 - Idle/swim sprite size inconsistency (swim sprites slightly smaller — art fix needed in ChatGPT)
 
-Goalkeeper animations: COMPLETE. goalkeeper_sheet.png (8 frames: idle, dive left/right, dive bottom-left/right, dive top-left/right, save). GoalkeeperAnimation.controller with DiveState integer parameter. GoalkeeperAnimator.cs on both KeeperLeft and KeeperRight.
+**Goalkeeper animation (COMPLETE):**
+- `Assets/Sprites/Players/GoalkeeperAnimation.controller` — **8 states** driven by a single integer `DiveState` parameter (Any State → state when DiveState == its value): idle (0), dive_left (1), dive_right (2), dive_bottom_left (3), dive_bottom_right (4), dive_top_left (5), dive_top_right (6), save (7).
+- Sheet: `Assets/Sprites/Players/goalkeeper_sheet.png` — **8 frames at 2928×352px**, one held frame per clip.
+- Built by `GoalkeeperAnimationBuilder` (Tools → Build Goalkeeper Animations, idempotent); driven at runtime by `GoalkeeperAnimator` on both KeeperLeft + KeeperRight (low shot → bottom dive, high → top, mid → side; `BallFlight.KeeperFooled` skip shot pins the mid dive).
 
 ## A8. Pool Visual (COMPLETE)
 
@@ -273,8 +294,8 @@ Also now 🟡 **WORKING (first pass — improve later, not 100% done):**
 - **Done since last update:** drives + picks/screens + bot adaptive Drop + dynamic Centre (inside water) + wider spacing + Centre-draws-fouls — all 🟡 first-pass working, to be improved/tuned later (NOT counted 100% done).
 - **Tuning watch-list:** `centerFoulBoost` virtual foul can make the first foul on an inside Centre escalate instantly (usually a penalty) — toggle it off or raise Fouls For Exclusion if too hot; drive trigger/lane radii; screen timings; Centre inside depth (1.2 from goal).
 - **Next brick:** **tuning pass** (above + speeds, steal chances, shot quality threshold), then **VISUAL PASS 1** (sprites/caps/names/HUD), then touch controls.
-- **Deferred visuals** (secondary per dev priority): keeper art/animation; crowd/stadium; camera zoom-out; water-flow effects. (Pool zone lines now exist as `PoolLines`.)
-- **Other deferred:** per-player stamina system; weak no-hold deflection shot (a ball struck without a settled hold should be weaker than a settled one); corners on KEEPER deflections; referee.
+- **Deferred visuals** (secondary per dev priority): crowd/stadium; water-flow effects. (Pool zone lines exist as `PoolLines`; keeper art/animation ✅ done; a FIFA-style follow camera with dynamic zoom ✅ done — `CameraFollow`.)
+- **Other deferred:** weak no-hold deflection shot (a ball struck without a settled hold should be weaker than a settled one); corners on KEEPER deflections; referee. (Per-player **stamina system** ✅ now done — `StaminaSystem`.)
 
 ## A12. Immediate roadmap (next bricks, rough order)
 
@@ -284,7 +305,7 @@ Also now 🟡 **WORKING (first pass — improve later, not 100% done):**
 4. **Keeper grab-and-control** — keeper collects a slow loose ball, distributes to an open teammate (bot auto / player on B); clock keeps ticking through the hold. ✅ **DONE**.
 5. Smarter AI: pass backward/around a block, better shot selection. ✅ **DONE** (shot-quality + pass-risk logic, center feed, counterattack, man-up/down shapes, Drop/MPress).
 6. Rule systems: shot clock, quarters, exclusions (see Part B §16). ✅ **DONE** (incl. free throws + penalties + goal-line out).
-7. Touch controls (virtual joystick + A/B/C + hand button) for mobile.
+7. Touch controls (virtual joystick + 3 action buttons) for mobile. 🟡 **DONE (first pass)** — 3-button attack/defense scheme + joystick + stamina HUD + keeper control; swipe-evasion / hand-button still planned.
 8. Then the whole shell: menus, onboarding, currencies, career/divisions, store (Part B §1–15).
 9. Android build/test (Build Support module + phone over USB). iOS needs a Mac later.
 
@@ -520,27 +541,27 @@ Also now 🟡 **WORKING (first pass — improve later, not 100% done):**
 ### B16.2 Match Start — Sprint Duel ✅ DONE
 - At every quarter start (incl. Q1): ball at centre, all players line up on their own goal lines and freeze; after a whistle delay the two sprinters (each team's first available member) race. Bot swims at a fixed speed; the human **mashes Space** to go faster (boost decays). First to the ball grabs it; play + shot clock start. The winning AI centre then makes a **kickoff pass to its deepest teammate** before normal play. (`SprintDuel.cs`.)
 
-### B16.3 Match Controls 🟡 PARTIAL (shoot + power-bar feedback, B-pass to nearest teammate, E=grab, Space-steal all built on keyboard; full A/B/C touch scheme not built)
+### B16.3 Match Controls 🟡 PARTIAL (keyboard shoot/charge/skip/lob/directional-pass/steal + a 3-button mobile touch scheme with attack↔defense mode-switching all built; planned A/B/C + swipe-evasion + hand-button scheme not built)
 - **A** — with ball: shoot (hold = power bar, directional arrow); without ball: aggressive defensive press. *(Charged-shot power bar for the active player is built ✅.)*
 - **B** — with ball: regular pass (short=slow, long=fast, fast risks bad catch); without ball: pressure (not aggressive).
 - **C** — with ball: high/long lob, late-game penalty-style lob (easier for keeper); without ball: manual player switch (auto-switch exists ✅; manual override).
 - **Hand button ✋** — tap: pick ball up to hands; hold: water-polo hand movements; then A to shoot; single tap: release.
 - **Joystick (bottom-right)** — 360° move; directs pass/shot aim via under-player arrow.
 - **Swipes** — up = special evasion (pump fake/shoulder turn); down = different (reverse pivot); success = attacker rating vs defender rating; fail risks losing ball.
-- **🟡 IN PROGRESS — planned shot/pass upgrades:**
-  - **Charged shot** — hold Space = power + height; max charge = high shot, harder to block.
-  - **Skip/bounce shot** — hold modifier key + Space.
-  - **High lob pass** — hold pass key longer = high arc pass with shadow, harder to intercept.
-  - **Block animation upgrade** — defending pose changes to one-arm raised block.
+- **Shot/pass upgrades:**
+  - ✅ **Charged shot** — hold Space = power + height (`shotHeight` 0..1); max charge = high shot, harder to block.
+  - ✅ **Skip/bounce shot** — **Q** + Space → fast LOW bounce shot (`BallFlight`; 35% keeper-fool chance).
+  - ✅ **High lob pass** — **F** + B → high arc pass with a water shadow; AI interception cut ~60%.
+  - ⬜ **Block animation upgrade** — defending pose → one-arm raised block (still the arms-wide defend pose).
 
-### B16.4 Camera & Visibility 🟡 PARTIAL (2D top-down + directional chevron done; player names not yet)
-- Dream-League-style overhead angled; faces not clear in play. Name above each player; directional arrow below showing heading. *(A directional chevron indicator under the active player is built ✅; player-name labels still TODO.)*
+### B16.4 Camera & Visibility 🟡 PARTIAL (2D top-down + FIFA-style follow camera w/ dynamic zoom + directional chevron done; player names not yet)
+- Dream-League-style overhead angled; faces not clear in play. Name above each player; directional arrow below showing heading. *(A directional chevron under the active player ✅ and a self-contained `CameraFollow` — weighted player/ball tracking, dynamic 3.8–5.0 zoom, hard boundary clamps, goal/shot screen-shake — are built ✅; player-name labels still TODO.)*
 
 ### B16.5 Match Structure ✅ DONE (shot clock + halftime side-switch built)
 - 4 quarters, **90s each** (tunable), win/lose/draw at full time. **30s shot clock** per possession — resets on possession change / goal / defensive exclusion; at 0 → turnover with a grab-ban on the violating team until the other side touches the ball. **Halftime side-switch** after the middle quarter: attack/defend goals swap, scoring stays correct, keepers keep their physical goal. Each quarter restarts through the sprint duel; the clock pauses during freezes.
 
-### B16.6 HUD 🟡 PARTIAL (score display ✅, pause button ✅; logos/layout pass still to do)
-- Score with both team logos ✅; quarter indicator; match timer; pause button ✅ (`PauseMenuUI`, top-right); exclusion countdown.
+### B16.6 HUD 🟡 PARTIAL (split scoreboard + score-tab art ✅, stamina HUD ✅, pause button ✅; logos/full layout pass still to do)
+- Split score (PlayerScoreText/BotScoreText) on a `score-tab.png` board ✅; quarter indicator; match timer; **stamina HUD** (P#/GK + bar, in `TouchControls`) ✅; pause button ✅ (`PauseMenuUI`, top-right); exclusion countdown.
 
 ### B16.7 Pause Menu 🟡 PARTIAL (core pause DONE June 2026; Team Management not)
 - ✅ **DONE:** pause button (top-right, below the scoreboard) → `Time.timeScale = 0` + centered panel with PAUSED + RESUME / QUIT / TEAM MANAGEMENT (`PauseMenuUI.cs`, all built in code). QUIT asks for confirmation first ("If you quit, this match counts as a loss." → YES QUIT / CANCEL); YES QUIT returns to MainMenu (loss recording itself comes with the career system). TEAM MANAGEMENT is a placeholder button. Timer/clock stop automatically (both are `Time.deltaTime`-driven). Full-time result screen with PLAY AGAIN / MAIN MENU also done (`MatchResultUI.cs`, hooked into `MatchTimer`).
@@ -569,7 +590,7 @@ Also now 🟡 **WORKING (first pass — improve later, not 100% done):**
 - Final whistle → earn coins; if enough progress, pass rewards + daily task rewards.
 
 ## B17. Art & Character Notes 🟡 (basic sprite animation DONE & working in-engine; full art still a later phase)
-- **Visual Pass 1 COMPLETE:** 7-state animation system fully working in-engine for both red and blue teams. Red team: PlayerAnimation.controller on Player1–6. Blue team: BlueAnimation.controller on Bot1–6, blue cap sprites in BlueTeam folder. AnimationClipBuilder editor tool builds and wires everything (Tools menu). Steal animation fires on every grab attempt. Defend animation proximity-gated (1.5 units). Sprint mechanic with loose-hold strip bonus. SpriteRenderer horizontal flipping. **Remaining art:** goalkeeper animations; scale consistency between idle and swim/sprint sprites; 15 total animation states planned (7 done).
+- **Visual Pass 1 COMPLETE:** 7-state animation system fully working in-engine for both red and blue teams. Red team: PlayerAnimation.controller on Player1–6. Blue team: BlueAnimation.controller on Bot1–6, blue cap sprites in BlueTeam folder. AnimationClipBuilder editor tool builds and wires everything (Tools menu). Steal animation fires on every grab attempt. Defend animation proximity-gated (1.5 units). Sprint mechanic with loose-hold strip bonus. SpriteRenderer horizontal flipping. **Done since:** goalkeeper animation (8-dive `DiveState` controller) ✅ and ball-flight VFX (`BallFlight`: trail / skip / lob / high-shot / spin) ✅. **Remaining art:** scale consistency between idle and swim/sprint sprites; 15 total field-player states planned (7 done; 8 keeper dives done).
 - Believable body types/faces. In live play faces not detailed (Dream-League style). Goal replays use close-up → detailed faces matter there. **2D approach:** small simple sprites in-match; higher-detail 2D portraits for cards/managers/replays/celebrations. Art is deliberately deferred until gameplay is locked. (Old SceneKit/3D-mesh/GLTF notes are obsolete — this is a 2D Unity game.)
 - **Skeletal animation** (Unity 2D Animation package, free) planned for goal celebrations, player portrait cards, manager animations, special move sequences. Developer will animate manually for full control. Status: 🟡 planned, not started.
 
@@ -583,11 +604,12 @@ Also now 🟡 **WORKING (first pass — improve later, not 100% done):**
 - Don't suggest: Swift/SDL2/SceneKit, LLM-driven bots, web deployment, Stripe/PayPal, Tailwind. Mobile payments = Apple/Google billing, later.
 - Nikoloz has **Claude Code in VS Code** — big multi-file AI work goes there; single-file features + guidance happen in chat.
 - Commit routine: `git add . && git commit -m "..." && git push`. GitHub: https://github.com/Nikoloz-Todua
-- Current focus: Visual Pass 1 complete (A7), pool water background complete (A8). Next priorities:
-  (1) charged shot height system,
-  (2) skip shot,
-  (3) high lob pass with arc shadow,
-  (4) touch controls (B16.3).
+- Current focus: gameplay polish complete (stamina, FIFA follow camera, ball-flight VFX, full keeper control, goalkeeper animation, touch controls). Next priorities:
+  (1) player number labels above heads (`PlayerLabel.cs`),
+  (2) touch controls tuning on iPhone,
+  (3) wall positions aligned to the visual borders,
+  (4) event feed + defense-mode text repositioning,
+  (5) main menu / game flow (Part B).
   Everything in Part B tagged ⬜ is future.
 
 ---
@@ -613,3 +635,101 @@ Also now 🟡 **WORKING (first pass — improve later, not 100% done):**
   for the human). Bots: calmer passes (13→11, +0.35s settle), shoot within 3.5u not from anywhere
   (had ShootRange 20), sprint (×1.7) to chase/cover, faster mark switching (0.6→0.35s). Keeper as
   a pass target stays a 10% last resort.
+
+## SESSION LOG — 2026-06-16 (sprint-duel rebuild + quarter break; fixed last session's tap-sprint regressions)
+
+The previous session's tap-charge sprint broke several things; all found + fixed, plus the new
+sprint-duel / quarter-break features built.
+
+- **Regressions fixed:**
+  - *Sprint duel didn't react to input* — `SprintDuel.cs` only read keyboard Space and had no
+    real UI. Rebuilt: reads Space / LeftShift **and** a full-screen tap-catcher (mobile), with a
+    visible SPEED bar so taps obviously matter.
+  - *Ball not dead-centre at duel start* — the ball is now pinned to **(0,0,0) with physics OFF**
+    for the whole countdown and only goes live at "GO!", so nothing can nudge it.
+  - *Active player "sprinted by itself"* — at later quarters the auto-swimming duel sprinter was
+    `FirstMember(team)`, NOT the active player, so a non-controlled swimmer moved while the
+    camera sat on a frozen one. The duel now makes the human sprinter the **active player**
+    (`TeamManager.ActivatePlayer`), and regular play is strictly tap-only (never auto-sprints).
+  - *Teammates didn't follow during sprint* — `TeammateFollowMult` is applied in `MoveTo`;
+    threshold aligned to the spec's **> 0.5** sprint intensity (20% hustle to hold formation).
+  - *Sprint bar invisible* — TWO bars now: the regular-play **head bar** (0.6 × 0.08, red→green,
+    hides 0.8s after the last tap) and the duel's tall **left-side SPEED bar**.
+- **Sprint rebuilt to tap-FREQUENCY** (`PlayerMovement.cs`): taps/sec over a 0.5s rolling window;
+  `boost = tps * 0.08 * moveSpeed`, capped at `moveSpeed * 1.8`. `SprintCharge` repurposed as a
+  0..1 intensity so `CameraFollow` / `PlayerAnimator` / `StaminaSystem` / `WaterPoloAI` all keep
+  working unchanged. Removed `sprintMultiplier` / the old accumulate-decay meter.
+- **Quarter-end pause screen** (`QuarterBreakUI.cs` NEW + `MatchTimer.cs`): every quarter end
+  (not full time) freezes play and shows "QUARTER N COMPLETE" + score + RESUME / QUIT; RESUME
+  rolls into the next quarter's duel, QUIT → MainMenu. Self-bootstrapping (no scene object).
+- **UI cleanup during duel/break** (`TouchControls.SetGameplayVisible`): joystick + action
+  buttons + stamina HUD hide for the duel and the break, restored instantly afterwards.
+- **Clean console:** zero errors, zero warnings (verified via IDE diagnostics on every changed file).
+- **Slot re-check:** `SprintDuel`'s old optional **Duel Text** slot is GONE (it builds its own UI).
+  `PlayerMovement`'s **Ball** + **Aim Line** slots are untouched — just confirm they're still set on
+  Player1–6. New tunables (PlayerMovement sprint window/boost; SprintDuel countdown step) show with
+  safe defaults. Nothing new needs wiring (QuarterBreakUI + duel UI build themselves at runtime).
+
+## SESSION LOG — 2026-06-16b (sprint reverted to HOLD; camera overview; 5s countdown; post-goal duel)
+
+Follow-up tuning after testing the tap-sprint rebuild:
+
+- **Sprint is HOLD again in regular play** (`PlayerMovement.cs`, `TouchControls.cs`): hold LEFT
+  SHIFT / the Sprint button → `moveSpeed * sprintMultiplier` (2×) while moving; release = stop.
+  Removed the tap-frequency model **and the head sprint bar** entirely. `SprintHeld` restored;
+  `SprintCharge` kept as a 0/1 proxy so `CameraFollow`/`PlayerAnimator`/`StaminaSystem`/
+  `WaterPoloAI` need no changes. The TAP-for-speed mechanic now lives **only in the sprint duel**.
+- **Camera overview until first touch** (`CameraFollow.cs` + `MatchContext.BallTouchedSinceReset`):
+  at game start, after every goal, and between quarters the camera holds the full-pool overview
+  at size 5.0 centred on (0,0) — no following — until a player/bot first grabs the ball, then it
+  eases smoothly into the normal follow (baseSize 4.2). Flag flips true on the first `SetPossession`
+  to a team, reset by `SprintDuel.StartDuel` + the post-goal restart.
+- **Countdown is 5s** (`SprintDuel.cs`): 5 → 4 → 3 → 2 → 1 → GO! (`countdownStart`), 1s each, same
+  pulse + hint.
+- **Post-goal = celebration + 3s silent pause + sprint duel** (`ScoreManager.cs`): after a goal the
+  ball sits loose at (0,0), everyone frozen, no UI, for `goalFreezeSeconds` (1s) + `postGoalPauseSeconds`
+  (3s); then `SprintDuel.StartDuel()` runs the 5-count race for possession (replacing the old
+  conceding-team kickoff, which remains only as a no-duel fallback).
+- **Untouched (as requested):** goalkeeper, exclusions, passing, shooting, AI brain decisions.
+- **Clean console:** zero errors/warnings (IDE diagnostics on every changed file).
+- **Slot re-check:** `PlayerMovement` on Player1–6 now shows a **Sprint Multiplier** field (default 2)
+  in place of the removed tap fields — its **Ball** + **Aim Line** slots are untouched, just confirm
+  they're still set. `ScoreManager` (on the ScoreManager object) gains a **Post Goal Pause Seconds**
+  field (default 3); its existing slots (Ball / score texts / teams) are unchanged. `SprintDuel` gains
+  a **Countdown Start** field (default 5). Nothing new to wire.
+
+## SESSION LOG — 2026-06-17 (real-water-polo flow: duel = quarter starts only; goals = silent restart)
+
+Corrected the game flow so it behaves like real water polo: a **goal is no longer a mini
+match restart** — the sprint duel now happens ONLY at quarter starts; goals get a quiet
+conceding-team restart. Off-sprinter swimmers also stop freezing during the duel.
+
+- **No sprint duel after a goal** (`ScoreManager.cs`): removed the `SprintDuel.StartDuel()`
+  hand-off. The goal restart is now a self-contained 4-phase flow: (1) 1s celebration freeze,
+  ball loose at (0,0), camera → overview; (2) both teams snap to a **natural spread** inside
+  their own halves (not a rigid goal-line), the **conceding team** takes the ball at exact
+  centre; (3) a 3s **silent** restart pause (frozen, no UI, no countdown); (4) un-freeze and
+  the team in possession begins the attack (bot relays a kickoff, human is free). `SprintDuel`
+  is now triggered ONLY by `MatchTimer` (Q1 + each quarter) — verified there are no other callers.
+- **Off-sprinters jog to formation during the duel** (`SprintDuel.cs`): at GO! only the two
+  designated sprinters race; **every other swimmer (both teams) immediately swims to its
+  formation at ~60% speed** instead of freezing, then transitions straight into normal AI when
+  a sprinter grabs (no brain reset). The sprinter now starts **slightly ahead** of its line
+  (`sprinterForwardOffset`) so it's not confused with the goalkeeper, and is the active player.
+- **Natural restart formations** (`TeamSide.cs` NEW `RestartFormationSpot(member, hasBall)` +
+  `SnapToRestartFormation(hasBall)`): per-role distinct depth + lane (attacking spread when you
+  have the ball, sat-back defensive spread when you don't), always inside the own half — reused
+  by both the goal restart and the duel's formation jog.
+- **Camera resume cue** (`MatchContext.cs` NEW `MarkBallTouched()`): the goal restart sets
+  possession during the frozen pause, so the normal first-grab camera trigger is consumed; this
+  re-arms it on un-freeze so the camera eases from the overview back into the follow.
+- **Untouched (verified, as required):** `CameraFollow.cs` (already overview-at-5.0-until-first-
+  touch → follow, driven by the `BallTouchedSinceReset` flag the above now sets correctly — no
+  code change) and `PlayerMovement.cs` regular sprint (already HOLD LeftShift / Sprint button,
+  no tap mechanic — the tap lives only in `SprintDuel`). No changes to passing / shooting /
+  goalkeeper / exclusions / shot clock / WaterPoloBrain decisions / touch-control layout.
+- **Clean console:** zero errors/warnings on every changed file (IDE diagnostics).
+- **Slot re-check:** nothing new to wire. `SprintDuel` (on `GameManager`) shows two new tunables
+  — **Sprinter Forward Offset** (1) and **Formation Move Speed** (3) — with safe defaults; its
+  existing fields are untouched. `ScoreManager`'s slots (Ball / score texts / teams) are
+  unchanged. No new Inspector references on any object.

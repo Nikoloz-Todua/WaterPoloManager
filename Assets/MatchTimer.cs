@@ -21,6 +21,7 @@ public class MatchTimer : MonoBehaviour
     private float timeLeft;     // seconds remaining in the current quarter
     private int currentQuarter; // 1..totalQuarters
     private bool matchOver;
+    private bool awaitingResume; // a quarter-break panel is up; the clock waits for RESUME
 
     // read-only access for other systems (shot clock pauses on this; event feed stamps with it)
     public bool MatchOver => matchOver;
@@ -51,6 +52,7 @@ public class MatchTimer : MonoBehaviour
     void Update()
     {
         if (matchOver) return;
+        if (awaitingResume) return; // quarter-break panel up — frozen, waiting for RESUME
 
         // The quarter clock is paused while play is frozen (sprint duel line-up/race,
         // post-goal settle), so the timer only drains during live play.
@@ -61,32 +63,59 @@ public class MatchTimer : MonoBehaviour
 
         if (timeLeft <= 0f)
         {
+            timeLeft = 0f;
+            UpdateTimerText();
+
             // last quarter just ran out → final whistle
-            if (currentQuarter >= totalQuarters)
-            {
-                timeLeft = 0f;
-                UpdateTimerText();
-                EndMatch();
-                return;
-            }
+            if (currentQuarter >= totalQuarters) { EndMatch(); return; }
 
-            // roll into the next quarter
-            currentQuarter++;
-            timeLeft = quarterLength;
-            UpdateQuarterText();
-
-            // halftime (after the middle quarter): swap ends so both attack the other way
-            if (ctx != null && currentQuarter == totalQuarters / 2 + 1)
-            {
-                ctx.SwapEnds();
-                if (EventFeed.Instance != null) EventFeed.Instance.AddEvent("Halftime - ends switched");
-            }
-
-            // every quarter restarts through the sprint duel (not an instant continue)
-            if (SprintDuel.Instance != null) SprintDuel.Instance.StartDuel();
+            // otherwise the quarter is over → show the between-quarters pause screen and
+            // wait for RESUME (Feature 2). The next quarter's sprint duel starts from there.
+            ShowQuarterBreak();
+            return;
         }
 
         UpdateTimerText();
+    }
+
+    // Freeze play and raise the quarter-break panel. RESUME → OnResume → next quarter duel.
+    void ShowQuarterBreak()
+    {
+        awaitingResume = true;
+        MatchContext ctx = MatchContext.Instance;
+        if (ctx != null) ctx.FreezeAll();
+        if (TouchControls.Instance != null) TouchControls.Instance.SetGameplayVisible(false);
+
+        int you = scoreManager != null ? scoreManager.HomeScore : 0;
+        int bot = scoreManager != null ? scoreManager.AwayScore : 0;
+        QuarterBreakUI.Get().Show(currentQuarter, you, bot, OnResume);
+    }
+
+    // RESUME pressed on the quarter-break panel: roll into the next quarter via the duel.
+    void OnResume()
+    {
+        awaitingResume = false;
+        AdvanceToNextQuarter();
+    }
+
+    void AdvanceToNextQuarter()
+    {
+        currentQuarter++;
+        timeLeft = quarterLength;
+        UpdateQuarterText();
+
+        // halftime (after the middle quarter): swap ends so both attack the other way
+        MatchContext ctx = MatchContext.Instance;
+        if (ctx != null && currentQuarter == totalQuarters / 2 + 1)
+        {
+            ctx.SwapEnds();
+            if (EventFeed.Instance != null) EventFeed.Instance.AddEvent("Halftime - ends switched");
+        }
+
+        // every quarter restarts through the sprint duel (the duel re-freezes for its countdown,
+        // then unfreezes when a sprinter wins; it also restores the touch UI on the way out)
+        if (SprintDuel.Instance != null) SprintDuel.Instance.StartDuel();
+        else if (ctx != null) ctx.Unfreeze(); // no duel in the scene → just resume
     }
 
     void EndMatch()

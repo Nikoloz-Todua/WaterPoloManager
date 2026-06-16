@@ -82,6 +82,7 @@ public static class WaterPoloBrain
     const float KickoffPassSettle = 0.4f;  // AI carrier settles this long before the kickoff pass
     const float KeeperProtectRadius = 2.5f; // a presser can't crowd a ball-holding keeper
     const float MinTeammateSeparation = 1.2f; // teammates never pack tighter than this (lower priority yields)
+    const float TeammateSprintFollowMult = 1.2f; // player-team mates hustle to keep shape while the human sprints (Task 4)
 
     // ---- drives (Feature 1) ----
     const float DriveSpeedMult = 1.35f;      // drive burst over normal carry speed
@@ -706,7 +707,21 @@ public static class WaterPoloBrain
         // sprint to cover real distance (recovering on defense, getting open); eases back to a
         // normal cruise near the spot, then IdleDrift takes over
         float spd = delta.magnitude > SprintDistance ? speed * SprintMult : speed;
+        spd *= TeammateFollowMult(a); // player-team mates hustle while the human sprints (Task 4)
         a.Body.linearVelocity = dir * spd;
+    }
+
+    // Player-team AI mates move 20% faster to keep their formation positions while the
+    // HUMAN-controlled player is sprinting hard (sprint level > 50%, Feature 3) — they don't
+    // sprint themselves, just hustle to keep up. Bots are unaffected (the active player is
+    // never on their team), and the controlled swimmer itself is never boosted.
+    static float TeammateFollowMult(IAgentBody a)
+    {
+        MatchContext ctx = MatchContext.Instance;
+        if (ctx == null || ctx.PlayerTeam == null || a.Team != ctx.PlayerTeam) return 1f;
+        PlayerMovement active = TeamManager.ActivePlayer;
+        if (active == null || active.transform == a.Tf) return 1f;
+        return active.SprintCharge > 0.5f ? TeammateSprintFollowMult : 1f;
     }
 
     // Anti-stacking: if a HIGHER-priority teammate (closer to the ball; instance id

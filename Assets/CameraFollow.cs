@@ -103,6 +103,23 @@ public class CameraFollow : MonoBehaviour
             return;
         }
 
+        // ---- BEFORE the first touch (game start, after a goal, between quarters): hold the wide
+        //      pool overview centred on (0,0) at maxSize 5.0 — no following — until someone grabs
+        //      the ball (Task 1). The goal shake still plays over this recenter. ----
+        if (!ctx.BallTouchedSinceReset)
+        {
+            Vector2 ov = Vector2.SmoothDamp(transform.position, Vector2.zero, ref followVelocity,
+                                            SmoothTime(followSpeed), Mathf.Infinity, dt);
+            ov.x = Mathf.Clamp(ov.x, boundsMinX, boundsMaxX);
+            ov.y = Mathf.Clamp(ov.y, boundsMinY, boundsMaxY);
+            currentSize = Mathf.Lerp(currentSize, maxSize, zoomSpeed * dt);
+            initialized = true;        // so the move to the follow point on first touch eases in, never snaps
+            lastActivePlayer = player; // don't fire a stale switch-boost when following resumes
+            UpdateShakeTriggers(ctx);  // let the goal shake register + play during the overview
+            ApplyTransform(ov, TickShake(dt));
+            return;
+        }
+
         Vector2 playerPos = player.transform.position;
         Vector2 ballPos = ctx.BallPosition;
 
@@ -123,7 +140,7 @@ public class CameraFollow : MonoBehaviour
 
         // ---- dynamic zoom target (priority: keeper-control > far gap > sprint > resting) ----
         bool keeperControl = ctx.KeeperHolding && ctx.KeeperHoldTeam == ctx.PlayerTeam;
-        bool sprinting = player.SprintHeld;
+        bool sprinting = player.SprintHeld; // holding sprint = mild zoom out
         float gap = Vector2.Distance(playerPos, ballPos);
 
         float targetSize;

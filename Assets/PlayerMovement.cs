@@ -5,7 +5,10 @@ public class PlayerMovement : MonoBehaviour
     [Header("Movement")]
     [SerializeField] private float moveSpeed = 5f;
     [SerializeField] private float holdMoveSpeed = 2f;
-    [SerializeField] private float sprintMultiplier = 2f; // LeftShift speed boost while moving
+
+    [Header("Sprint (hold)")]
+    [Tooltip("Speed multiplier while LEFT SHIFT / the Sprint button is HELD and moving (regular play). The sprint duel uses its own tap mechanic, not this.")]
+    [SerializeField] private float sprintMultiplier = 2f;
 
     [Header("Ball")]
     [SerializeField] private Rigidbody2D ball;
@@ -84,13 +87,18 @@ public class PlayerMovement : MonoBehaviour
     // read it via MatchContext.LastReleaser to pick the dive tier.
     public float ShotHeight => shotHeight;
 
-    // True while the carrier sprints WITH the ball (Shift held + holding): the hold is
-    // "loose" — opponents get 2x steal range and a success bonus (read by WaterPoloBrain).
-    // The ball is NOT dropped. Resets the moment Shift is released.
+    // True while the carrier sprints WITH the ball (Shift/Sprint held + holding): the hold is
+    // "loose" — opponents get 2x steal range and a success bonus (read by WaterPoloBrain). The
+    // ball is NOT dropped. Clears the moment sprint is released.
     public bool IsLooseHold { get; private set; }
 
-    // Raw Shift state, honoured only on the human-controlled player (PlayerAnimator reads this).
+    // Raw HOLD-sprint state, honoured only on the human-controlled player. Regular play is
+    // hold-to-sprint (the sprint duel uses its own tap mechanic in SprintDuel).
     public bool SprintHeld => IsActive && sprintHeld;
+
+    // 0/1 proxy of the hold-sprint state, kept so the camera zoom / animator / stamina drain /
+    // teammate-hustle AI (which read "SprintCharge") keep working unchanged: 1 = sprinting.
+    public float SprintCharge => sprintHeld ? 1f : 0f;
 
     // ---- Stamina hooks (driven by StaminaSystem, if present) ----
     // NEUTRAL by default so the game plays identically with no StaminaSystem on the object;
@@ -112,7 +120,7 @@ public class PlayerMovement : MonoBehaviour
     private bool isHolding = false;
     private float lastStealTime = -10f;
     private bool stealConsumedSpace = false;
-    private bool sprintHeld = false;
+    private bool sprintHeld = false;        // LEFT SHIFT / Sprint button held this frame (active player only)
     private PlayerAnimator playerAnimator; // optional; fires the steal animation on attempts
 
     // --- Touch input (written by TouchControls.SetTouchInput every frame; each field is
@@ -232,9 +240,15 @@ public class PlayerMovement : MonoBehaviour
         // Stale touch state must never drive a player the human isn't controlling.
         if (!IsActive) ClearTouchInput();
 
-        // Sprint input only counts on the human-controlled player; the frozen /
-        // excluded branches below force it back off before they return.
-        sprintHeld = IsActive && (Input.GetKey(KeyCode.LeftShift) || touchSprintHeld);
+        // --- HOLD-to-sprint (regular play): LEFT SHIFT / the Sprint button held while we're the
+        //     controlled player in LIVE play. Forced off while frozen / excluded / controlling the
+        //     keeper, so it can't linger into those states. (The sprint duel uses its own tap
+        //     mechanic in SprintDuel — this is only regular gameplay.) ---
+        MatchContext sctx = MatchContext.Instance;
+        bool sprintFrozen = sctx != null && sctx.PlayFrozen;
+        bool keeperHasHuman = sctx != null && sctx.KeeperHolding && sctx.KeeperHoldTeam == sctx.PlayerTeam;
+        sprintHeld = IsActive && !sprintFrozen && !Excluded && !keeperHasHuman &&
+                     (Input.GetKey(KeyCode.LeftShift) || touchSprintHeld);
 
         // If we lost the ball (e.g. it was stolen), our parent link is gone — clear
         // the stale holding flag before anything reads it, so we don't stay green/aiming.
@@ -245,7 +259,7 @@ public class PlayerMovement : MonoBehaviour
         // — EXCEPT the active penalty shooter, who may only charge & shoot (Space), no moving.
         if (MatchContext.Instance != null && MatchContext.Instance.PlayFrozen)
         {
-            sprintHeld = false; IsLooseHold = false; // no sprinting while play is frozen
+            IsLooseHold = false; // no sprinting while play is frozen
 
             bool penaltyShooter = PenaltyManager.Instance != null &&
                                   PenaltyManager.Instance.IsActiveShooter(transform);
@@ -294,7 +308,7 @@ public class PlayerMovement : MonoBehaviour
         // Excluded → fully inert: no control, charge, steal, or aim visuals.
         if (Excluded)
         {
-            sprintHeld = false; IsLooseHold = false;
+            IsLooseHold = false;
             input = Vector2.zero;
             chargeMode = Charging.None; currentPower = 0f; passPower = 0f;
             if (aimLine != null) aimLine.enabled = false;
@@ -307,7 +321,7 @@ public class PlayerMovement : MonoBehaviour
         MatchContext kctx = MatchContext.Instance;
         if (kctx != null && kctx.KeeperHolding && kctx.KeeperHoldTeam == kctx.PlayerTeam)
         {
-            sprintHeld = false; IsLooseHold = false;
+            IsLooseHold = false;
             input = Vector2.zero;
             chargeMode = Charging.None; currentPower = 0f; passPower = 0f;
             if (aimLine != null) aimLine.enabled = false;
@@ -403,7 +417,7 @@ public class PlayerMovement : MonoBehaviour
         }
 
         // Re-derive AFTER input handling so a grab/steal/shoot this frame is reflected.
-        IsLooseHold = sprintHeld && isHolding;
+        IsLooseHold = IsActive && isHolding && sprintHeld;
 
         UpdateAimLine();
         UpdatePowerBar();
@@ -423,8 +437,8 @@ public class PlayerMovement : MonoBehaviour
         }
         float speed = isHolding ? holdMoveSpeed : moveSpeed;
         speed *= StaminaSpeedMult;                                          // tired = slower (stamina)
-        // Shift sprint — disabled outright at 0% stamina ("normal swim only"), else the
-        // sprint multiplier is scaled by stamina too (both move speed AND sprint cut when tired).
+        // HOLD sprint — disabled outright at 0% stamina ("normal swim only"), else the sprint
+        // multiplier is scaled by stamina too (both move speed AND sprint cut when tired).
         if (sprintHeld && input != Vector2.zero && !StaminaSprintBlocked)
             speed *= sprintMultiplier * StaminaSprintMult;
         rb.linearVelocity = input * speed;
@@ -651,8 +665,8 @@ public class PlayerMovement : MonoBehaviour
     }
 
     // Called by TouchControls every frame on the active player. SHOOT maps to Space
-    // (so it also steals when not holding), PASS to B, SPRINT to LeftShift, SWITCH to C
-    // (consumed by TeamManager via TouchSwitchDown).
+    // (so it also steals when not holding), PASS to B, SPRINT to LeftShift (HELD = sprinting),
+    // SWITCH to C (consumed by TeamManager via TouchSwitchDown).
     public void SetTouchInput(Vector2 axis, bool shootHeld, bool shootDown, bool shootUp,
                               bool passHeld, bool passDown, bool passUp,
                               bool sprintHeld, bool switchDown)

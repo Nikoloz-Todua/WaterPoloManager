@@ -11,7 +11,9 @@ public class ScoreManager : MonoBehaviour
     [SerializeField] private TMP_Text botScoreText;
     [SerializeField] private TeamSide playerTeam;
     [SerializeField] private TeamSide botTeam;
-    [SerializeField] private float goalFreezeSeconds = 1f; // settle pause after a goal
+    [SerializeField] private float goalFreezeSeconds = 1f; // Phase 1: celebration settle right after a goal
+    [Tooltip("Phase 3: silent restart pause AFTER the conceding team is set up with the ball at centre — players still, no UI, no countdown. A goal is NOT a quarter start, so there is NO sprint duel here (Task 2).")]
+    [SerializeField] private float postGoalPauseSeconds = 3f;
 
     private int homeScore = 0; // YOU  (= playerTeam)
     private int awayScore = 0; // BOT  (= botTeam)
@@ -72,40 +74,69 @@ public class ScoreManager : MonoBehaviour
         return null;
     }
 
-    // Conceding team's centre holds the ball at centre; everyone else snaps home; brief
-    // settle freeze; then play + shot clock resume.
+    // A goal restart is NOT a quarter start — there is NO sprint duel (Task 2). The ball sits
+    // LOOSE at exact centre and play freezes for the celebration; the rest plays out in
+    // ResumeAfterGoal: the CONCEDING team is set up with the ball at centre, a silent pause,
+    // then play resumes naturally with that team in possession.
     void RestartAfterGoal(TeamSide concedingTeam)
     {
         MatchContext ctx = MatchContext.Instance;
 
-        ResetBall();
-        if (ctx != null) { ctx.SetPossession(null); ctx.ClearGrabBan(); }
-
-        if (playerTeam != null) playerTeam.SnapToKickoffFormation();
-        if (botTeam != null) botTeam.SnapToKickoffFormation();
-
-        Transform center = FirstMember(concedingTeam);
-        if (center != null && ctx != null)
+        ResetBall();                              // ball loose at exact (0,0)
+        if (ctx != null)
         {
-            center.position = new Vector3(0f, 0f, center.position.z);
-            ctx.GiveBallTo(center, concedingTeam);
+            ctx.SetPossession(null);
+            ctx.ClearGrabBan();
+            ctx.ResetBallTouch();                 // camera → wide overview (Task 3)
+            ctx.FreezeAll();                      // Phase 1: celebration freeze
         }
 
-        if (ctx != null) ctx.FreezeAll();
+        if (TouchControls.Instance != null) TouchControls.Instance.SetGameplayVisible(false); // no UI during the restart
         StopAllCoroutines();
         StartCoroutine(ResumeAfterGoal(concedingTeam));
     }
 
+    // Goal restart flow (Tasks 2 & 3), no sprint duel:
+    //   Phase 1  celebration freeze (goalFreezeSeconds)
+    //   Phase 2  natural restart spread inside each half; the CONCEDING team takes the ball at centre
+    //   Phase 3  silent restart pause (postGoalPauseSeconds): no movement / pass / shoot / steal
+    //   Phase 4  un-freeze; the team in possession begins the attack naturally
     IEnumerator ResumeAfterGoal(TeamSide concedingTeam)
     {
-        yield return new WaitForSeconds(goalFreezeSeconds);
         MatchContext ctx = MatchContext.Instance;
+
+        // Phase 1 — celebration settle.
+        yield return new WaitForSeconds(goalFreezeSeconds);
+
+        // Phase 2 — natural spread (not a rigid goal-line); the conceding team gets the restart
+        // at exact centre with the ball in hand (mates spread behind in their own half), while
+        // the scoring team sits back into defensive positions.
+        TeamSide scoringTeam = (concedingTeam == playerTeam) ? botTeam : playerTeam;
+        if (concedingTeam != null) concedingTeam.SnapToRestartFormation(true);
+        if (scoringTeam != null) scoringTeam.SnapToRestartFormation(false);
+
+        Transform restartTaker = FirstMember(concedingTeam);
+        if (ctx != null && restartTaker != null)
+        {
+            restartTaker.position = new Vector3(0f, 0f, restartTaker.position.z);
+            ctx.GiveBallTo(restartTaker, concedingTeam); // conceding team now holds the ball at centre
+            ctx.ResetBallTouch();                        // hold the wide overview through the pause (Task 3)
+        }
+
+        // Phase 3 — silent restart pause: still frozen, ball held at centre, no UI, no countdown.
+        yield return new WaitForSeconds(postGoalPauseSeconds);
+
+        // Phase 4 — resume play. The holder begins the attack: a bot relays the kickoff to its
+        // deepest mate, a human is free to pass/move immediately (the pending flag clears on the
+        // first move). Control auto-follows to the holder.
         if (ctx != null)
         {
             ctx.Unfreeze();
-            ctx.SetKickoffPass(concedingTeam); // center passes back to its deepest teammate first
+            ctx.SetKickoffPass(concedingTeam);
+            ctx.MarkBallTouched();               // camera eases back into the follow (Task 3)
         }
-        if (ShotClock.Instance != null) ShotClock.Instance.ResetClock(); // fresh clock as play resumes
+        if (TouchControls.Instance != null) TouchControls.Instance.SetGameplayVisible(true);
+        if (ShotClock.Instance != null) ShotClock.Instance.ResetClock();
     }
 
     Transform FirstMember(TeamSide team)
@@ -127,8 +158,12 @@ public class ScoreManager : MonoBehaviour
     void ResetBall()
     {
         if (ball == null) return;
+        ball.transform.SetParent(null);          // drop any carrier parent first
+        ball.simulated = true;
         ball.linearVelocity = Vector2.zero;
-        ball.position = Vector2.zero;
+        ball.angularVelocity = 0f;
+        ball.position = Vector2.zero;            // physics body -> exact centre
+        ball.transform.position = Vector3.zero;  // transform -> exact (0,0,0)
     }
 
     void UpdateText()

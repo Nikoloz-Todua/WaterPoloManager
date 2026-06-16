@@ -193,6 +193,74 @@ public class TeamSide : MonoBehaviour
         }
     }
 
+    // A NATURAL restart spot inside our OWN half — used by the goal restart (Task 2) and the
+    // quarter-start sprint duel (Task 1). Each role takes a DISTINCT depth + lane so the team
+    // looks spread out, never a rigid line across the goal. Two shapes:
+    //   hasBall = true  : the attacking restart — Centre pushed up near centre court (the taker;
+    //                     ScoreManager pulls it onto exact centre), mates spread behind in our half.
+    //   hasBall = false : a sat-back DEFENSIVE spread (goal-side, varied depth) — the conceding
+    //                     team's opponents, and both teams' off-sprinters during the duel.
+    // Always stays in our half (depth <= ~0.92 of the half toward centre).
+    public Vector2 RestartFormationSpot(Transform member, bool hasBall)
+    {
+        if (attackGoal == null || defendGoal == null)
+            return member != null ? (Vector2)member.position : Vector2.zero;
+
+        Vector2 fwd = Forward();                            // own goal -> enemy goal (toward centre)
+        Vector2 across = new Vector2(-fwd.y, fwd.x);
+        Vector2 ownGoal = defendGoal.position;
+        Vector2 centre = ((Vector2)attackGoal.position + ownGoal) * 0.5f;
+        float halfSpan = Vector2.Distance(centre, ownGoal); // depth of our half (~7)
+
+        float depthFrac;  // 0 = own goal, 1 = the centre line
+        float lateral;    // signed lane, in laneHeight units
+        if (hasBall)
+        {
+            switch (RoleOf(member)) // attacking restart: spread up into our half behind the taker
+            {
+                case Role.Center:     depthFrac = 0.92f; lateral =  0.0f; break; // up near centre (the taker)
+                case Role.LeftWing:   depthFrac = 0.70f; lateral =  0.9f; break;
+                case Role.RightWing:  depthFrac = 0.70f; lateral = -0.9f; break;
+                case Role.LeftFlat:   depthFrac = 0.55f; lateral =  0.5f; break;
+                case Role.RightFlat:  depthFrac = 0.55f; lateral = -0.5f; break;
+                case Role.CenterBack: depthFrac = 0.35f; lateral =  0.0f; break; // anchors at the back
+                default:              depthFrac = 0.55f; lateral =  0.0f; break;
+            }
+        }
+        else
+        {
+            switch (RoleOf(member)) // defensive spread: sat back goal-side, varied depth (not a line)
+            {
+                case Role.Center:     depthFrac = 0.45f; lateral =  0.0f; break; // top defender fronts the hole
+                case Role.LeftWing:   depthFrac = 0.40f; lateral =  0.85f; break;
+                case Role.RightWing:  depthFrac = 0.40f; lateral = -0.85f; break;
+                case Role.LeftFlat:   depthFrac = 0.28f; lateral =  0.45f; break;
+                case Role.RightFlat:  depthFrac = 0.28f; lateral = -0.45f; break;
+                case Role.CenterBack: depthFrac = 0.18f; lateral =  0.0f; break; // deep anchor near goal
+                default:              depthFrac = 0.30f; lateral =  0.0f; break;
+            }
+        }
+
+        Vector2 spot = ownGoal + fwd * (depthFrac * halfSpan) + across * (lateral * laneHeight);
+        return ClampToField(spot);
+    }
+
+    // Snap every member into the natural restart spread (RestartFormationSpot) and zero its
+    // velocity. Used by the goal restart so the pool looks like play is about to resume, not
+    // like a whole new match (Task 2). Roster-size agnostic; excluded (null) slots skipped.
+    public void SnapToRestartFormation(bool hasBall)
+    {
+        if (members == null) return;
+        foreach (Transform m in members)
+        {
+            if (m == null) continue;
+            Vector2 spot = RestartFormationSpot(m, hasBall);
+            m.position = new Vector3(spot.x, spot.y, m.position.z);
+            Rigidbody2D body = m.GetComponent<Rigidbody2D>();
+            if (body != null) body.linearVelocity = Vector2.zero;
+        }
+    }
+
     // ---- attacking: role-based spot (distinct depth + lateral per role) ----
     // The carrier is handled by the brain's Carry(); only non-carriers use this.
     // The CENTRE is dynamic (fights for inside water at 2m, goal-side of its guard);

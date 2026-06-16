@@ -16,7 +16,7 @@ using TMPro;
 //   PossessingTeam == BotTeam               -> DEFENSE
 //
 // Behaviours route through existing systems (keyboard keeps working via || merges):
-//   Sprint  -> SetTouchInput sprintHeld     Shoot -> SetTouchInput shoot*      Pass -> SetTouchInput pass*
+//   Sprint  -> SetTouchInput sprintDown (TAP)  Shoot -> SetTouchInput shoot*   Pass -> SetTouchInput pass*
 //   Switch  -> SetTouchInput switchDown (TeamManager)                          Block -> PlayerMovement.TouchBlockSteal()
 //   Defend  -> feeds a chase-the-enemy-carrier movement axis (proximity defend animation fires on its own)
 //   PassOut -> Goalkeeper.RequestPassOut() on the player's holding keeper (same as keyboard B)
@@ -94,11 +94,24 @@ public class TouchControls : MonoBehaviour
     static readonly Vector2 StaminaPanelSize = new Vector2(220f, 55f);
     const float StaminaBarMaxWidth = 144f;   // inner fill width inside the track
 
+    // The platform/editor "should the touch UI exist at all" answer, decided once at Awake.
+    // SetGameplayVisible() ANDs the live show/hide (e.g. during the sprint duel) against it.
+    private bool baseVisible;
+
     void Awake()
     {
         Instance = this;
         BuildUI();
-        canvasRoot.SetActive(Application.isMobilePlatform || (Application.isEditor && showInEditor));
+        baseVisible = Application.isMobilePlatform || (Application.isEditor && showInEditor);
+        canvasRoot.SetActive(baseVisible);
+    }
+
+    // Hide/show the whole gameplay touch UI (joystick + action buttons + stamina HUD) as a set.
+    // Called by SprintDuel / QuarterBreakUI so the duel's own SPEED bar + countdown own the
+    // screen, then everything returns instantly. No-op on platforms where the UI never shows.
+    public void SetGameplayVisible(bool visible)
+    {
+        if (canvasRoot != null) canvasRoot.SetActive(baseVisible && visible);
     }
 
     void Update()
@@ -173,11 +186,11 @@ public class TouchControls : MonoBehaviour
         {
             if (attackMode)
             {
-                // top = Sprint (hold), bottom-right = Shoot (tap/hold/release), bottom-left = Pass (tap)
+                // top = Sprint (HOLD to sprint), bottom-right = Shoot (tap/hold/release), bottom-left = Pass (tap)
                 pm.SetTouchInput(axis,
                     brHeld, brDown, brUp,   // shoot
                     blHeld, blDown, blUp,   // pass
-                    topHeld,                // sprint
+                    topHeld,                // sprint (held = sprinting)
                     false);                 // switch (attack: unused)
             }
             else

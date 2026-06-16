@@ -64,6 +64,18 @@ public class MatchContext : MonoBehaviour
     public TeamSide CounterTeam { get; private set; }
     public float CounterUntilTime { get; private set; }
 
+    // Has anyone taken possession since the last reset (game start / goal / sprint duel)?
+    // Flips false on a reset and true on the first grab; CameraFollow holds the wide pool
+    // overview shot until it turns true, then resumes following the active player (Task 1).
+    public bool BallTouchedSinceReset { get; private set; }
+    public void ResetBallTouch() { BallTouchedSinceReset = false; }
+
+    // Force the camera out of the wide overview when play resumes after a GOAL restart:
+    // there the conceding team is given the ball WHILE play is frozen (so the normal
+    // first-grab trigger already fired and was reset for the pause), so on un-freeze we
+    // re-arm the flag by hand. Pure camera cue — does not touch possession (Task 3).
+    public void MarkBallTouched() { BallTouchedSinceReset = true; }
+
     public Vector2 BallPosition => ball != null ? ball.position : Vector2.zero;
     public Rigidbody2D Ball => ball;
     public TeamSide PlayerTeam => playerTeam;
@@ -88,6 +100,7 @@ public class MatchContext : MonoBehaviour
         else if (prev != null) LastTouchTeam = prev;
 
         PossessingTeam = team;
+        if (team != null) BallTouchedSinceReset = true;      // first grab → camera leaves the overview shot
         if (team == null) lastReleaseTime = Time.time;       // ball was just released → start the cooldown
         else if (team != GrabBannedTeam) GrabBannedTeam = null; // the OTHER team got it → lift the turnover ban
 

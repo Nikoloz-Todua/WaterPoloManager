@@ -16,6 +16,7 @@ public class PlayerAnimator : MonoBehaviour
     const string IsStealingParam = "IsStealing";
 
     const float SprintSpeed = 4.5f;  // Speed above this counts as sprinting (AI bursts)
+    const float SprintChargeThreshold = 0.3f; // sprintCharge above this reads as a sprint (Task 6)
     const float MoveEpsilon = 0.1f;  // Shift only reads as a sprint while actually moving
     const float ShotSpeed = 3f;      // release while moving faster than this = a shot, not a drop
     const float StealAnimSeconds = 0.45f; // ~6 frames @ 14 fps; defend is held off meanwhile
@@ -62,10 +63,10 @@ public class PlayerAnimator : MonoBehaviour
 
         animator.SetFloat(SpeedParam, speed);
         animator.SetBool(IsHoldingParam, isHolding);
-        // Sprint = Shift held while actually moving (never while standing still), OR the
-        // old speed threshold so fast AI swimming still reads as a sprint.
+        // Sprint = tap-charge meter past 0.3 while actually moving (never while standing
+        // still), OR the speed threshold so fast AI swimming still reads as a sprint.
         animator.SetBool(IsSprintingParam,
-            (movement.SprintHeld && speed > MoveEpsilon) || speed > SprintSpeed);
+            (movement.SprintCharge > SprintChargeThreshold && speed > MoveEpsilon) || speed > SprintSpeed);
         // Defend is purely proximity-driven: an enemy CARRIER within the radius. Held
         // off while a steal clip plays so AnyState→defend can't cut the snatch short.
         animator.SetBool(IsDefendingParam,
