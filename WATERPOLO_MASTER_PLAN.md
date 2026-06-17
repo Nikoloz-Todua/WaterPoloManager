@@ -332,26 +332,22 @@ Also now 🟡 **WORKING (first pass — improve later, not 100% done):**
 
 **Art style:** High quality semi-realistic cartoon. Characters are ~200px wide, shown from waist up, emerging from water. No legs visible.
 
-**Approach:** Single bone rig per character type (field player / goalkeeper). Swap face sprite and cap color per player. All 240 players share the same animations.
+**Approach:** Frame-by-frame sprite animation. Each animation is a sequence of individual PNG images (one image per frame), **12–15 images per animation**. No bone rigging or skeletal deformation — every frame is fully drawn art. All 240 players share the same animation frames; per-player look is achieved by tinting cap/skin and swapping the face overlay (see per-country customization below).
 
-**Body parts to rig separately:**
-- Head with cap (cap color swappable)
-- Face (swappable per player)
-- Torso
-- Left upper arm
-- Left forearm and hand
-- Right upper arm
-- Right forearm and hand
-- Water splash (separate child sprite, animates independently)
-- Ball (separate sprite, hidden when loose, visible when holding)
+**Directional animation requirement (every animation):**
+- **Front view** — character facing the camera. Covers both left and right movement via `SpriteRenderer.flipX` (no separate left/right art needed — see note below).
+- **Back view** — separate art set, drawn from behind, used for up/down (away/toward) movement.
+- So every animation ships as **two frame sets**: front (12–15 frames) and back (12–15 frames).
 
-**Ball visibility rule:** When player is holding the ball, hide the physics ball object and show the ball baked into the holding animation. When released, show physics ball again and hide animation ball.
+> **Left/right direction note:** Left vs. right is handled entirely by the existing **Flip X** logic in `PlayerAnimator.cs` (also `BotAnimator.cs` and `GoalkeeperAnimator.cs`). Only the front-view art is drawn; flipping it horizontally produces the opposite-facing sprite. **No separate left or right art is needed** — only front and back sets per animation.
 
-**Full animation list — field players:**
-1. Idle/floating — gentle upper body bob, water splash slow
-2. Swimming — arms alternate stroke, faster splash
-3. Sprinting — faster arm movement, bigger splash
-4. Holding ball — ball raised in right hand, left arm out for balance
+**Ball hide/show system:** When `IsHolding == true`, hide the physics ball's `SpriteRenderer` and show the ball that is baked into the holding/charge/shoot animation frames. On release, re-enable the physics ball `SpriteRenderer` at the player's hand position and let the animation continue without its baked ball. Code change needed in `PlayerMovement.cs` and `BotMovement.cs`.
+
+**Full animation list — field players (priority order):**
+1. Idle — gentle upper body bob, slow water ripple
+2. Swim — arms alternate stroke, medium splash
+3. Sprint — faster arm movement, big aggressive splash
+4. Hold ball — ball raised, balance arm out
 5. Charge shot — wind-up, arm pulls back further each frame
 6. Shoot release — explosive forward throw, follow-through
 7. Pass — side arm throw, lower than shot
@@ -374,33 +370,32 @@ Also now 🟡 **WORKING (first pass — improve later, not 100% done):**
 6. Celebration — same as field player
 
 **Water splash rules:**
-- Generate water splash as separate sprite sheet
 - Idle = small slow ripple
 - Swimming = medium directional splash
 - Sprinting = large aggressive splash
 - Receiving = small splash as player lunges
+- Baked into the per-frame art (front and back sets) rather than a separate rig sprite
 
 **Per-country customization:**
 - Cap color changes per country (inspector color tint)
 - Face sprite swaps per player (16 countries x 15 players = 240 faces)
-- Skin tone adjusted via color tint on torso/arms
+- Skin tone adjusted via color tint
 - Body shape stays identical across all players
 
 **Difficulty notes:**
-- Bone rigging: 2-3 days for one character
-- Animating all states: 1-2 weeks
-- Multiplying to 240 players: near zero extra work if rig is shared correctly
-- Goalkeeper rig: separate 2-3 days
-- Water splash sheet: 1 day
-- Ball hide/show system: needs code change in PlayerMovement.cs and BotMovement.cs
+- Drawing one full animation (12–15 front frames + 12–15 back frames): the bulk of the work, repeated per state
+- Animating all field-player states: longest task in the overhaul
+- Multiplying to 240 players: near zero extra work — frames are shared, only cap tint / skin tint / face overlay differ
+- Goalkeeper set: separate frame sets per dive direction
+- Ball hide/show system: needs code change in `PlayerMovement.cs` and `BotMovement.cs`
 
 **Next immediate steps:**
-1. Generate body part sprites using AI (same style as current) — parts listed above, transparent background, consistent lighting
-2. Import into Unity 2D Animation package
-3. Rig one field player
-4. Build all animations on that one rig
+1. Generate per-frame PNG sprites using AI (same style as current) — 12–15 frames each, transparent background, consistent lighting; produce front and back sets per animation
+2. Import frame sequences into Unity, slice/order them, build Animation clips (one clip per state per direction)
+3. Wire clips into the Animator and the front/back + Flip X selection in `PlayerAnimator.cs`
+4. Build all field-player animation states on this setup
 5. Test in game
-6. Then clone and swap faces/caps for all 240 players
+6. Then apply cap tint / skin tint / face overlay for all 240 players
 
 ## Player System Architecture
 
