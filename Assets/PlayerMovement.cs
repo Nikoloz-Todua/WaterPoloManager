@@ -941,15 +941,25 @@ public class PlayerMovement : MonoBehaviour
         // The back body picks swim-backl / swim-backr from the CURRENT aim (lastDirection.x).
         // Those frames aren't exact mirrors, so each side gets its own offset.
         float vy = rb != null ? rb.linearVelocity.y : 0f;
+        Vector2 offset;
         if (vy > BackFacingThreshold)
-            return lastDirection.x >= 0f ? handOffsetUp : handOffsetUpLeft;
-
+            offset = lastDirection.x >= 0f ? handOffsetUp : handOffsetUpLeft;
         // FRONT body, explicit left/right aim.
-        if (lastDirection.x > 0.1f) return handOffsetRight;
-        if (lastDirection.x < -0.1f) return handOffsetLeft;
-
+        else if (lastDirection.x > 0.1f) offset = handOffsetRight;
+        else if (lastDirection.x < -0.1f) offset = handOffsetLeft;
         // Facing DOWN / idle: the hand sits at the SAME spot regardless of which way we last faced
         // horizontally, so the ball no longer jumps sides between A→S and D→S.
-        return handOffsetDown;
+        else offset = handOffsetDown;
+
+        // Ends are swapped at halftime (P3/P4): the player team's defendGoal moves to the RIGHT (+x).
+        // MatchContext has no explicit "swapped" flag, so we read it the same way the rest of the
+        // codebase does — the sign of defendGoal.x. When swapped, mirror the hand's HORIZONTAL offset
+        // so it still reads on the correct side; P1/P2 (own goal on the LEFT, -x) is left exactly as-is.
+        MatchContext ctx = MatchContext.Instance;
+        if (ctx != null && ctx.PlayerTeam != null && ctx.PlayerTeam.defendGoal != null &&
+            ctx.PlayerTeam.defendGoal.position.x > 0f)
+            offset.x = -offset.x;
+
+        return offset;
     }
 }

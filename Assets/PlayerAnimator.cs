@@ -131,18 +131,17 @@ public class PlayerAnimator : MonoBehaviour
         // requires !isHolding), so at most one ever shows; otherwise the flat front/back sprites drive.
         // Facing the camera (down / sideways / idle) shows the FRONT body; swimming away (up)
         // shows the BACK body. Exactly one of the bodies is visible at a time.
-        // Show the BACK body only when RETREATING toward our OWN goal (defendGoal), not merely when
-        // swimming up the screen. defendGoal is swapped at halftime, so its X sign tells us which way
-        // "toward own goal" is in the current period (P1/2 left = -x, P3/4 right = +x). If MatchContext
-        // isn't up yet, fall back to "swimming left" (period 1/2 own goal).
-        MatchContext ctx = MatchContext.Instance;
-        bool showBack = (ctx != null && ctx.PlayerTeam != null && ctx.PlayerTeam.defendGoal != null)
-            ? vel.x * Mathf.Sign(ctx.PlayerTeam.defendGoal.position.x) > FlipEpsilon
-            : vel.x < -FlipEpsilon;
-        // vel.x collapses to ~0 the instant the player stops, which would snap the back body to the
-        // front on release. Only update the latch while actually moving; otherwise hold last facing.
-        if (speed > MoveEpsilon) lastShowBack = showBack;
-        else showBack = lastShowBack;
+        // Show the BACK body while swimming LEFT. vel.x collapses to ~0 the instant the player stops,
+        // which would snap the back body to front on release, so latch the facing: only update the
+        // latch while actually moving, hold it through a brief stop, and reset to front when floating
+        // idle (not holding) so an idler always faces the camera.
+        bool movingLeft = vel.x < -FlipEpsilon;
+        bool isMoving = vel.magnitude > MoveEpsilon;
+
+        if (isMoving) lastShowBack = movingLeft;
+        else if (!isHolding) lastShowBack = false; // floating idle always faces front
+
+        bool showBack = isMoving ? movingLeft : lastShowBack;
 
         // Back-facing bone bodies take priority while swimming away: BackBoneBody (its own
         // floating_body_back rig) when floating, BackHoldBody (holding_body_back rig) when holding.
