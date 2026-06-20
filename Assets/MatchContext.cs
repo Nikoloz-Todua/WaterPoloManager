@@ -186,9 +186,18 @@ public class MatchContext : MonoBehaviour
     public bool TeamHasBall(TeamSide team) => PossessingTeam == team;
     public bool BallIsLoose => PossessingTeam == null;
 
-    // Loose AND past the post-release cooldown → safe for anyone to collect.
-    // This is what stops a shooter/teammate from instantly snatching back a shot or pass.
-    public bool BallGrabbable => PossessingTeam == null && (Time.time - lastReleaseTime) >= releaseGrabDelay;
+    // Hard ceiling on the post-release no-grab window, regardless of how releaseGrabDelay is tuned
+    // in the Inspector — so a mis-set (multi-second) value can never "permanently" lock the releaser
+    // out of their own loose ball. The window is purely elapsed-time and always expires.
+    private const float MaxReleaseGrabDelay = 1f;
+
+    // Loose AND past the post-release cooldown → safe for ANYONE (including the releaser) to collect.
+    // This is what stops a shooter/teammate from instantly snatching back a shot or pass. It is
+    // time-based: at most MaxReleaseGrabDelay seconds after release it expires, after which the same
+    // player can pick their own loose ball back up normally.
+    public bool BallGrabbable =>
+        PossessingTeam == null &&
+        (Time.time - lastReleaseTime) >= Mathf.Min(releaseGrabDelay, MaxReleaseGrabDelay);
 
     // given a team, returns the other team
     public TeamSide EnemyOf(TeamSide team)

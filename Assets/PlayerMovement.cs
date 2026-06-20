@@ -12,8 +12,24 @@ public class PlayerMovement : MonoBehaviour
 
     [Header("Ball")]
     [SerializeField] private Rigidbody2D ball;
-    [SerializeField] private float grabDistance = 1.0f;
+    [Tooltip("How close (centre-to-centre) the player must be to collect a loose ball. Kept generous so colliders pushing the ball away can't make your own loose ball unreachable.")]
+    [SerializeField] private float grabDistance = 1.6f;
     [SerializeField] private float holdOffset = 0.6f;
+    [Tooltip("Anchor the held ball snaps to on pickup. Leave empty to parent to this player's root.")]
+    [SerializeField] private Transform handPosition;
+
+    [Header("Held-ball hand position (units from player centre; tune to your sprite art)")]
+    [Tooltip("Ball position when facing RIGHT — the lead hand.")]
+    [SerializeField] private Vector2 handOffsetRight = new Vector2(0.5f, 0.15f);
+    [Tooltip("Ball position when facing LEFT — independent of Right (arms aren't symmetrical).")]
+    [SerializeField] private Vector2 handOffsetLeft = new Vector2(-0.2f, 0.35f);
+    [Tooltip("Ball position in BACK view swimming away to the RIGHT (swim-backr) — upper-arm area.")]
+    [SerializeField] private Vector2 handOffsetUp = new Vector2(0.1f, 0.5f);
+    [Tooltip("Ball position in BACK view swimming away to the LEFT (swim-backl) — independent of Up (frames differ).")]
+    [SerializeField] private Vector2 handOffsetUpLeft = new Vector2(-0.1f, 0.5f);
+    [Tooltip("Ball position when facing DOWN / idle — the front sprite's resting hand.")]
+    [SerializeField] private Vector2 handOffsetDown = new Vector2(0.28f, -0.05f);
+    private const float BackFacingThreshold = 0.3f; // velocity.y above this shows the BACK body (matches PlayerAnimator)
 
     [Header("Shooting")]
     [SerializeField] private float maxShootPower = 12f;
@@ -25,8 +41,12 @@ public class PlayerMovement : MonoBehaviour
 
     [Header("Passing")]
     [SerializeField] private float passFactor = 2.5f; // (legacy; pass speed is charge-based now)
-    [SerializeField] private float minPassSpeed = 6f;
-    [SerializeField] private float maxPassSpeed = 13f;
+    [Tooltip("Even an untimed tap-pass flies at least this fast, so it actually reaches a teammate.")]
+    [SerializeField] private float minPassSpeed = 9f;
+    [SerializeField] private float maxPassSpeed = 16f;
+    // A pass computed slower than this is a dud (would just plop at the player's feet) → refuse to
+    // release the ball at all, so a press never "drops" the ball instead of throwing it.
+    private const float MinPassReleaseSpeed = 4f;
     [Tooltip("Seconds of holding to reach a FULL-power pass (lower = snappier charge bar).")]
     [SerializeField] private float passChargeTime = 0.45f;
     [SerializeField] private float lobSpeedFactor = 0.7f; // F+B lob travels at this fraction of pass speed
@@ -154,6 +174,15 @@ public class PlayerMovement : MonoBehaviour
         if (ball != null && ball.GetComponent<BallFlight>() == null)
             ball.gameObject.AddComponent<BallFlight>();
 
+        // The aim chevron is the "AimLine" child (a LineRenderer). If the Inspector slot is empty,
+        // grab it by name so we ALWAYS control its visibility — an unwired slot used to make
+        // UpdateAimLine bail early, leaving the chevron stuck visible on every player.
+        if (aimLine == null)
+        {
+            Transform t = transform.Find("AimLine");
+            if (t != null) aimLine = t.GetComponent<LineRenderer>();
+        }
+
         // Configure the existing LineRenderer to draw a soft chevron.
         if (aimLine != null)
         {
@@ -250,9 +279,12 @@ public class PlayerMovement : MonoBehaviour
         sprintHeld = IsActive && !sprintFrozen && !Excluded && !keeperHasHuman &&
                      (Input.GetKey(KeyCode.LeftShift) || touchSprintHeld);
 
-        // If we lost the ball (e.g. it was stolen), our parent link is gone — clear
-        // the stale holding flag before anything reads it, so we don't stay green/aiming.
-        if (isHolding && ball != null && ball.transform.parent != transform)
+        // If we lost the ball (e.g. it was stolen), it's no longer parented under us — clear the
+        // stale holding flag before anything reads it, so we don't stay green/aiming. Use IsChildOf
+        // (not == transform) so a ball parented to our handPosition anchor still counts as held —
+        // otherwise wiring handPosition silently drops the hold and the LateUpdate hand-offset block
+        // (which only runs while isHolding) never fires, freezing the ball at the anchor.
+        if (isHolding && ball != null && !ball.transform.IsChildOf(transform))
             isHolding = false;
 
         // Play frozen (sprint duel / goal settle / penalty) → no control, charge, steal, or aim
@@ -339,8 +371,14 @@ public class PlayerMovement : MonoBehaviour
             input = new Vector2(x, y).normalized + touchAxis; // analog joystick adds in
             if (input.sqrMagnitude > 1f) input = input.normalized;
 
-            if (input != Vector2.zero)
+            // Face the way the player is AIMING (raw input) the instant a key/stick is pressed —
+            // even while standing still or barely moving — so the held-ball hand offset snaps to the
+            // correct facing immediately. Only with no input do we fall back to the travel direction
+            // (velocity), so drift / knockback still faces sensibly.
+            if (input.magnitude > 0.1f)
                 lastDirection = input;
+            else if (rb != null && rb.linearVelocity.magnitude > 0.1f)
+                lastDirection = rb.linearVelocity.normalized;
 
             // A human carrier isn't forced to kickoff-pass: their first move voids the
             // pending flag (shooting/passing already clears it via the possession change).
@@ -360,6 +398,11 @@ public class PlayerMovement : MonoBehaviour
                 if (isHolding) DropBall();
                 else TryGrabBall();
             }
+
+            // AUTO-COLLECT: a loose, grabbable ball within reach is picked up automatically — no E
+            // press needed. Guarantees you can always reclaim your own bad pass/drop just by swimming
+            // back to it (TryGrabBall still enforces the loose + cooldown + grab-ban gates).
+            if (!isHolding) TryGrabBall();
 
             // Space with no ball = attempt steal. If it succeeds, consume this press
             // so releasing Space doesn't instantly fire a shot.
@@ -451,7 +494,8 @@ public class PlayerMovement : MonoBehaviour
     {
         if (aimLine == null) return;
 
-        bool show = IsActive && isHolding; // only the human-controlled player aims
+        bool show = IsActive; // chevron belongs to the human-controlled player only (hidden the
+                              // instant control moves away, since this runs every Update)
         aimLine.enabled = show;
         if (!show) return;
 
@@ -512,8 +556,8 @@ public class PlayerMovement : MonoBehaviour
         isHolding = true;
         ball.simulated = false;
         ball.linearVelocity = Vector2.zero;
-        ball.transform.SetParent(transform);
-        ball.transform.localPosition = (Vector3)(lastDirection * holdOffset);
+        ball.transform.SetParent(handPosition != null ? handPosition : transform);
+        ball.transform.localPosition = Vector3.zero; // snap to the hand anchor
 
         if (MatchContext.Instance != null)
             MatchContext.Instance.SetPossession(MatchContext.Instance.PlayerTeam);
@@ -716,6 +760,12 @@ public class PlayerMovement : MonoBehaviour
     {
         if (ball == null) return;
         isHolding = false;
+        // Snap the ball from the hand anchor back to the player centre BEFORE releasing, so the
+        // shot launches from the body centre and flies straight along the aim — the hand offset is
+        // purely a hold-time visual. (Keep the ball's own z so sprite sorting is untouched.)
+        Vector3 releasePos = transform.position;
+        releasePos.z = ball.transform.position.z;
+        ball.transform.position = releasePos;
         ball.transform.SetParent(null);
         ball.simulated = true;
 
@@ -771,16 +821,21 @@ public class PlayerMovement : MonoBehaviour
 
         lastDirection = fireDir;
 
+        // Work out the throw speed BEFORE releasing so a dud (near-zero) pass can be refused — the
+        // floor is minPassSpeed even for an untimed tap, so a pass always carries to a teammate.
+        // F+B = HIGH LOB: slower flight, ball arcs overhead with a water shadow (BallFlight), AI
+        // interception gated to a reduced roll. Otherwise a plain pass: no scaling/trail.
+        float speed = Mathf.Clamp(Mathf.Lerp(minPassSpeed, maxPassSpeed, Mathf.Clamp01(charge)),
+                                  minPassSpeed, maxPassSpeed);
+        bool lob = Input.GetKey(KeyCode.F);
+        if (lob) speed *= lobSpeedFactor;
+
+        // Too weak to be a real pass → keep holding rather than dropping the ball at our feet.
+        if (speed < MinPassReleaseSpeed) return;
+
         isHolding = false;
         ball.transform.SetParent(null);
         ball.simulated = true;
-        float speed = Mathf.Clamp(Mathf.Lerp(minPassSpeed, maxPassSpeed, Mathf.Clamp01(charge)),
-                                  minPassSpeed, maxPassSpeed);
-
-        // F+B = HIGH LOB: slower flight, ball arcs overhead with a water shadow (BallFlight),
-        // AI interception gated to a reduced roll. Otherwise a plain pass: no scaling/trail.
-        bool lob = Input.GetKey(KeyCode.F);
-        if (lob) speed *= lobSpeedFactor;
         ball.linearVelocity = fireDir * speed;
         shotHeight = lob ? 0.9f : 0.5f; // a pass overwrites LastReleaser → keep its height honest
 
@@ -867,7 +922,34 @@ public class PlayerMovement : MonoBehaviour
     {
         if (isHolding && ball != null)
         {
-            ball.transform.localPosition = (Vector3)(lastDirection * holdOffset);
+            // Pin the ball to the hand for the facing the animator is actually showing. World-space
+            // so it's correct regardless of what the ball is parented to (root or a hand anchor);
+            // keep the ball's own z so its sprite sorting is untouched.
+            Vector3 p = transform.position + (Vector3)HeldBallHandOffset();
+            p.z = ball.transform.position.z;
+            ball.transform.position = p;
         }
+    }
+
+    // World-space offset (from the player centre) where the held ball should sit, matched to the
+    // body/facing PlayerAnimator displays so the ball reads as carried IN the hand. The back body
+    // has no flipX (its clips handle left/right), so its hand uses the CURRENT aim's x. The down/
+    // idle hand is a single fixed spot, so the ball never jumps sides between A→S and D→S.
+    Vector2 HeldBallHandOffset()
+    {
+        // BACK body — shown while swimming AWAY (upward velocity); mirrors PlayerAnimator's rule.
+        // The back body picks swim-backl / swim-backr from the CURRENT aim (lastDirection.x).
+        // Those frames aren't exact mirrors, so each side gets its own offset.
+        float vy = rb != null ? rb.linearVelocity.y : 0f;
+        if (vy > BackFacingThreshold)
+            return lastDirection.x >= 0f ? handOffsetUp : handOffsetUpLeft;
+
+        // FRONT body, explicit left/right aim.
+        if (lastDirection.x > 0.1f) return handOffsetRight;
+        if (lastDirection.x < -0.1f) return handOffsetLeft;
+
+        // Facing DOWN / idle: the hand sits at the SAME spot regardless of which way we last faced
+        // horizontally, so the ball no longer jumps sides between A→S and D→S.
+        return handOffsetDown;
     }
 }

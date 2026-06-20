@@ -330,72 +330,242 @@ Also now 🟡 **WORKING (first pass — improve later, not 100% done):**
 
 ## Animation Overhaul Plan
 
-**Art style:** High quality semi-realistic cartoon. Characters are ~200px wide, shown from waist up, emerging from water. No legs visible.
+**Approach:** Single bone rig per character using Unity Skinning Editor. One assembled character PNG image with bones placed directly on it. No separate body parts needed.
 
-**Approach:** Frame-by-frame sprite animation. Each animation is a sequence of individual PNG images (one image per frame), **12–15 images per animation**. No bone rigging or skeletal deformation — every frame is fully drawn art. All 240 players share the same animation frames; per-player look is achieved by tinting cap/skin and swapping the face overlay (see per-country customization below).
+**Current rig location:**
+- Scene: Assets/Scenes/CharacterRig.unity
+- Object in scene: test_0
+- Bones: bone_1 through bone_8 (8 total)
+- Sprite Skin component attached to test_0
+- Animator Controller: Assets/Sprites/Players/Animations/PlayerBodyAnimation.controller
+- WIP animation clip: Assets/Sprites/Players/Animations/idle_body_new.anim
 
-**Directional animation requirement (every animation):**
-- **Front view** — character facing the camera. Covers both left and right movement via `SpriteRenderer.flipX` (no separate left/right art needed — see note below).
-- **Back view** — separate art set, drawn from behind, used for up/down (away/toward) movement.
-- So every animation ships as **two frame sets**: front (12–15 frames) and back (12–15 frames).
+**Base character images:**
+- Front view: Assets/Sprites/Players/Parts/denes-varga-front.png
+- Back view: Assets/Sprites/Players/Parts/denes-varga-back.png
+- Front view handles left/right movement via SpriteRenderer Flip X (already in PlayerAnimator.cs)
+- Back view used when player moves up/down on screen
 
-> **Left/right direction note:** Left vs. right is handled entirely by the existing **Flip X** logic in `PlayerAnimator.cs` (also `BotAnimator.cs` and `GoalkeeperAnimator.cs`). Only the front-view art is drawn; flipping it horizontally produces the opposite-facing sprite. **No separate left or right art is needed** — only front and back sets per animation.
-
-**Ball hide/show system:** When `IsHolding == true`, hide the physics ball's `SpriteRenderer` and show the ball that is baked into the holding/charge/shoot animation frames. On release, re-enable the physics ball `SpriteRenderer` at the player's hand position and let the animation continue without its baked ball. Code change needed in `PlayerMovement.cs` and `BotMovement.cs`.
-
-**Full animation list — field players (priority order):**
-1. Idle — gentle upper body bob, slow water ripple
-2. Swim — arms alternate stroke, medium splash
-3. Sprint — faster arm movement, big aggressive splash
-4. Hold ball — ball raised, balance arm out
-5. Charge shot — wind-up, arm pulls back further each frame
-6. Shoot release — explosive forward throw, follow-through
-7. Pass — side arm throw, lower than shot
-8. Lob pass — high arc release, arm goes fully overhead
-9. Skip shot — low fast release, arm comes down not up
-10. Receiving/catching — both arms extend forward, close around ball
+**Animation list — field players (front view):**
+1. Idle/floating — gentle arm sway, body bob
+2. Swimming — arms alternate stroke
+3. Sprinting — faster arm movement
+4. Holding ball — ball in right hand
+5. Charge shot — arm pulls back
+6. Shoot release — explosive forward throw
+7. Pass — side arm throw
+8. Lob pass — arm fully overhead
+9. Skip shot — low fast release
+10. Receiving/catching — both arms extend forward
 11. Steal attempt — one arm lunges sideways
-12. Defending idle — both arms raised, blocking stance
-13. Blocking shot — one arm shoots straight up
-14. Foul committed — arms spread slightly, guilty pose
-15. Celebration — fist pump, one arm raises
-16. Excluded/ejected — arms down, swimming to corner
+12. Defending idle — both arms raised
+13. Blocking shot — one arm shoots up
+14. Foul committed — arms spread slightly
+15. Celebration — fist pump
+16. Excluded/ejected — arms down swimming to corner
 
-**Full animation list — goalkeeper:**
-1. Idle — slight sway, hands at water level
-2. Ready stance — arms wide, alert
-3. Dive left/right/up/left-up/right-up/left-down/right-down/down — 8 directions (already partially done)
-4. Save reaction — arms extended in save direction, hold pose
-5. Distribution throw — same as field player pass
-6. Celebration — same as field player
+**Animation list — field players (back view):**
+1. Idle/floating
+2. Swimming
+3. Sprinting
 
-**Water splash rules:**
-- Idle = small slow ripple
-- Swimming = medium directional splash
-- Sprinting = large aggressive splash
-- Receiving = small splash as player lunges
-- Baked into the per-frame art (front and back sets) rather than a separate rig sprite
+**Ball hide/show system:**
+- When IsHolding=true: hide physics ball (SpriteRenderer.enabled = false)
+- Show ball baked into holding animation frames
+- On release: re-enable physics ball at hand position
+- Needs code change in PlayerMovement.cs and BotMovement.cs
 
-**Per-country customization:**
-- Cap color changes per country (inspector color tint)
-- Face sprite swaps per player (16 countries x 15 players = 240 faces)
-- Skin tone adjusted via color tint
-- Body shape stays identical across all players
+**Goalkeeper rig:** separate CharacterRig setup needed later, same approach.
 
-**Difficulty notes:**
-- Drawing one full animation (12–15 front frames + 12–15 back frames): the bulk of the work, repeated per state
-- Animating all field-player states: longest task in the overhaul
-- Multiplying to 240 players: near zero extra work — frames are shared, only cap tint / skin tint / face overlay differ
-- Goalkeeper set: separate frame sets per dive direction
-- Ball hide/show system: needs code change in `PlayerMovement.cs` and `BotMovement.cs`
+**How to continue work:**
+1. Open Unity
+2. Project panel → Assets/Scenes → double-click CharacterRig
+3. Click test_0 in Hierarchy
+4. Window → Animation → Animation
+5. Continue recording bone animations
 
-**Next immediate steps:**
-1. Generate per-frame PNG sprites using AI (same style as current) — 12–15 frames each, transparent background, consistent lighting; produce front and back sets per animation
-2. Import frame sequences into Unity, slice/order them, build Animation clips (one clip per state per direction)
-3. Wire clips into the Animator and the front/back + Flip X selection in `PlayerAnimator.cs`
-4. Build all field-player animation states on this setup
-5. Test in game
-6. Then apply cap tint / skin tint / face overlay for all 240 players
+## Animation System (Built June 2026)
+
+> **Status: field-player visual animation is DONE and working in-engine** (sprite-swap edition).
+> This **supersedes the bone-rig "Animation Overhaul Plan" above** — that single-rig SpriteSkin
+> approach was built, hit a SpriteSkin↔sprite-swap incompatibility, and was **abandoned** (the bone
+> assets are still in the project but unused; see Known issues). Everything here is automated by
+> `Assets/Editor/AnimatorBuilder.cs` and driven at runtime by `Assets/PlayerAnimator.cs`. Applies to
+> the **6 human red field players only** — bots (blue) and goalkeepers are untouched.
+>
+> **⚠️ 2026-06-20 UPDATE — the bone rig is BACK (for floating + holding).** The "abandoned" wording
+> below is now only half-true. Flat FrontBody/BackBody sprite-swap is still the base for swimming /
+> sprinting / throwing / stealing, but **floating and holding now use real bone-rigged SpriteSkin
+> bodies** — `BoneBody` (floating) + `HoldBody` (holding) — added as extra children on each player.
+> What made it work this time: each bone body lives on its OWN child with its OWN rig sprite, and only
+> its RENDERER is toggled; we never mix a bone clip onto the sprite-swap body. Full detail in the
+> "### 2026-06-20 — Bone bodies (BoneBody floating + HoldBody holding)" subsection just below.
+
+### 2026-06-20 — Bone bodies (BoneBody floating + HoldBody holding)
+Each red player now has up to FOUR body children: flat `FrontBody` + `BackBody` (sprite-swap, the
+base) PLUS two SpriteSkin bone bodies shown only in specific states:
+- **`BoneBody`** — instance of `Assets/Sprites/Players/test_0.prefab` (SpriteSkin on the `test` rig),
+  scale 0.07/0.07/1, localPos 0, runs `BoneBodyAnimation.controller`. Shown ONLY while **floating**
+  (`speed < 0.15 && !isHolding`). Wired to `PlayerAnimator.boneAnimator` + `boneRenderer`.
+- **`HoldBody`** — instance of `Assets/Sprites/Players/hold_0.prefab` (SpriteSkin on the `hold` rig),
+  scale 0.07/0.07/1, localPos 0, runs `HoldBodyAnimation.controller`. Shown ONLY while **holding the
+  ball**. Wired to `PlayerAnimator.holdAnimator` + `holdRenderer`.
+
+**Visibility rule (`PlayerAnimator.Update`):** `showBone = isFloating && boneRenderer && boneAnimator`;
+`showHold = isHolding && holdRenderer && holdAnimator`. They're mutually exclusive (floating requires
+!isHolding). When either is true the flat FrontBody + BackBody are hidden. Both bone Animators are kept
+`.enabled = true` EVERY frame (toggling `.enabled` made the clip stutter/restart); only the renderer's
+`.enabled` flips. `BobFloatSpeedMax` was raised 0.05 → 0.15 so slow drift still reads as floating.
+
+**Controllers (`Assets/Sprites/Players/Animations/`):**
+- `BoneBodyAnimation.controller` — `floating_body` (default) + an `holding` state whose motion
+  currently ALSO points at `floating_body` (that holding state is unused) + an `IsHolding` bool param
+  (also unused by the current code — HoldBody handles holding instead).
+- `HoldBodyAnimation.controller` — single looping state, `holding_body.anim`, no params.
+
+**Bone clips (recorded in CharacterRig, each on its own rig):**
+- `floating_body.anim` (test_0 rig, front idle) — WORKING ✅
+- `holding_body.anim` (hold_0 rig, front holding w/ arm motion) — WORKING ✅
+- `floating_body_back.anim` (test-back_0 rig) — recorded, NOT wired to any body yet ⬜
+- `holding_body_back.anim` — NOT recorded (the `hold-back` sprite's Auto-Weights fail silently) ⬜
+
+**Editor tools (`AnimatorBuilder.cs`):**
+- `Tools → Setup BoneBody All Players` — instantiate test_0.prefab as `BoneBody` on Player..Player6,
+  wire boneAnimator/boneRenderer.
+- `Tools → Setup HoldBody All Players` — instantiate hold_0.prefab as `HoldBody`, wire
+  holdAnimator/holdRenderer.
+- Each skips a player that already has the child and marks the scene dirty (never auto-saves).
+
+**⚠️ PREREQUISITE — `hold_0.prefab` does NOT exist yet.** The `hold_0` rig lives only inside
+`Assets/Scenes/CharacterRig.unity`. Before `Setup HoldBody All Players` does anything: open that
+scene, drag `hold_0` into `Assets/Sprites/Players/` to create `hold_0.prefab`, then run the tool (it
+logs a clear error and adds nothing until the prefab exists). `test_0.prefab` already exists, so
+BoneBody works right now.
+
+**Held-ball hand positioning (`PlayerMovement.cs`, presentation-only):** five Inspector-tuned offsets
+— `handOffsetRight` / `handOffsetLeft` / `handOffsetUp` / `handOffsetUpLeft` / `handOffsetDown` —
+chosen by `HeldBallHandOffset()` (back/up by velocity.y + aim.x; explicit left/right by aim.x;
+down/idle = one fixed offset) and pinned to the hand in `LateUpdate` (world space). The down/idle case
+is a SINGLE fixed offset (no flip): an earlier X-mirror-by-last-facing made the ball jump sides on
+A→S vs D→S, so that mirror and the `lastHorizontalDir` field were REMOVED 2026-06-20. There is NO
+`MirrorForFlip`/`MirrorForFlipBack` method (it never existed) and no `lastHorizontalDir` field anymore.
+
+**Reverted (do NOT re-add blindly):** hiding the real ball's SpriteRenderer while HoldBody shows (so
+only the ball baked into `hold.png` shows) was tried and FULLY reverted — it made the held ball
+vanish. `PlayerAnimator` must never touch the ball renderer; the real ball stays visible, pinned to
+the hand. Ball-facing for inactive teammates was also tried earlier and reverted (idlers read as
+swimming).
+
+### Technique — how the clips animate
+Plain **SpriteRenderer sprite-swap** — no bones, no SpriteSkin. Each clip animates the
+SpriteRenderer's `m_Sprite`, looping.
+- **floating / holding / defending / stealing** → STATIC (one sprite held, looping).
+- **swimming / sprinting** → 2-frame swap (`swiml` ↔ `swimr`).
+- **throwing** → 2-frame swap (`throw-charge` ↔ `throw-release`).
+- All **`_back`** clips use the same technique with the back-view sprites.
+
+### ✅ What's built & working
+- **Dual body per player:** two child GameObjects, `FrontBody` + `BackBody`, each a plain
+  `SpriteRenderer` + `Animator`. Exactly one is visible at a time.
+- **All 6 red field players** (`Player`, `Player2`–`Player6`) set up identically and wired.
+- **Two controllers**, 7 states each, with AnyState transition priorities (below).
+- **Direction switching** (`PlayerAnimator.cs`): `velocity.y > 0.3` → show **BackBody** (swimming
+  away); otherwise show **FrontBody**; `FrontBody.flipX` follows `velocity.x` (sheets face right).
+- **One-button tooling:** `Tools → Setup All Players`, then `Tools → Wire Animation Clips`.
+- **Clean console:** zero errors / zero warnings.
+
+### Player setup in SampleScene (per player)
+- **Parent** (`Player`, `Player2`–`Player6`): `Rigidbody2D`, `PlayerMovement`, `CircleCollider2D`,
+  `TeammateAI`, `Animator` (`PlayerAnimation`), `PlayerAnimator`. **Parent `SpriteRenderer` is
+  DISABLED** (children render the body; the parent Animator is disabled too).
+- **Child `FrontBody`:** plain `SpriteRenderer` + `Animator` (`PlayerFrontAnimation`), default sprite
+  `test`, **scale 0.07/0.07/1**, position 0/0/0.
+- **Child `BackBody`:** plain `SpriteRenderer` + `Animator` (`PlayerBackAnimation`), default sprite
+  `test-back`, **scale 0.07/0.07/1**, position 0/0/0.
+- **`PlayerAnimator` slots:** `frontAnimator`, `backAnimator`, `frontRenderer`, `backRenderer` — all
+  wired by the Setup tool.
+
+### Animator controllers
+Both in `Assets/Sprites/Players/Animations/`.
+- **`PlayerFrontAnimation.controller`** — 7 states. AnyState transition priority (top-down, first
+  match wins; all `hasExitTime=false`, `duration=0.05`):
+  `throwing` (IsShooting trigger + !IsHolding) → `stealing` (IsStealing trigger) →
+  `holding` (IsHolding) → `defending` (IsDefending + !IsHolding) →
+  `sprinting` (IsSprinting + !IsHolding) → `swimming` (Speed>0.1 + !IsHolding + !IsSprinting) →
+  `floating` (Speed<0.05 + !IsHolding — fallback).
+- **`PlayerBackAnimation.controller`** — identical structure, `_back` clips.
+- **Parameters** (driven by `PlayerAnimator.cs`): `Speed` (float); `IsHolding` / `IsSprinting` /
+  `IsDefending` / `IsExcluded` (bool); `IsShooting` / `IsStealing` (trigger). Sprint is gated
+  `!IsHolding` (a carrier never reads as sprinting). `IsExcluded` has no clip yet.
+
+### 🟡 Partially working
+- **Throwing/shooting** transition timing needs tuning (release→throw feels off).
+- **Back-view throwing** clip exists but is **untested in gameplay**.
+- **Swimming** plays, but its frames are slightly larger than the static floating sprite, so there's
+  a small size "pop" when switching floating↔swimming.
+
+### ⬜ Not working / known issues
+1. **Players too small** at scale 0.07 — needs a size pass (raise scale, or re-export sprites so a
+   larger scale reads correctly).
+2. **No hand anchor for the held ball.** Ball *parenting* already works (`PlayerMovement` does
+   `ball.transform.SetParent(transform)` on pickup, `SetParent(null)` on release), but the ball sits
+   at the body centre, not a hand — there's no `HandPosition` child. Holding visuals currently rely
+   on the ball baked into `hold.png`.
+3. **Floating + holding are now ANIMATED via bone bodies** (2026-06-20) — `BoneBody` (floating) and
+   `HoldBody` (holding) SpriteSkin children play real bone clips (see the 2026-06-20 subsection
+   above). The earlier "static / abandoned" problem came from mixing bone + sprite-swap on ONE body;
+   the fix was a separate child per technique. Back-view bone floating/holding is still TODO.
+4. **Size mismatch:** swimming frames are larger than floating → visible pop (same fix as #1).
+5. **Throw/shoot timing** rough (see Partially working).
+6. **Bots (blue team)** have no new animations — still the single-body `BotAnimator` + old clips
+   (`idle`/`swim`/`sprint`/`hold`/`throw`/`steal`/`defend`.anim) with a red/blue controller swap.
+7. **Goalkeeper** has its own animation system (`goalkeeper_*.anim`) — untouched.
+8. **Defense debug circles** still drawn around players (existing debug visual).
+9. **Back throwing** untested in gameplay (listed again for completeness).
+10. **Asset hygiene (cleanup later):** on-disk names differ slightly from the ideal —
+    `throw-charge..png` (double dot), back-steal is `steal-back 1.png` (space + "1"); stray dupes
+    `test 1.png`, `player_parts_red.png.png`. Orphaned bone-rig leftovers remain unused:
+    `idle_body.anim`, `holding_back.anim`, `PlayerBodyAnimation.controller`, `swiml_0.controller`,
+    the `test_0` / `test-back_0` prefabs, and `Assets/Scenes/CharacterRig.unity`.
+
+### File locations
+- **Sprites** — `Assets/Sprites/Players/Parts/`:
+  - Front: `test`, `swiml`, `swimr`, `hold`, `throw-charge..png`, `throw-release`, `defend`, `steal`.
+  - Back: `test-back`, `swim-backl`, `swim-backr`, `hold-back`, `throw-charge-back`,
+    `throw-release-back`, `defend-back`, `steal-back 1`.
+- **Clips** — `Assets/Sprites/Players/Animations/`:
+  - Front: `floating`, `swimming`, `sprinting`, `holding`, `throwing`, `defending`, `stealing`.
+  - Back: `floating_back`, `swimming_back`, `sprinting_back`, `hold-back`, `throwing_back`,
+    `defending_back`, `stealing_back`.
+- **Controllers** — `PlayerFrontAnimation.controller`, `PlayerBackAnimation.controller` (same folder).
+- **Runtime script** — `Assets/PlayerAnimator.cs` (reads `PlayerMovement` + `Rigidbody2D`, drives
+  both bodies, front/back switch + flipX).
+- **Editor tooling** — `Assets/Editor/AnimatorBuilder.cs` (menus: Setup All Players, Wire Animation
+  Clips, Build Player Animator Controllers, Setup Player GameObjects).
+- **Scene** — `Assets/Scenes/SampleScene.unity`.
+
+### How to add a NEW player (future workflow)
+1. Generate front + back images for each pose (idle, swim, hold, throw, defend, steal) at the **same
+   proportions** as the existing set (e.g. in GPT).
+2. Import them to `Assets/Sprites/Players/Parts/` (Texture Type = **Sprite (2D and UI)**).
+3. Create the animation clips referencing the new sprites (or reuse the shared clips if the art is
+   shared).
+4. Duplicate an existing `Player` GameObject (already has the parent components + `FrontBody`/
+   `BackBody` children), or add a parent with `PlayerAnimator` and run `Tools → Setup All Players`.
+5. Set the `FrontBody`/`BackBody` default sprites to the new front/back idle.
+6. Update the clip sprite references (or give the player its own controllers) and re-check the 4
+   `PlayerAnimator` slots.
+
+### How to improve animations (future)
+- **Add bone animation properly:** use the **Skinning Editor** on the sprite → place bones → paint
+  weights → in the Animation window record the **bone Transforms** (NOT the SpriteRenderer).
+  ⚠️ Do **not** mix bone clips and sprite-swap clips on the same body — that incompatibility is
+  exactly what sank the first attempt; commit a body fully to one technique.
+- **Better swimming:** generate mid-stroke frames and add keyframes to `swimming.anim`.
+- **Better sprint:** generate more aggressive arm-position frames; give `sprinting` its own art
+  rather than reusing the swim frames.
+- **Quick wins:** fix body scale (#1), normalize sprite export sizes so floating/swimming match (#4),
+  add a `HandPosition` child and parent the ball to it on pickup (#2).
 
 ## Player System Architecture
 
@@ -764,3 +934,90 @@ top-bar currency).
 - **Clean console:** zero errors / zero warnings on all new + changed files (IDE diagnostics).
 - **Slot re-check:** nothing to wire — `RosterManager`/`PlayerDatabase` self-bootstrap and
   `TeamScreenUI` builds itself. No match-scene objects or slots were touched.
+
+## SESSION LOG — 2026-06-19 (field-player sprite animation: bone rig tried, then reverted to sprite-swap)
+
+Built the **field-player visual animation system** for the 6 human red players (full detail under
+"## Animation System (Built June 2026)"). **No gameplay scripts were touched** — `PlayerMovement`,
+`TeammateAI`, `BotMovement`, `WaterPoloAI`, `TeamSide`, `MatchContext` untouched; only the
+animation/editor scripts and animation assets changed.
+
+- **Dual-body setup:** every red player got `FrontBody` + `BackBody` children (plain `SpriteRenderer`
+  + `Animator`), parent `SpriteRenderer` disabled, 4 `PlayerAnimator` slots wired — all via
+  `Tools → Setup All Players` in `AnimatorBuilder.cs`. Body scale 0.07/0.07/1.
+- **Controllers:** rebuilt `PlayerFrontAnimation` / `PlayerBackAnimation` (7 states; AnyState
+  priorities throwing→stealing→holding→defending→sprinting→swimming→floating; `hasExitTime=false`,
+  `duration=0.05`).
+- **Bone-rig detour (ABANDONED):** tried a Unity 2D SpriteSkin bone rig (`test_0`/`test-back_0`
+  prefabs + procedurally-generated bone clips). SpriteSkin deformation fights sprite-swap, so it was
+  reverted to **plain SpriteRenderer sprite-swap**. Unused bone leftovers remain (`idle_body.anim`,
+  `holding_back.anim`, `PlayerBodyAnimation.controller`, the test prefabs, `CharacterRig.unity`).
+- **Clips wired** via `Tools → Wire Animation Clips`: floating/holding/defending(+back) = static
+  sprite-swap; swimming/sprinting/throwing/stealing(+back) = multi-frame sprite-swap. The old
+  `Tools → Generate Bone Clips` menu was removed (it would re-break the sprite-swap clips).
+- **`PlayerAnimator.cs`:** no longer nulls the body sprite in `Awake()` (the body keeps its default
+  sprite; clips drive `m_Sprite`); sprint is gated `!IsHolding`.
+- **Clean console:** zero errors / zero warnings on the changed scripts.
+- **Slot re-check:** after running the two tools, verify each of `Player`/`Player2`–`Player6` has its
+  4 `PlayerAnimator` slots (frontAnimator/backAnimator/frontRenderer/backRenderer) filled and its
+  parent `SpriteRenderer` unchecked.
+- **This entry's doc task:** documentation only — added the "Animation System (Built June 2026)"
+  section + this log. No code changed; no existing text removed.
+
+## SESSION LOG — 2026-06-20 (bone rig REVIVED the right way: BoneBody float + HoldBody hold; hand-offset ball positioning)
+
+Brought the bone rig back (it was abandoned 2026-06-19) but on SEPARATE children so it co-exists with
+the flat sprite-swap bodies. **No AI/gameplay decision logic changed** — `PlayerMovement` only gained
+presentation-only hand offsets + a ball-position helper; the match brain, shooting, passing, steal,
+shot clock, etc. are untouched. Full detail under "## Animation System (Built June 2026) →
+### 2026-06-20 — Bone bodies".
+
+- **Two new bone bodies per red player (Player..Player6):**
+  - `BoneBody` = `Assets/Sprites/Players/test_0.prefab` child, scale 0.07/0.07/1, controller
+    `BoneBodyAnimation` — shown ONLY while floating; wired to `PlayerAnimator.boneAnimator` +
+    `boneRenderer`.
+  - `HoldBody` = `Assets/Sprites/Players/hold_0.prefab` child, scale 0.07/0.07/1, controller
+    `HoldBodyAnimation` — shown ONLY while holding; wired to `PlayerAnimator.holdAnimator` +
+    `holdRenderer`.
+  - Both Animators stay `.enabled = true` always (toggling stuttered the clip); only the RENDERER
+    toggles. FrontBody + BackBody hidden whenever a bone body shows.
+- **New clips:** `floating_body.anim` (front, test_0 rig) ✅ and `holding_body.anim` (front, hold_0
+  rig) ✅ both WORKING. `floating_body_back.anim` recorded but NOT wired ⬜. `holding_body_back.anim`
+  NOT recorded — `hold-back` Auto-Weights silently fail ⬜.
+- **New controllers:** `BoneBodyAnimation.controller` (state `floating_body` default; an unused
+  `holding` state that also points at `floating_body`; unused `IsHolding` bool) and
+  `HoldBodyAnimation.controller` (one looping `holding_body` state).
+- **New editor tools** (`Assets/Editor/AnimatorBuilder.cs`): `Tools → Setup BoneBody All Players`
+  and `Tools → Setup HoldBody All Players` (instantiate the prefab as the child on all 6, wire the
+  two slots, skip if present, mark scene dirty — never auto-save).
+- **PlayerAnimator.cs:** added `boneAnimator/boneRenderer/holdAnimator/holdRenderer`; `showBone =
+  isFloating && …`; `showHold = isHolding && …`; both bone Animators forced enabled; front/back hidden
+  when showBone||showHold; `BobFloatSpeedMax` 0.05 → 0.15 (slow drift still floats); IdleBob unchanged.
+- **PlayerMovement.cs — held-ball hand positioning:** 5 Inspector-tuned offsets (`handOffsetRight/
+  Left/Up/UpLeft/Down`) + `HeldBallHandOffset()` + `LateUpdate` world-space pin. **Bug fixed:** the
+  down-facing ball jumped sides depending on the last A vs D facing — the down case X-mirrored by
+  `lastHorizontalDir`. **Removed `lastHorizontalDir` entirely**; down/idle now returns a single fixed
+  `handOffsetDown`. NOTE for the next AI: there is NO `MirrorForFlip`/`MirrorForFlipBack` method and no
+  `lastHorizontalDir` field — earlier conversation references to those are obsolete. (Gameplay tunables
+  unchanged this session: auto-grab within `grabDistance` 1.6u and pass speeds `minPassSpeed` 9 /
+  `maxPassSpeed` 16 are as previously set.)
+- **Reverted today (do not blindly re-add):** (a) hiding the real ball's SpriteRenderer while HoldBody
+  shows — made the held ball vanish, so it was fully reverted; `PlayerAnimator` must never touch the
+  ball renderer. (b) Ball-facing for inactive teammates — made idlers read as swimming.
+- **⚠️ MUST DO before HoldBody works:** `hold_0.prefab` does NOT exist yet. Open
+  `Assets/Scenes/CharacterRig.unity`, drag `hold_0` into `Assets/Sprites/Players/` to create
+  `hold_0.prefab`, THEN run `Tools → Setup HoldBody All Players` (until then it errors and adds
+  nothing). `test_0.prefab` exists, so BoneBody already works.
+- **Known issues / NOT done:** (1) `holding_body_back.anim` not recorded — `hold-back` Auto-Weights
+  broken (`git checkout -- "Assets/Sprites/Players/Parts/hold-back.png"` to restore original, then
+  re-rig). (2) `floating_body_back.anim` unwired — needs a `BackBoneBody` (test-back_0) child + back
+  controller + velocity.y switching. (3) Back view while holding still shows the flat `hold-back`
+  sprite-swap — acceptable for now. (4) Swimming↔floating size pop persists (sprite export — needs
+  art). (5) Blue team + goalkeeper animations untouched by design.
+- **Works perfectly:** front floating bone anim; front holding bone anim; all 5 hand offsets tuned;
+  all 6 players have BoneBody (+ HoldBody once the prefab exists); float threshold 0.15.
+- **Clean console:** zero errors / zero warnings on every changed file.
+- **Slot re-check:** after running the two Setup tools, verify on each `Player`/`Player2`–`Player6`
+  that `boneAnimator` + `boneRenderer` and `holdAnimator` + `holdRenderer` are filled, alongside the
+  existing `frontAnimator`/`backAnimator`/`frontRenderer`/`backRenderer`. FrontBody/BackBody slots are
+  untouched.

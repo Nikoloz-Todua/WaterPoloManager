@@ -103,6 +103,7 @@ public class Goalkeeper : MonoBehaviour
     private SpriteRenderer keeperIndicator;       // bouncing green triangle
     private LineRenderer keeperAim;               // facing chevron
     private LineRenderer keeperBar, keeperBarBG;  // shoot / pass power bar
+    private LineRenderer aimChevron;              // the scene "AimLine" child — only shown while holding
     const float HudIndicatorY = 0.5f, HudIndicatorBob = 0.06f, HudIndicatorSize = 0.3f;
     const float HudAimGap = 0.4f, HudAimLen = 0.25f, HudAimHalf = 0.12f, HudAimWidth = 0.05f;
     const float HudBarW = 0.55f, HudBarH = 0.07f, HudBarY = 0.34f;
@@ -113,6 +114,15 @@ public class Goalkeeper : MonoBehaviour
         homeX = startX = transform.position.x; // Task 4: lock the goal line to where the keeper starts
         CacheBlockers();
         BuildKeeperHud();
+
+        // The "AimLine" child chevron is uncontrolled by default (the keeper has its own coded HUD),
+        // so it sits stuck-on. Grab it so we can show it ONLY while the keeper holds the ball.
+        Transform aimT = transform.Find("AimLine");
+        if (aimT != null)
+        {
+            aimChevron = aimT.GetComponent<LineRenderer>();
+            if (aimChevron != null) aimChevron.enabled = false;
+        }
     }
 
     // Remember our solid (non-trigger) collider(s) so a missed save can briefly drop them and let
@@ -493,6 +503,10 @@ public class Goalkeeper : MonoBehaviour
     {
         bool show = holding && IsPlayerKeeper();
         Vector3 c = transform.position;
+
+        // The "AimLine" child chevron follows possession only: visible while holding the ball,
+        // hidden the instant it's passed/shot/released (holding flips false → this runs every frame).
+        if (aimChevron != null) aimChevron.enabled = holding;
 
         if (keeperIndicator != null)
         {
