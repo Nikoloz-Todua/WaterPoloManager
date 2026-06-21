@@ -73,10 +73,10 @@ public class QuarterBreakUI : MonoBehaviour
     void OnQuitClicked()
     {
         Time.timeScale = 1f;
-        // Prefer a clean return to the main menu if that scene exists in the build; otherwise quit.
-        if (Application.CanStreamedLevelBeLoaded("MainMenu"))
+        // Prefer a clean return to the hub if that scene exists in the build; otherwise quit.
+        if (Application.CanStreamedLevelBeLoaded("HubScene"))
         {
-            SceneManager.LoadScene("MainMenu");
+            SceneManager.LoadScene("HubScene");
             return;
         }
 #if UNITY_EDITOR

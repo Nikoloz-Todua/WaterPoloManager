@@ -82,7 +82,7 @@ public class MatchResultUI : MonoBehaviour
         winnerText = MakeText("Winner", "",          44f, new Vector2(0f, -20f));
 
         MakeButton("PLAY AGAIN", new Vector2(0f, -120f), () => LoadScene("SampleScene"));
-        MakeButton("MAIN MENU",  new Vector2(0f, -210f), () => LoadScene("MainMenu"));
+        MakeButton("MAIN MENU",  new Vector2(0f, -210f), () => LoadScene("HubScene"));
     }
 
     static void LoadScene(string sceneName)

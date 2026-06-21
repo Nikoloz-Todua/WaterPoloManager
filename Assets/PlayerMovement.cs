@@ -29,6 +29,11 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private Vector2 handOffsetUpLeft = new Vector2(-0.1f, 0.5f);
     [Tooltip("Ball position when facing DOWN / idle — the front sprite's resting hand.")]
     [SerializeField] private Vector2 handOffsetDown = new Vector2(0.28f, -0.05f);
+    [SerializeField] private Vector2 handOffsetRightSwapped;
+    [SerializeField] private Vector2 handOffsetLeftSwapped;
+    [SerializeField] private Vector2 handOffsetUpSwapped;
+    [SerializeField] private Vector2 handOffsetUpLeftSwapped;
+    [SerializeField] private Vector2 handOffsetDownSwapped;
     private const float BackFacingThreshold = 0.3f; // velocity.y above this shows the BACK body (matches PlayerAnimator)
 
     [Header("Shooting")]
@@ -941,24 +946,26 @@ public class PlayerMovement : MonoBehaviour
         // The back body picks swim-backl / swim-backr from the CURRENT aim (lastDirection.x).
         // Those frames aren't exact mirrors, so each side gets its own offset.
         float vy = rb != null ? rb.linearVelocity.y : 0f;
-        Vector2 offset;
-        if (vy > BackFacingThreshold)
-            offset = lastDirection.x >= 0f ? handOffsetUp : handOffsetUpLeft;
-        // FRONT body, explicit left/right aim.
-        else if (lastDirection.x > 0.1f) offset = handOffsetRight;
-        else if (lastDirection.x < -0.1f) offset = handOffsetLeft;
-        // Facing DOWN / idle: the hand sits at the SAME spot regardless of which way we last faced
-        // horizontally, so the ball no longer jumps sides between A→S and D→S.
-        else offset = handOffsetDown;
 
         // Ends are swapped at halftime (P3/P4): the player team's defendGoal moves to the RIGHT (+x).
         // MatchContext has no explicit "swapped" flag, so we read it the same way the rest of the
-        // codebase does — the sign of defendGoal.x. When swapped, mirror the hand's HORIZONTAL offset
-        // so it still reads on the correct side; P1/P2 (own goal on the LEFT, -x) is left exactly as-is.
+        // codebase does — the sign of defendGoal.x. When swapped we use the dedicated *Swapped offsets
+        // (tuned for P3/P4 directly); P1/P2 (own goal on the LEFT, -x) uses the normal offsets.
         MatchContext ctx = MatchContext.Instance;
-        if (ctx != null && ctx.PlayerTeam != null && ctx.PlayerTeam.defendGoal != null &&
-            ctx.PlayerTeam.defendGoal.position.x > 0f)
-            offset.x = -offset.x;
+        bool swapped = ctx != null && ctx.PlayerTeam != null && ctx.PlayerTeam.defendGoal != null &&
+                       ctx.PlayerTeam.defendGoal.position.x > 0f;
+
+        Vector2 offset;
+        if (vy > BackFacingThreshold)
+            offset = lastDirection.x >= 0f
+                ? (swapped ? handOffsetUpSwapped : handOffsetUp)
+                : (swapped ? handOffsetUpLeftSwapped : handOffsetUpLeft);
+        // FRONT body, explicit left/right aim.
+        else if (lastDirection.x > 0.1f) offset = swapped ? handOffsetRightSwapped : handOffsetRight;
+        else if (lastDirection.x < -0.1f) offset = swapped ? handOffsetLeftSwapped : handOffsetLeft;
+        // Facing DOWN / idle: the hand sits at the SAME spot regardless of which way we last faced
+        // horizontally, so the ball no longer jumps sides between A→S and D→S.
+        else offset = swapped ? handOffsetDownSwapped : handOffsetDown;
 
         return offset;
     }

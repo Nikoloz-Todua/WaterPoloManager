@@ -130,7 +130,7 @@ public class PauseMenuUI : MonoBehaviour
 
         MakeText(confirmPanel.transform, "If you quit, this match\ncounts as a loss.", 26f,
                  new Vector2(0f, 80f), new Vector2(360f, 100f));
-        MakeButton(confirmPanel.transform, "YES QUIT", new Vector2(0f, -30f), () => LoadScene("MainMenu"));
+        MakeButton(confirmPanel.transform, "YES QUIT", new Vector2(0f, -30f), () => LoadScene("HubScene"));
         MakeButton(confirmPanel.transform, "CANCEL", new Vector2(0f, -105f),
                    () => confirmPanel.SetActive(false));
         confirmPanel.SetActive(false);

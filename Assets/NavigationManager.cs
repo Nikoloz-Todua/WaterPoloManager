@@ -5,39 +5,52 @@ using UnityEngine.SceneManagement;
 using UnityEngine.EventSystems;
 using TMPro;
 
-// The whole hub-navigation shell for HubScene, built entirely in code (no prefabs):
-// persistent top bar (club + currencies + settings) and bottom nav (CAREER / TEAM /
-// TRANSFERS / MY CLUB / CHALLENGES), plus the five screens themselves with placeholder
-// design-only content — no real data or economy yet. Screens cross-fade in 0.3s.
-// CAREER's PLAY button loads SampleScene; MainMenu's PLAY loads this scene.
+// The main game hub for HubScene, built entirely in code (no prefabs, no Inspector wiring).
+// Layout (mobile landscape, 16:9 / 1280x720 reference):
+//   • full-screen main-page background
+//   • top bar: club avatar + name + XP bar + level badge, settings gear, diamond/gold counters
+//   • left column: RANKING / SHOP / TEAM square buttons
+//   • top-right: season-countdown panel
+//   • bottom bar: season-pass (locked), missions (with badge), welcome panel, PLAY → SampleScene
+// RANKING and SHOP open "COMING SOON" slide-in overlays; TEAM opens the existing TeamScreenUI as a
+// slide-in overlay. No bottom navigation tabs. Sprites load from Assets/Resources/Sprites/.
 public class NavigationManager : MonoBehaviour
 {
-    [SerializeField] private float fadeSeconds = 0.3f;
+    [SerializeField] private float fadeSeconds = 0.3f; // slide / fade duration for overlays + hub fade-in
 
-    private static readonly Color NavyBar = new Color(0.05f, 0.1f, 0.25f, 0.95f);
-    private static readonly Color NavyPanel = new Color(0.05f, 0.1f, 0.25f, 0.85f);
+    private static readonly Color DarkBar = new Color(0.04f, 0.06f, 0.13f, 0.86f);
+    private static readonly Color DarkPanel = new Color(0.03f, 0.05f, 0.11f, 0.92f);
+    private static readonly Color OverlayDark = new Color(0.02f, 0.03f, 0.08f, 0.92f);
     private static readonly Color Gold = new Color(1f, 0.82f, 0.2f);
-    private static readonly Color CyanHi = Color.cyan;
+    private static readonly Color Cyan = new Color(0f, 0.85f, 1f);
+    private static readonly Color Blue = new Color(0.18f, 0.5f, 1f);
+    private static readonly Color Bronze = new Color(0.72f, 0.45f, 0.2f);
+    private static readonly Color Green = new Color(0.2f, 0.72f, 0.32f);
+    private static readonly Color Red = new Color(0.85f, 0.2f, 0.2f);
+    private static readonly Color GreyAvatar = new Color(0.5f, 0.53f, 0.6f);
 
-    private static Sprite roundedSprite; // cached; regenerated after domain reload
+    private static Sprite roundedSprite;  // cached; regenerated after a domain reload
+    private static Sprite circleSprite;   // white, tintable
+    private static Sprite lockSprite;     // procedural padlock
 
     private Transform canvasRoot;
-    private TextMeshProUGUI goldLabel, diamondLabel; // top-bar currency, fed by RosterManager
-    private readonly GameObject[] screens = new GameObject[5];
-    private readonly CanvasGroup[] screenGroups = new CanvasGroup[5];
-    private readonly TextMeshProUGUI[] navLabels = new TextMeshProUGUI[5];
-    private static readonly string[] NavNames = { "CAREER", "TEAM", "TRANSFERS", "MY CLUB", "CHALLENGES" };
-    private int currentScreen = -1;
-    private Coroutine fadeRoutine;
+    private CanvasGroup hubFade;
+    private TextMeshProUGUI goldLabel, diamondLabel; // top-bar currencies, fed by RosterManager
+
+    private GameObject rankingOverlay, shopOverlay, teamOverlay;
+    private Coroutine slideRoutine;
 
     void Start()
     {
         EnsureEventSystem();
         BuildRoot();
         BuildTopBar();
-        BuildScreens();
-        BuildBottomNav();
-        SwitchScreen(0, instant: true); // Career is the landing screen
+        BuildLeftColumn();
+        BuildSeasonTimer();
+        BuildBottomBar();
+        BuildOverlays();
+        RefreshCurrency();
+        StartCoroutine(FadeInHub());
     }
 
     // ------------------------------------------------------------------ shell
@@ -53,20 +66,25 @@ public class NavigationManager : MonoBehaviour
         scaler.referenceResolution = new Vector2(1280f, 720f);
         scaler.matchWidthOrHeight = 0.5f;
         canvasGo.AddComponent<GraphicRaycaster>();
+        hubFade = canvasGo.AddComponent<CanvasGroup>();
+        hubFade.alpha = 0f; // hub fades in on load
         canvasRoot = canvasGo.transform;
 
-        // Full-screen background — same background.png as the main menu.
+        // Full-screen background — scaled to fill.
         Image bg = NewImage(canvasRoot, "Background");
-        bg.sprite = LoadSprite("Sprites/background");
+        bg.sprite = LoadSprite("Sprites/main-page-background");
+        bg.raycastTarget = false;
         if (bg.sprite == null) bg.color = new Color(0.02f, 0.15f, 0.3f); // pool-blue fallback
         Stretch(bg.rectTransform);
     }
 
+    // ----------------------------------------------------------------- top bar
+
     void BuildTopBar()
     {
-        Image bar = NewImage(canvasRoot, "TopBar");
-        bar.color = NavyBar;
-        bar.raycastTarget = true; // blocks clicks bleeding through to screens below
+        Image bar = MakePanel(canvasRoot, new Vector2(0.5f, 1f), Vector2.zero, new Vector2(0f, 80f), DarkBar);
+        bar.gameObject.name = "TopBar";
+        bar.raycastTarget = true; // blocks clicks bleeding through
         RectTransform rt = bar.rectTransform;
         rt.anchorMin = new Vector2(0f, 1f);
         rt.anchorMax = new Vector2(1f, 1f);
@@ -74,34 +92,59 @@ public class NavigationManager : MonoBehaviour
         rt.anchoredPosition = Vector2.zero;
         rt.sizeDelta = new Vector2(0f, 80f);
 
-        // Left: club logo placeholder (white circle) + team name.
-        Image logo = NewImage(bar.transform, "ClubLogo");
-        logo.sprite = MakeCircleSprite(64);
-        SetRect(logo.rectTransform, new Vector2(0f, 0.5f), new Vector2(45f, 0f), new Vector2(50f, 50f));
-        MakeText(bar.transform, "My Club", 18f, new Vector2(0f, 0.5f), new Vector2(150f, 0f),
-                 new Vector2(160f, 40f), Color.white, TextAlignmentOptions.Left);
+        // Left: grey avatar circle.
+        Image avatar = NewImage(bar.transform, "Avatar");
+        avatar.sprite = Circle();
+        avatar.color = GreyAvatar;
+        avatar.raycastTarget = false;
+        SetRect(avatar.rectTransform, new Vector2(0f, 0.5f), new Vector2(48f, 0f), new Vector2(60f, 60f));
 
-        // Right side, laid right-to-left: settings, diamond count, diamond, gold count, gold.
-        // ("SET" instead of a ⚙ glyph — the default TMP font doesn't have that character.)
-        Button settings = MakeBareButton(bar.transform, "BtnSettings", new Vector2(1f, 0.5f),
-                                         new Vector2(-40f, 0f), new Vector2(50f, 50f),
-                                         () => Debug.Log("Settings coming soon"));
-        if (settings.image != null) settings.image.color = Color.clear;
-        MakeText(settings.transform, "SET", 20f, new Vector2(0.5f, 0.5f), Vector2.zero,
-                 new Vector2(50f, 50f), Color.white, TextAlignmentOptions.Center);
+        // Club name + XP bar + bronze level badge.
+        MakeText(bar.transform, "My Club", 20f, new Vector2(0f, 0.5f), new Vector2(150f, 12f),
+                 new Vector2(140f, 26f), Color.white, TextAlignmentOptions.Left);
 
-        diamondLabel = MakeText(bar.transform, "0", 18f, new Vector2(1f, 0.5f), new Vector2(-95f, 0f),
-                 new Vector2(60f, 40f), Color.white, TextAlignmentOptions.Left);
-        MakeIcon(bar.transform, "Sprites/diamond-coin", new Vector2(1f, 0.5f), new Vector2(-145f, 0f), 40f);
-        goldLabel = MakeText(bar.transform, "0", 18f, new Vector2(1f, 0.5f), new Vector2(-225f, 0f),
-                 new Vector2(70f, 40f), Color.white, TextAlignmentOptions.Left);
-        MakeIcon(bar.transform, "Sprites/gold-coin", new Vector2(1f, 0.5f), new Vector2(-275f, 0f), 40f);
+        Image xpBg = MakePanel(bar.transform, new Vector2(0f, 0.5f), new Vector2(150f, -14f),
+                               new Vector2(120f, 12f), new Color(0f, 0f, 0f, 0.5f));
+        xpBg.raycastTarget = false;
+        Image xpFill = NewImage(xpBg.transform, "Fill");
+        xpFill.sprite = GetRoundedSprite();
+        xpFill.type = Image.Type.Sliced;
+        xpFill.color = Blue;
+        xpFill.raycastTarget = false;
+        RectTransform fr = xpFill.rectTransform;
+        fr.anchorMin = new Vector2(0f, 0f);
+        fr.anchorMax = new Vector2(0.7f, 1f); // ~70% filled
+        fr.offsetMin = new Vector2(1f, 1f);
+        fr.offsetMax = new Vector2(-1f, -1f);
 
-        RefreshCurrency(); // show the real saved balances, not placeholders
+        Image badge = NewImage(bar.transform, "LevelBadge");
+        badge.sprite = Circle();
+        badge.color = Bronze;
+        badge.raycastTarget = false;
+        SetRect(badge.rectTransform, new Vector2(0f, 0.5f), new Vector2(210f, -14f), new Vector2(22f, 22f));
+        MakeText(badge.transform, "1", 13f, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(22f, 22f),
+                 Color.white, TextAlignmentOptions.Center);
+
+        // Settings gear (plain circle placeholder — TMP's default font lacks a gear glyph).
+        MakeGearButton(bar.transform, new Vector2(0f, 0.5f), new Vector2(272f, 0f), 48f,
+                       () => Debug.Log("Settings coming soon"));
+
+        // Right side, right-to-left: gold [+], gold count, gold icon, diamond [+], diamond count, diamond icon.
+        MakePlusButton(bar.transform, new Vector2(1f, 0.5f), new Vector2(-32f, 0f), 30f,
+                       () => Debug.Log("Store coming soon"));
+        goldLabel = MakeText(bar.transform, "0", 18f, new Vector2(1f, 0.5f), new Vector2(-92f, 0f),
+                             new Vector2(66f, 30f), Color.white, TextAlignmentOptions.Right);
+        MakeIcon(bar.transform, "Sprites/gold-coin", new Vector2(1f, 0.5f), new Vector2(-145f, 0f), 34f);
+
+        MakePlusButton(bar.transform, new Vector2(1f, 0.5f), new Vector2(-192f, 0f), 30f,
+                       () => Debug.Log("Store coming soon"));
+        diamondLabel = MakeText(bar.transform, "0", 18f, new Vector2(1f, 0.5f), new Vector2(-246f, 0f),
+                                new Vector2(54f, 30f), Color.white, TextAlignmentOptions.Right);
+        MakeIcon(bar.transform, "Sprites/diamond-coin", new Vector2(1f, 0.5f), new Vector2(-292f, 0f), 34f);
     }
 
-    // Re-read the player's balances into the top bar. Called on build and by TeamScreenUI
-    // after a buy / sell / upgrade so the persistent bar never drifts from the real roster.
+    // Re-read the player's balances into the top bar. Called on build and by TeamScreenUI after a
+    // buy / sell / upgrade so the persistent bar never drifts from the real roster.
     public void RefreshCurrency()
     {
         RosterManager rm = RosterManager.Instance;
@@ -109,278 +152,264 @@ public class NavigationManager : MonoBehaviour
         if (diamondLabel != null) diamondLabel.text = rm.Diamonds.ToString();
     }
 
-    void BuildBottomNav()
+    // ------------------------------------------------------------- left column
+
+    void BuildLeftColumn()
     {
-        Image bar = NewImage(canvasRoot, "BottomNav");
-        bar.color = NavyBar;
-        bar.raycastTarget = true;
-        RectTransform rt = bar.rectTransform;
-        rt.anchorMin = new Vector2(0f, 0f);
-        rt.anchorMax = new Vector2(1f, 0f);
-        rt.pivot = new Vector2(0.5f, 0f);
-        rt.anchoredPosition = Vector2.zero;
-        rt.sizeDelta = new Vector2(0f, 70f);
+        const float x = 150f, step = 125f; // centres 125px apart
+        MakeImageButton(canvasRoot, "BtnRanking", "Sprites/ranking-button", new Vector2(0f, 0.5f),
+                        new Vector2(x, step), new Vector2(115f, 115f), () => ShowOverlay(rankingOverlay));
+        MakeImageButton(canvasRoot, "BtnShop", "Sprites/shop-button", new Vector2(0f, 0.5f),
+                        new Vector2(x, 0f), new Vector2(140f, 140f), () => ShowOverlay(shopOverlay));
+        MakeImageButton(canvasRoot, "BtnTeam", "Sprites/team-button", new Vector2(0f, 0.5f),
+                        new Vector2(x, -step), new Vector2(115f, 115f), () => ShowOverlay(teamOverlay));
+    }
 
-        for (int i = 0; i < 5; i++)
+    // ------------------------------------------------------------ season timer
+
+    void BuildSeasonTimer()
+    {
+        Image panel = MakePanel(canvasRoot, new Vector2(1f, 1f), new Vector2(-118f, -126f),
+                                new Vector2(200f, 80f), DarkPanel);
+        panel.raycastTarget = false;
+        MakeText(panel.transform, "SEASON ENDS IN:", 13f, new Vector2(0.5f, 1f), new Vector2(0f, -20f),
+                 new Vector2(188f, 20f), new Color(1f, 1f, 1f, 0.85f), TextAlignmentOptions.Center);
+        MakeText(panel.transform, "2D 10H", 30f, new Vector2(0.5f, 0f), new Vector2(0f, 16f),
+                 new Vector2(188f, 40f), Gold, TextAlignmentOptions.Center);
+    }
+
+    // -------------------------------------------------------------- bottom bar
+
+    void BuildBottomBar()
+    {
+        GameObject barGo = new GameObject("BottomBar");
+        barGo.transform.SetParent(canvasRoot, false);
+        RectTransform bar = barGo.AddComponent<RectTransform>();
+        bar.anchorMin = new Vector2(0f, 0f);
+        bar.anchorMax = new Vector2(1f, 0f);
+        bar.pivot = new Vector2(0.5f, 0f);
+        bar.anchoredPosition = Vector2.zero;
+        bar.sizeDelta = new Vector2(0f, 130f);
+
+        // Season pass (left, locked): art + dark overlay + lock + label.
+        Button sp = MakeImageButton(barGo.transform, "BtnSeasonPass", "Sprites/season-pass-button",
+                                    new Vector2(0f, 0.5f), new Vector2(195f, 0f), new Vector2(260f, 80f),
+                                    () => Debug.Log("Season Pass coming soon"));
+        sp.image.preserveAspect = false; // stretch/fill the 220x110 rect (Image Type stays Simple)
+        Image ovl = NewImage(sp.transform, "LockOverlay");
+        ovl.sprite = GetRoundedSprite();
+        ovl.type = Image.Type.Sliced;
+        ovl.color = new Color(0f, 0f, 0f, 0.55f);
+        ovl.raycastTarget = false;
+        Stretch(ovl.rectTransform);
+        Image lk = NewImage(ovl.transform, "Lock");
+        lk.sprite = MakeLockSprite();
+        lk.color = new Color(0.85f, 0.87f, 0.92f, 1f);
+        lk.raycastTarget = false;
+        SetRect(lk.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, 18f), new Vector2(46f, 46f));
+        MakeText(ovl.transform, "UNLOCKED AT LEVEL 4", 16f, new Vector2(0.5f, 0f), new Vector2(0f, 20f),
+                 new Vector2(260f, 24f), Color.white, TextAlignmentOptions.Center);
+
+        // Missions (centre-left): art + red notification badge.
+        Button ms = MakeImageButton(barGo.transform, "BtnMissions", "Sprites/missions-button",
+                                    new Vector2(0f, 0.5f), new Vector2(455f, 0f), new Vector2(90f, 90f),
+                                    () => Debug.Log("Missions coming soon"));
+        Image dot = NewImage(ms.transform, "Badge");
+        dot.sprite = Circle();
+        dot.color = Red;
+        dot.raycastTarget = false;
+        SetRect(dot.rectTransform, new Vector2(1f, 1f), new Vector2(-6f, -6f), new Vector2(26f, 26f));
+        MakeText(dot.transform, "1", 15f, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(26f, 26f),
+                 Color.white, TextAlignmentOptions.Center);
+
+        // Card slots (visual placeholders) between the missions button and PLAY.
+        BuildCardSlots(barGo.transform);
+
+        // Play (right) → start a match.
+        MakeImageButton(barGo.transform, "BtnPlay", "Sprites/play-button", new Vector2(1f, 0.5f),
+                        new Vector2(-160f, 0f), new Vector2(320f, 120f), // centre shifted so the wider button stays flush-right on screen
+                        () => SceneManager.LoadScene("SampleScene"));
+    }
+
+    // Four visual-only "card slot" placeholders between the missions button and PLAY: a dark
+    // rounded panel with a rounded outline, a small white-circle lock placeholder, and a timer label.
+    void BuildCardSlots(Transform parent)
+    {
+        string[] times = { "3H", "7H", "12H", "24H" };
+        Color slotFill = new Color(0.102f, 0.165f, 0.227f, 0.784f); // #1A2A3A @ alpha 200
+        Color slotOutline = new Color(0.165f, 0.290f, 0.416f, 1f);  // #2A4A6A
+        const float w = 70f, h = 90f, gap = 8f, rowCenterX = 90f; // centred in the gap between missions and PLAY
+
+        for (int i = 0; i < times.Length; i++)
         {
-            int idx = i; // captured by the click closure
-            GameObject go = new GameObject("Nav" + NavNames[i]);
-            go.transform.SetParent(bar.transform, false);
-            RectTransform brt = go.AddComponent<RectTransform>();
-            brt.anchorMin = new Vector2(i / 5f, 0f);
-            brt.anchorMax = new Vector2((i + 1) / 5f, 1f);
-            brt.offsetMin = brt.offsetMax = Vector2.zero;
+            float sx = rowCenterX + (i - 1.5f) * (w + gap);
 
-            Image img = go.AddComponent<Image>();
-            img.color = Color.clear; // bar provides the navy; this is just the hit area
+            // outline frame
+            Image frame = NewImage(parent, "CardSlot" + (i + 1));
+            frame.sprite = GetRoundedSprite();
+            frame.type = Image.Type.Sliced;
+            frame.color = slotOutline;
+            frame.raycastTarget = false;
+            SetRect(frame.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(sx, 0f), new Vector2(w, h));
 
-            Button btn = go.AddComponent<Button>();
-            btn.targetGraphic = img;
-            btn.onClick.AddListener(() => SwitchScreen(idx));
+            // dark fill inset 2px (leaves the outline as a thin border)
+            Image fill = NewImage(frame.transform, "Fill");
+            fill.sprite = GetRoundedSprite();
+            fill.type = Image.Type.Sliced;
+            fill.color = slotFill;
+            fill.raycastTarget = false;
+            RectTransform frt = fill.rectTransform;
+            frt.anchorMin = Vector2.zero;
+            frt.anchorMax = Vector2.one;
+            frt.offsetMin = new Vector2(2f, 2f);
+            frt.offsetMax = new Vector2(-2f, -2f);
 
-            navLabels[i] = MakeText(go.transform, NavNames[i], 18f, new Vector2(0.5f, 0.5f),
-                                    Vector2.zero, new Vector2(0f, 0f), Color.white,
-                                    TextAlignmentOptions.Center);
-            RectTransform lrt = navLabels[i].rectTransform;
-            lrt.anchorMin = Vector2.zero;
-            lrt.anchorMax = Vector2.one;
-            lrt.offsetMin = lrt.offsetMax = Vector2.zero;
+            // lock placeholder (plain white circle, 20px), centred and nudged up
+            Image lockImg = NewImage(frame.transform, "Lock");
+            lockImg.sprite = Circle();
+            lockImg.color = Color.white;
+            lockImg.raycastTarget = false;
+            SetRect(lockImg.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, 10f), new Vector2(20f, 20f));
+
+            // timer label below the lock
+            MakeText(frame.transform, times[i], 12f, new Vector2(0.5f, 0.5f), new Vector2(0f, -22f),
+                     new Vector2(64f, 18f), Color.white, TextAlignmentOptions.Center);
         }
     }
 
-    void BuildScreens()
-    {
-        for (int i = 0; i < 5; i++)
-        {
-            GameObject screen = new GameObject("Screen" + NavNames[i]);
-            screen.transform.SetParent(canvasRoot, false);
-            RectTransform rt = screen.AddComponent<RectTransform>();
-            rt.anchorMin = Vector2.zero;
-            rt.anchorMax = Vector2.one;
-            rt.offsetMin = new Vector2(0f, 70f);  // clear the bottom nav
-            rt.offsetMax = new Vector2(0f, -80f); // clear the top bar
-            screenGroups[i] = screen.AddComponent<CanvasGroup>();
-            screens[i] = screen;
-            screen.SetActive(false);
-        }
+    // ---------------------------------------------------------------- overlays
 
-        BuildCareerScreen(screens[0].transform);
-        BuildTeamScreen(screens[1].transform);
-        BuildTransfersScreen(screens[2].transform);
-        BuildMyClubScreen(screens[3].transform);
-        BuildChallengesScreen(screens[4].transform);
+    void BuildOverlays()
+    {
+        rankingOverlay = BuildComingSoonOverlay("RANKING");
+        shopOverlay = BuildComingSoonOverlay("SHOP");
+        teamOverlay = BuildTeamOverlay();
     }
 
-    void SwitchScreen(int idx, bool instant = false)
+    // Dark full-screen overlay with a centred sheet: "COMING SOON" + close [X]. Starts hidden.
+    GameObject BuildComingSoonOverlay(string title)
     {
-        if (idx == currentScreen) return;
+        GameObject ov = new GameObject("Overlay_" + title);
+        ov.transform.SetParent(canvasRoot, false);
+        RectTransform ort = ov.AddComponent<RectTransform>();
+        Stretch(ort);
+        Image backdrop = ov.AddComponent<Image>();
+        backdrop.color = OverlayDark;
+        backdrop.raycastTarget = true; // swallow clicks to the hub behind
+        ov.AddComponent<CanvasGroup>();
 
-        for (int i = 0; i < navLabels.Length; i++)
-            navLabels[i].color = i == idx ? CyanHi : Color.white;
+        Image sheet = NewImage(ov.transform, "Sheet");
+        sheet.sprite = GetRoundedSprite();
+        sheet.type = Image.Type.Sliced;
+        sheet.color = DarkPanel;
+        SetRect(sheet.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(620f, 300f));
 
-        if (currentScreen >= 0) screens[currentScreen].SetActive(false);
-        currentScreen = idx;
-        screens[idx].SetActive(true);
+        MakeText(sheet.transform, title, 24f, new Vector2(0.5f, 1f), new Vector2(0f, -52f),
+                 new Vector2(560f, 32f), Cyan, TextAlignmentOptions.Center);
+        MakeText(sheet.transform, "COMING SOON", 46f, new Vector2(0.5f, 0.5f), new Vector2(0f, 6f),
+                 new Vector2(560f, 70f), Gold, TextAlignmentOptions.Center);
+        MakeText(sheet.transform, "This feature is on the way.", 18f, new Vector2(0.5f, 0f),
+                 new Vector2(0f, 46f), new Vector2(560f, 28f), Color.white, TextAlignmentOptions.Center);
 
-        if (fadeRoutine != null) StopCoroutine(fadeRoutine);
-        if (instant) { screenGroups[idx].alpha = 1f; return; }
-        fadeRoutine = StartCoroutine(FadeInScreen(screenGroups[idx]));
+        GameObject self = ov;
+        MakeCloseButton(sheet.transform, () => HideOverlay(self));
+
+        ov.SetActive(false);
+        return ov;
     }
 
-    IEnumerator FadeInScreen(CanvasGroup group)
+    // Dark full-screen overlay hosting the existing TeamScreenUI on a full-canvas sheet + close [X].
+    GameObject BuildTeamOverlay()
     {
-        group.alpha = 0f;
+        GameObject ov = new GameObject("Overlay_TEAM");
+        ov.transform.SetParent(canvasRoot, false);
+        RectTransform ort = ov.AddComponent<RectTransform>();
+        Stretch(ort);
+        Image backdrop = ov.AddComponent<Image>();
+        backdrop.color = OverlayDark;
+        backdrop.raycastTarget = true;
+        ov.AddComponent<CanvasGroup>();
+
+        GameObject sheetGo = new GameObject("Sheet");
+        sheetGo.transform.SetParent(ov.transform, false);
+        RectTransform srt = sheetGo.AddComponent<RectTransform>();
+        srt.anchorMin = Vector2.zero;
+        srt.anchorMax = Vector2.one;
+        srt.pivot = new Vector2(0.5f, 0.5f);
+        srt.sizeDelta = Vector2.zero;       // fills the canvas (slid via anchoredPosition)
+        srt.anchoredPosition = Vector2.zero;
+
+        TeamScreenUI team = sheetGo.AddComponent<TeamScreenUI>();
+        team.Build(sheetGo.transform, this); // passes 'this' so its buys/sells refresh our top bar
+
+        GameObject self = ov;
+        MakeCloseButton(ov.transform, () => HideOverlay(self)); // X above the sheet, screen top-right
+
+        ov.SetActive(false);
+        return ov;
+    }
+
+    void ShowOverlay(GameObject overlay)
+    {
+        if (overlay == null) return;
+        overlay.SetActive(true);
+        overlay.transform.SetAsLastSibling();
+        if (slideRoutine != null) StopCoroutine(slideRoutine);
+        slideRoutine = StartCoroutine(SlideOverlay(overlay, true));
+    }
+
+    void HideOverlay(GameObject overlay)
+    {
+        if (overlay == null) return;
+        if (slideRoutine != null) StopCoroutine(slideRoutine);
+        slideRoutine = StartCoroutine(SlideOverlay(overlay, false));
+    }
+
+    // Slide the sheet in from / out to the right while the backdrop fades.
+    IEnumerator SlideOverlay(GameObject overlay, bool show)
+    {
+        CanvasGroup cg = overlay.GetComponent<CanvasGroup>();
+        RectTransform sheet = overlay.transform.Find("Sheet") as RectTransform;
+        const float off = 1200f; // off-screen-right slide distance (> reference width)
+        float dur = Mathf.Max(0.01f, fadeSeconds);
         float t = 0f;
-        while (t < fadeSeconds)
+
+        if (show)
+        {
+            if (cg != null) cg.alpha = 0f;
+            if (sheet != null) sheet.anchoredPosition = new Vector2(off, 0f);
+        }
+
+        while (t < dur)
         {
             t += Time.unscaledDeltaTime;
-            group.alpha = Mathf.Clamp01(t / fadeSeconds);
+            float k = Mathf.Clamp01(t / dur);
+            float e = show ? k : 1f - k; // 1 = fully in view, 0 = off-screen
+            if (cg != null) cg.alpha = e;
+            if (sheet != null) sheet.anchoredPosition = new Vector2(Mathf.Lerp(off, 0f, e), 0f);
             yield return null;
         }
-        group.alpha = 1f;
+
+        if (cg != null) cg.alpha = show ? 1f : 0f;
+        if (sheet != null) sheet.anchoredPosition = new Vector2(show ? 0f : off, 0f);
+        if (!show) overlay.SetActive(false);
+        slideRoutine = null;
     }
 
-    // -------------------------------------------------------------- 1. CAREER
-
-    void BuildCareerScreen(Transform root)
+    IEnumerator FadeInHub()
     {
-        MakeTitle(root, "CAREER");
-
-        // Division badge.
-        Image badge = MakePanel(root, new Vector2(320f, 70f), new Vector2(0f, 195f));
-        MakeText(badge.transform, "DIVISION 3", 34f, new Vector2(0.5f, 0.5f), Vector2.zero,
-                 new Vector2(300f, 60f), Gold, TextAlignmentOptions.Center);
-
-        // Standings: fake records, My Club highlighted.
-        Image table = MakePanel(root, new Vector2(560f, 240f), new Vector2(0f, 25f));
-        string[] rows =
+        float dur = Mathf.Max(0.01f, fadeSeconds);
+        float t = 0f;
+        while (t < dur)
         {
-            "1   Sharks FC      W3  D0  L0   9",
-            "2   My Club        W2  D1  L0   7",
-            "3   Neptune        W1  D1  L1   4",
-            "4   Aqua Bulls     W1  D0  L2   3",
-            "5   Wave Riders    W0  D0  L3   0",
-        };
-        for (int i = 0; i < rows.Length; i++)
-        {
-            Color c = rows[i].Contains("My Club") ? CyanHi : Color.white;
-            MakeText(table.transform, rows[i], 20f, new Vector2(0.5f, 1f),
-                     new Vector2(0f, -30f - i * 42f), new Vector2(520f, 36f), c,
-                     TextAlignmentOptions.Left);
+            t += Time.unscaledDeltaTime;
+            hubFade.alpha = Mathf.Clamp01(t / dur);
+            yield return null;
         }
-
-        MakeText(root, "Season: 3 matches played, 12 remaining", 18f, new Vector2(0.5f, 0.5f),
-                 new Vector2(0f, -125f), new Vector2(600f, 30f), Color.white,
-                 TextAlignmentOptions.Center);
-
-        MakeButton(root, "PLAY", new Vector2(300f, 70f), new Vector2(0f, -200f), 28f,
-                   () => SceneManager.LoadScene("SampleScene"));
-    }
-
-    // ---------------------------------------------------------------- 2. TEAM
-
-    // The real Team screen (B12) lives in TeamScreenUI (its own script) so it can pull live data
-    // from RosterManager / PlayerDatabase. We just attach it and let it build itself.
-    void BuildTeamScreen(Transform root)
-    {
-        TeamScreenUI ui = root.gameObject.AddComponent<TeamScreenUI>();
-        ui.Build(root, this);
-    }
-
-    // ----------------------------------------------------------- 3. TRANSFERS
-
-    void BuildTransfersScreen(Transform root)
-    {
-        MakeTitle(root, "TRANSFERS");
-
-        // AGENTS row.
-        MakeText(root, "AGENTS", 20f, new Vector2(0.5f, 0.5f), new Vector2(-470f, 180f),
-                 new Vector2(140f, 30f), Color.white, TextAlignmentOptions.Center);
-        MakeAgentButton(root, "COMMON 40", new Vector2(-240f, 180f));
-        MakeAgentButton(root, "RARE 150", new Vector2(0f, 180f));
-        MakeAgentButton(root, "GOLDEN 375", new Vector2(240f, 180f));
-
-        MakeText(root, "Daily refresh in: 23:45:12", 18f, new Vector2(0.5f, 0.5f),
-                 new Vector2(440f, 180f), new Vector2(280f, 30f), Color.white,
-                 TextAlignmentOptions.Center);
-
-        // 6 player cards, 2 rows of 3.
-        (string name, string pos, int ovr, int price)[] cards =
-        {
-            ("D. Petrov", "CF", 71, 450), ("M. Costa", "LW", 68, 300), ("A. Volkov", "GK", 74, 600),
-            ("J. Smith", "RF", 65, 250), ("L. Garcia", "CB", 70, 400), ("K. Tanaka", "CF", 77, 800),
-        };
-        for (int i = 0; i < cards.Length; i++)
-        {
-            var c = cards[i];
-            float x = (i % 3 - 1) * 250f;
-            float y = i < 3 ? 10f : -165f;
-            Image card = MakePanel(root, new Vector2(230f, 160f), new Vector2(x, y));
-
-            MakeText(card.transform, c.name, 20f, new Vector2(0.5f, 1f), new Vector2(0f, -22f),
-                     new Vector2(210f, 28f), Color.white, TextAlignmentOptions.Center);
-            MakeText(card.transform, c.pos + "   OVR " + c.ovr, 17f, new Vector2(0.5f, 1f),
-                     new Vector2(0f, -52f), new Vector2(210f, 24f), CyanHi, TextAlignmentOptions.Center);
-            MakeIcon(card.transform, "Sprites/gold-coin", new Vector2(0.5f, 1f), new Vector2(-45f, -82f), 26f);
-            MakeText(card.transform, c.price.ToString(), 17f, new Vector2(0.5f, 1f), new Vector2(10f, -82f),
-                     new Vector2(90f, 24f), Gold, TextAlignmentOptions.Left);
-            MakeButton(card.transform, "BUY", new Vector2(120f, 36f), new Vector2(0f, -135f), 17f,
-                       () => Debug.Log("Purchase coming soon"));
-        }
-    }
-
-    void MakeAgentButton(Transform root, string label, Vector2 pos)
-    {
-        Button btn = MakeButton(root, label, new Vector2(200f, 52f), pos, 19f,
-                                () => Debug.Log("Agents coming soon"));
-        MakeIcon(btn.transform, "Sprites/diamond-coin", new Vector2(1f, 0.5f), new Vector2(-22f, 0f), 28f);
-    }
-
-    // ------------------------------------------------------------- 4. MY CLUB
-
-    void BuildMyClubScreen(Transform root)
-    {
-        MakeTitle(root, "MY CLUB");
-
-        BuildUpgradeCard(root, new Vector2(-170f, 70f), "STADIUM", "Lv 1",
-                         "Capacity: 500 fans", "500");
-        BuildUpgradeCard(root, new Vector2(170f, 70f), "POOL", "Lv 1",
-                         "Post-match bonus: +10 gold", "300");
-
-        MakeText(root, "CUSTOMIZE", 22f, new Vector2(0.5f, 0.5f), new Vector2(0f, -115f),
-                 new Vector2(220f, 32f), Color.white, TextAlignmentOptions.Center);
-        MakeButton(root, "CAP COLOR", new Vector2(220f, 56f), new Vector2(-130f, -180f), 20f,
-                   () => Debug.Log("Customization coming soon"));
-        MakeButton(root, "SWIMWEAR", new Vector2(220f, 56f), new Vector2(130f, -180f), 20f,
-                   () => Debug.Log("Customization coming soon"));
-    }
-
-    void BuildUpgradeCard(Transform root, Vector2 pos, string title, string level,
-                          string statLine, string cost)
-    {
-        Image card = MakePanel(root, new Vector2(300f, 230f), pos);
-        MakeText(card.transform, title, 26f, new Vector2(0.5f, 1f), new Vector2(0f, -28f),
-                 new Vector2(280f, 32f), Color.white, TextAlignmentOptions.Center);
-        MakeText(card.transform, level, 20f, new Vector2(0.5f, 1f), new Vector2(0f, -62f),
-                 new Vector2(280f, 26f), CyanHi, TextAlignmentOptions.Center);
-        MakeText(card.transform, statLine, 16f, new Vector2(0.5f, 1f), new Vector2(0f, -92f),
-                 new Vector2(280f, 24f), Color.white, TextAlignmentOptions.Center);
-        MakeIcon(card.transform, "Sprites/gold-coin", new Vector2(0.5f, 1f), new Vector2(-40f, -125f), 26f);
-        MakeText(card.transform, cost, 18f, new Vector2(0.5f, 1f), new Vector2(15f, -125f),
-                 new Vector2(100f, 26f), Gold, TextAlignmentOptions.Left);
-        MakeButton(card.transform, "UPGRADE", new Vector2(180f, 46f), new Vector2(0f, -190f), 19f,
-                   () => Debug.Log("Upgrade coming soon"));
-    }
-
-    // ---------------------------------------------------------- 5. CHALLENGES
-
-    void BuildChallengesScreen(Transform root)
-    {
-        MakeTitle(root, "CHALLENGES");
-
-        (string name, string progress, string gold, string diamonds)[] daily =
-        {
-            ("Score 3 Goals", "0/3", "50", "5"),
-            ("Win 2 Matches", "0/2", "50", "5"),
-            ("Make 10 Passes", "0/10", "50", "5"),
-        };
-        for (int i = 0; i < daily.Length; i++)
-        {
-            var d = daily[i];
-            Image card = MakePanel(root, new Vector2(640f, 86f), new Vector2(0f, 115f - i * 105f));
-
-            MakeText(card.transform, d.name, 22f, new Vector2(0f, 0.5f), new Vector2(30f, 0f),
-                     new Vector2(240f, 40f), Color.white, TextAlignmentOptions.Left);
-            MakeText(card.transform, d.progress, 20f, new Vector2(0f, 0.5f), new Vector2(280f, 0f),
-                     new Vector2(80f, 36f), CyanHi, TextAlignmentOptions.Center);
-            MakeIcon(card.transform, "Sprites/gold-coin", new Vector2(0f, 0.5f), new Vector2(370f, 0f), 28f);
-            MakeText(card.transform, d.gold, 18f, new Vector2(0f, 0.5f), new Vector2(405f, 0f),
-                     new Vector2(50f, 32f), Gold, TextAlignmentOptions.Left);
-            MakeIcon(card.transform, "Sprites/diamond-coin", new Vector2(0f, 0.5f), new Vector2(450f, 0f), 28f);
-            MakeText(card.transform, d.diamonds, 18f, new Vector2(0f, 0.5f), new Vector2(485f, 0f),
-                     new Vector2(40f, 32f), Gold, TextAlignmentOptions.Left);
-
-            // Greyed-out claim button — challenges aren't completable yet.
-            // Grey both layers (cyan border + navy fill) of the bordered button.
-            Button claim = MakeButton(card.transform, "CLAIM", new Vector2(100f, 40f),
-                                      new Vector2(265f, 0f), 17f, null);
-            claim.interactable = false;
-            claim.image.color = new Color(0.4f, 0.4f, 0.45f, 0.7f);
-            Transform fillT = claim.transform.Find("Fill");
-            if (fillT != null) fillT.GetComponent<Image>().color = new Color(0.2f, 0.2f, 0.25f, 0.9f);
-        }
-
-        MakeText(root, "Resets in: 23:45:12", 18f, new Vector2(0.5f, 0.5f), new Vector2(0f, -215f),
-                 new Vector2(300f, 30f), Color.white, TextAlignmentOptions.Center);
+        hubFade.alpha = 1f;
     }
 
     // ------------------------------------------------------------ UI helpers
-
-    void MakeTitle(Transform root, string title)
-    {
-        MakeText(root, title, 40f, new Vector2(0.5f, 1f), new Vector2(0f, -36f),
-                 new Vector2(500f, 50f), Color.white, TextAlignmentOptions.Center);
-    }
 
     Image NewImage(Transform parent, string name)
     {
@@ -404,13 +433,13 @@ public class NavigationManager : MonoBehaviour
         rt.sizeDelta = size;
     }
 
-    Image MakePanel(Transform parent, Vector2 size, Vector2 pos)
+    Image MakePanel(Transform parent, Vector2 anchor, Vector2 pos, Vector2 size, Color color)
     {
         Image img = NewImage(parent, "Panel");
         img.sprite = GetRoundedSprite();
         img.type = Image.Type.Sliced;
-        img.color = NavyPanel;
-        SetRect(img.rectTransform, new Vector2(0.5f, 0.5f), pos, size);
+        img.color = color;
+        SetRect(img.rectTransform, anchor, pos, size);
         return img;
     }
 
@@ -423,17 +452,6 @@ public class NavigationManager : MonoBehaviour
         if (img.sprite == null) img.color = Gold; // visible square fallback
         SetRect(img.rectTransform, anchor, pos, new Vector2(size, size));
         return img;
-    }
-
-    // Single funnel for Resources sprites so a missing/misimported one names itself
-    // in the Console instead of failing silently (or worse, throwing downstream).
-    static Sprite LoadSprite(string path)
-    {
-        Sprite s = Resources.Load<Sprite>(path);
-        if (s == null)
-            Debug.LogWarning("NavigationManager: sprite not found at Resources/" + path +
-                             " — check the file exists there and its Texture Type is 'Sprite (2D and UI)'.");
-        return s;
     }
 
     TextMeshProUGUI MakeText(Transform parent, string content, float size, Vector2 anchor,
@@ -452,15 +470,25 @@ public class NavigationManager : MonoBehaviour
         return txt;
     }
 
-    // Bare clickable area (no panel styling) — used for the settings gear.
-    Button MakeBareButton(Transform parent, string name, Vector2 anchor, Vector2 pos,
-                          Vector2 size, UnityEngine.Events.UnityAction onClick)
+    // A button whose whole face is a sprite (left column, season pass, missions, play).
+    Button MakeImageButton(Transform parent, string name, string spritePath, Vector2 anchor,
+                           Vector2 pos, Vector2 size, UnityEngine.Events.UnityAction onClick)
     {
         GameObject go = new GameObject(name);
         go.transform.SetParent(parent, false);
         RectTransform rt = go.AddComponent<RectTransform>();
         SetRect(rt, anchor, pos, size);
+
         Image img = go.AddComponent<Image>();
+        img.sprite = LoadSprite(spritePath);
+        img.preserveAspect = true;
+        if (img.sprite == null) // visible rounded fallback so a missing sprite still shows a button
+        {
+            img.sprite = GetRoundedSprite();
+            img.type = Image.Type.Sliced;
+            img.color = DarkPanel;
+        }
+
         Button btn = go.AddComponent<Button>();
         btn.targetGraphic = img;
         if (onClick != null) btn.onClick.AddListener(onClick);
@@ -468,45 +496,80 @@ public class NavigationManager : MonoBehaviour
         return btn;
     }
 
-    // Standard navy button with a cyan border + 1.05x hover. The border is a second
-    // image underneath (cyan root, navy fill inset 3px) — NOT a TMP outline:
-    // TMP_Text.set_outlineWidth crashes when the font material isn't initialized yet.
-    Button MakeButton(Transform parent, string label, Vector2 size, Vector2 pos,
-                      float fontSize, UnityEngine.Events.UnityAction onClick)
+    // Small green rounded [+] button.
+    Button MakePlusButton(Transform parent, Vector2 anchor, Vector2 pos, float size,
+                          UnityEngine.Events.UnityAction onClick)
     {
-        GameObject go = new GameObject("Btn" + label);
+        GameObject go = new GameObject("BtnPlus");
         go.transform.SetParent(parent, false);
         RectTransform rt = go.AddComponent<RectTransform>();
-        SetRect(rt, new Vector2(0.5f, 0.5f), pos, size);
+        SetRect(rt, anchor, pos, new Vector2(size, size));
 
-        Image border = go.AddComponent<Image>();
-        border.sprite = GetRoundedSprite();
-        border.type = Image.Type.Sliced;
-        border.color = new Color(0f, 0.8f, 1f, 1f);
-
-        Image fill = NewImage(go.transform, "Fill");
-        fill.sprite = GetRoundedSprite();
-        fill.type = Image.Type.Sliced;
-        fill.color = new Color(0.05f, 0.1f, 0.25f, 1f); // opaque so the cyan doesn't bleed through
-        fill.raycastTarget = false;
-        RectTransform frt = fill.rectTransform;
-        frt.anchorMin = Vector2.zero;
-        frt.anchorMax = Vector2.one;
-        frt.offsetMin = new Vector2(3f, 3f);
-        frt.offsetMax = new Vector2(-3f, -3f);
+        Image img = go.AddComponent<Image>();
+        img.sprite = GetRoundedSprite();
+        img.type = Image.Type.Sliced;
+        img.color = Green;
 
         Button btn = go.AddComponent<Button>();
-        btn.targetGraphic = border;
+        btn.targetGraphic = img;
         if (onClick != null) btn.onClick.AddListener(onClick);
 
-        TextMeshProUGUI txt = MakeText(go.transform, label, fontSize, new Vector2(0.5f, 0.5f),
-                                       Vector2.zero, Vector2.zero, Color.white,
-                                       TextAlignmentOptions.Center);
-        RectTransform trt = txt.rectTransform;
-        trt.anchorMin = Vector2.zero;
-        trt.anchorMax = Vector2.one;
-        trt.offsetMin = trt.offsetMax = Vector2.zero;
+        TextMeshProUGUI t = MakeText(go.transform, "+", size * 0.72f, new Vector2(0.5f, 0.5f),
+                                     Vector2.zero, new Vector2(size, size), Color.white,
+                                     TextAlignmentOptions.Center);
+        Stretch(t.rectTransform);
+        AddHover(go);
+        return btn;
+    }
 
+    // Plain circular settings button with a lighter inner hub (gear placeholder).
+    Button MakeGearButton(Transform parent, Vector2 anchor, Vector2 pos, float size,
+                          UnityEngine.Events.UnityAction onClick)
+    {
+        GameObject go = new GameObject("BtnSettings");
+        go.transform.SetParent(parent, false);
+        RectTransform rt = go.AddComponent<RectTransform>();
+        SetRect(rt, anchor, pos, new Vector2(size, size));
+
+        Image img = go.AddComponent<Image>();
+        img.sprite = Circle();
+        img.color = new Color(0.25f, 0.28f, 0.36f, 1f);
+
+        Button btn = go.AddComponent<Button>();
+        btn.targetGraphic = img;
+        if (onClick != null) btn.onClick.AddListener(onClick);
+
+        Image inner = NewImage(go.transform, "Inner");
+        inner.sprite = Circle();
+        inner.color = new Color(0.6f, 0.63f, 0.7f, 1f);
+        inner.raycastTarget = false;
+        SetRect(inner.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero,
+                new Vector2(size * 0.42f, size * 0.42f));
+
+        AddHover(go);
+        return btn;
+    }
+
+    // Red rounded [X] close button, pinned to the parent's top-right corner.
+    Button MakeCloseButton(Transform parent, UnityEngine.Events.UnityAction onClick)
+    {
+        GameObject go = new GameObject("BtnClose");
+        go.transform.SetParent(parent, false);
+        RectTransform rt = go.AddComponent<RectTransform>();
+        SetRect(rt, new Vector2(1f, 1f), new Vector2(-30f, -30f), new Vector2(44f, 44f));
+
+        Image img = go.AddComponent<Image>();
+        img.sprite = GetRoundedSprite();
+        img.type = Image.Type.Sliced;
+        img.color = new Color(0.7f, 0.2f, 0.2f, 1f);
+
+        Button btn = go.AddComponent<Button>();
+        btn.targetGraphic = img;
+        if (onClick != null) btn.onClick.AddListener(onClick);
+
+        TextMeshProUGUI t = MakeText(go.transform, "X", 24f, new Vector2(0.5f, 0.5f), Vector2.zero,
+                                     new Vector2(44f, 44f), Color.white, TextAlignmentOptions.Center);
+        Stretch(t.rectTransform);
         AddHover(go);
         return btn;
     }
@@ -515,12 +578,32 @@ public class NavigationManager : MonoBehaviour
     {
         EventTrigger trigger = go.AddComponent<EventTrigger>();
         EventTrigger.Entry enter = new EventTrigger.Entry { eventID = EventTriggerType.PointerEnter };
-        enter.callback.AddListener(_ => go.transform.localScale = Vector3.one * 1.05f);
+        enter.callback.AddListener(_ => { if (go != null) go.transform.localScale = Vector3.one * 1.05f; });
         trigger.triggers.Add(enter);
         EventTrigger.Entry exit = new EventTrigger.Entry { eventID = EventTriggerType.PointerExit };
-        exit.callback.AddListener(_ => go.transform.localScale = Vector3.one);
+        exit.callback.AddListener(_ => { if (go != null) go.transform.localScale = Vector3.one; });
         trigger.triggers.Add(exit);
     }
+
+    // Single funnel for Resources sprites so a missing/misimported one names itself in the Console.
+    static Sprite LoadSprite(string path)
+    {
+        Sprite s = Resources.Load<Sprite>(path);
+        if (s == null)
+            Debug.LogWarning("NavigationManager: sprite not found at Resources/" + path +
+                             " — check the file exists there and its Texture Type is 'Sprite (2D and UI)'.");
+        return s;
+    }
+
+    static void EnsureEventSystem()
+    {
+        if (Object.FindFirstObjectByType<EventSystem>() != null) return;
+        GameObject es = new GameObject("EventSystem");
+        es.AddComponent<EventSystem>();
+        es.AddComponent<StandaloneInputModule>();
+    }
+
+    // ---------------------------------------------------------- generated sprites
 
     static Sprite GetRoundedSprite()
     {
@@ -541,14 +624,18 @@ public class NavigationManager : MonoBehaviour
             }
         tex.SetPixels32(px);
         tex.Apply();
+        tex.wrapMode = TextureWrapMode.Clamp;
         roundedSprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f),
                                       100f, 0, SpriteMeshType.FullRect,
                                       new Vector4(corner + 2, corner + 2, corner + 2, corner + 2));
         return roundedSprite;
     }
 
-    static Sprite MakeCircleSprite(int size)
+    // White, tintable filled circle (avatars, badges, gear).
+    static Sprite Circle()
     {
+        if (circleSprite != null) return circleSprite;
+        const int size = 64;
         Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
         Color32[] px = new Color32[size * size];
         float r = size * 0.5f - 1f;
@@ -557,19 +644,51 @@ public class NavigationManager : MonoBehaviour
             for (int x = 0; x < size; x++)
             {
                 float d = Vector2.Distance(new Vector2(x, y), c);
-                byte a = (byte)(Mathf.Clamp01(r - d) * 255f);
-                px[y * size + x] = new Color32(255, 255, 255, a);
+                px[y * size + x] = new Color32(255, 255, 255, (byte)(Mathf.Clamp01(r - d) * 255f));
             }
         tex.SetPixels32(px);
         tex.Apply();
-        return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+        tex.wrapMode = TextureWrapMode.Clamp;
+        circleSprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+        return circleSprite;
     }
 
-    static void EnsureEventSystem()
+    // White, tintable padlock (rounded body + shackle ring + keyhole) for the locked season pass.
+    static Sprite MakeLockSprite()
     {
-        if (Object.FindFirstObjectByType<EventSystem>() != null) return;
-        GameObject es = new GameObject("EventSystem");
-        es.AddComponent<EventSystem>();
-        es.AddComponent<StandaloneInputModule>();
+        if (lockSprite != null) return lockSprite;
+        const int s = 64;
+        Texture2D tex = new Texture2D(s, s, TextureFormat.RGBA32, false);
+        Color32[] px = new Color32[s * s];
+        Color32 on = new Color32(255, 255, 255, 255);
+        Color32 clear = new Color32(0, 0, 0, 0);
+        Vector2 shackle = new Vector2(s * 0.5f, 40f);
+        for (int y = 0; y < s; y++)
+            for (int x = 0; x < s; x++)
+            {
+                bool fill = false;
+
+                // rounded body
+                if (x >= 16 && x <= 48 && y >= 10 && y <= 38)
+                {
+                    float cx = Mathf.Clamp(x, 20f, 44f);
+                    float cy = Mathf.Clamp(y, 14f, 34f);
+                    if (new Vector2(x - cx, y - cy).sqrMagnitude <= 16f) fill = true;
+                }
+
+                // shackle (upper half ring)
+                float d = Vector2.Distance(new Vector2(x, y), shackle);
+                if (y >= 36 && d >= 9f && d <= 13f) fill = true;
+
+                // keyhole
+                if (Vector2.Distance(new Vector2(x, y), new Vector2(s * 0.5f, 24f)) <= 3.5f) fill = false;
+
+                px[y * s + x] = fill ? on : clear;
+            }
+        tex.SetPixels32(px);
+        tex.Apply();
+        tex.wrapMode = TextureWrapMode.Clamp;
+        lockSprite = Sprite.Create(tex, new Rect(0, 0, s, s), new Vector2(0.5f, 0.5f), 100f);
+        return lockSprite;
     }
 }

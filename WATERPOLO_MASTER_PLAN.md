@@ -1021,3 +1021,50 @@ shot clock, etc. are untouched. Full detail under "## Animation System (Built Ju
   that `boneAnimator` + `boneRenderer` and `holdAnimator` + `holdRenderer` are filled, alongside the
   existing `frontAnimator`/`backAnimator`/`frontRenderer`/`backRenderer`. FrontBody/BackBody slots are
   untouched.
+
+## SESSION LOG — 2026-06-21 (Hub UI redesign + back bone animations)
+
+**ANIMATION SYSTEM:**
+- Added BackBoneBody child (test-back_0.prefab, BackBoneBodyAnimation.controller,
+  floating_body_back.anim) — shown when floating AND moving toward own goal
+- Added BackHoldBody child (back-side_0.prefab, BackHoldBodyAnimation.controller,
+  holding_body_back.anim) — shown when holding AND moving toward own goal
+- holding_body_back.anim recorded after fixing back-side_0 bone weights
+  (Auto Weights failed; bones were outside mesh — manually repositioned via Edit Bone)
+- showBack logic: vel.x < -FlipEpsilon (moving left) with lastShowBack latch
+  so direction is remembered when stick released; floating idle always resets to front
+- P3/P4 hand offsets: 5 new Swapped fields (handOffsetRightSwapped etc) in
+  PlayerMovement — completely independent from P1/P2 values, selected via
+  defendGoal.position.x > 0
+- AnimatorBuilder.cs: Tools > Setup BackBoneBody All Players +
+  Tools > Setup BackHoldBody All Players added
+- PlayerAnimator.cs: backBoneAnimator/backBoneRenderer/backHoldAnimator/
+  backHoldRenderer slots added; anyBone logic hides flat front/back sprites
+- Clean console: zero errors, zero warnings
+
+**HUB UI (NavigationManager.cs — full rebuild):**
+- Removed all bottom nav tabs (CAREER/TEAM/TRANSFERS/MY CLUB/CHALLENGES)
+- Background: main-page-background.png full screen
+- Top bar: avatar circle + My Club + XP bar + level badge + gear button +
+  diamond/gold currency with [+] buttons
+- Left column: ranking-button / shop-button / team-button (140/140/115px)
+- Top right: SEASON ENDS IN panel (placeholder 2D 10H)
+- Bottom bar: season-pass-button (260x80) + missions-button (90x90, red badge) +
+  4 card slots (3H/7H/12H/24H placeholders) + play-button (320x120)
+- RANKING/SHOP → COMING SOON overlay panels
+- TEAM → existing TeamScreenUI
+- PLAY → loads SampleScene
+- Removed welcome panel
+- Globe overlay: traced — not a code bug; was MainMenu logo sprite
+  rendering in editor session only. Not present in saved HubScene.
+- Quit routing: MatchResultUI + PauseMenuUI + QuarterBreakUI all now
+  load HubScene instead of MainMenu on quit
+
+**KNOWN REMAINING:**
+- Globe white circle still visible in editor (editor artifact, not runtime bug)
+- Season pass image needs better sprite
+- Pool variants system (replaces pool upgrades — unlock better pools via
+  division progression, not purchases) — NOT YET BUILT
+- Main menu flow: MainMenu.unity still exists as launch screen (plain);
+  consider skipping it and launching HubScene directly
+- Card slots are visual only — no chest/reward logic yet
