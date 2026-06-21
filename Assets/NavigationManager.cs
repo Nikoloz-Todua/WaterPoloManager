@@ -318,7 +318,8 @@ public class NavigationManager : MonoBehaviour
         return ov;
     }
 
-    // Dark full-screen overlay hosting the existing TeamScreenUI on a full-canvas sheet + close [X].
+    // Dark full-screen overlay hosting TeamScreenUI on a full-canvas sheet. The team screen owns its
+    // own back arrow (→ CloseTeamScreen), so this overlay adds no [X] of its own.
     GameObject BuildTeamOverlay()
     {
         GameObject ov = new GameObject("Overlay_TEAM");
@@ -341,13 +342,15 @@ public class NavigationManager : MonoBehaviour
 
         TeamScreenUI team = sheetGo.AddComponent<TeamScreenUI>();
         team.Build(sheetGo.transform, this); // passes 'this' so its buys/sells refresh our top bar
-
-        GameObject self = ov;
-        MakeCloseButton(ov.transform, () => HideOverlay(self)); // X above the sheet, screen top-right
+        // No overlay [X] here: TeamScreenUI draws its own back arrow in its top bar, which calls
+        // CloseTeamScreen() below — a single, unambiguous close affordance.
 
         ov.SetActive(false);
         return ov;
     }
+
+    // Called by TeamScreenUI's back arrow to slide the team overlay closed and return to the hub.
+    public void CloseTeamScreen() => HideOverlay(teamOverlay);
 
     void ShowOverlay(GameObject overlay)
     {

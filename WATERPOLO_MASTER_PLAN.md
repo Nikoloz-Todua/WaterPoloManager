@@ -1060,6 +1060,21 @@ shot clock, etc. are untouched. Full detail under "## Animation System (Built Ju
 - Quit routing: MatchResultUI + PauseMenuUI + QuarterBreakUI all now
   load HubScene instead of MainMenu on quit
 
+**TEAM SCREEN — FINAL PASS (same session):**
+- Player slot cards reduced to 75x90px, portrait 38px
+- Formation Y positions tuned manually across multiple passes — final SlotOffset values:
+  GK Y=-80, CB Y=-30, LW/RW Y=10, CF Y=20, LF/RF Y=40
+- Position tab buttons (wings/center/defender/goalkeeper) fixed to 70x45px, gold color when
+  selected, faded white when unselected, no scale/border/background
+- Wings tab replaces Attacker tab: covers LW/RW/LF/RF
+- All purchasing removed from team screen (BUY/SELL/UPGRADE)
+- Left panel buttons (formations/players/substitutions) text overlays removed — images have
+  baked-in text
+- Formations button 220x80px, others 200x70px
+- Globe overlay on team screen: editor artifact only, not present at runtime
+- Zero errors, zero warnings
+- NOTE: formation position values may be hand-tweaked further by the user between sessions
+
 **KNOWN REMAINING:**
 - Globe white circle still visible in editor (editor artifact, not runtime bug)
 - Season pass image needs better sprite

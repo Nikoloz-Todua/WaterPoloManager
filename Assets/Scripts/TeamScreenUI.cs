@@ -4,210 +4,427 @@ using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using TMPro;
 
-// The real hub TEAM screen (B12), built entirely in code in the same style as
-// NavigationManager / MainMenuUI — no prefabs, no Inspector wiring. NavigationManager attaches
-// this to its Team screen and calls Build(); everything else is driven by RosterManager +
-// PlayerDatabase. Shows the 7-slot formation with the live starters, a scrollable list of owned
-// (bench) + buyable (market) players, the team OVR, and working BUY / SELL / UPGRADE / START
-// buttons. Each card has a rarity-coloured border and a silhouette where the portrait will go.
+// The hub TEAM management screen (B12), rebuilt as a full-screen overlay panel and built entirely
+// in code (no prefabs, no Inspector wiring) in the same style as NavigationManager. NavigationManager
+// hosts it on a full-canvas sheet and calls Build(); everything dynamic is driven by RosterManager +
+// RosterManager. The data layer is untouched — this only paints a new layout over the same
+// SetStarter / GetStarters / GetOwnedPlayers calls.
+//
+// Layout: a background image, an 80px top bar (back / TEAM / team-strength / currencies), a 220px
+// left tactics panel (TACTIC + stars + 3 sprite buttons), a centre pool with the 7-slot 2-3-1
+// formation, and a 300px right panel (4 position tabs + a scrollable BENCH list).
 public class TeamScreenUI : MonoBehaviour
 {
-    static readonly Color Navy = new Color(0.05f, 0.1f, 0.25f, 0.92f);
-    static readonly Color Panel = new Color(0.03f, 0.06f, 0.16f, 0.85f);
-    static readonly Color Gold = new Color(1f, 0.82f, 0.2f);
-    static readonly Color Cyan = new Color(0f, 0.85f, 1f);
-    static readonly Color Grey = new Color(0.55f, 0.55f, 0.58f);
+    static readonly Color Navy     = new Color(0.05f, 0.1f, 0.25f, 0.92f);
+    static readonly Color DarkBar  = new Color(0.04f, 0.06f, 0.13f, 0.86f);
+    static readonly Color PanelDk  = new Color(0.03f, 0.05f, 0.12f, 0.82f);
+    static readonly Color PoolBlue = new Color(0.07f, 0.20f, 0.36f, 0.95f);
+    static readonly Color Gold     = new Color(1f, 0.82f, 0.2f);
+    static readonly Color Cyan     = new Color(0f, 0.85f, 1f);
+    static readonly Color Grey     = new Color(0.55f, 0.55f, 0.58f);
+    static readonly Color SellRed  = new Color(0.82f, 0.28f, 0.28f);
 
-    static Sprite roundedSprite;
-    static Sprite silhouetteSprite;
+    static Sprite roundedSprite, silhouetteSprite, circleSprite, starSprite, backSprite;
 
-    // Formation slot anchored positions inside the pitch panel; index == starter slot == (int)position.
-    static readonly Vector2[] SlotAt =
+    // Normalised slot positions inside the pool (x: 0=left..1=right, y: 0=bottom..1=top). Index ==
+    // starter slot == (int)position. Visual 2-3-1: CF top, LF/RF, LW/RW, CB, GK bottom near own goal.
+    static readonly Vector2[] SlotFrac =
     {
-        new Vector2(110f, -140f),  // 0 GK
-        new Vector2(-110f, -140f), // 1 CB
-        new Vector2(-150f, 130f),  // 2 LW
-        new Vector2(150f, 130f),   // 3 RW
-        new Vector2(0f, 0f),       // 4 CF
-        new Vector2(-175f, 0f),    // 5 LF
-        new Vector2(175f, 0f),     // 6 RF
+        new Vector2(0.50f, 0.10f), // 0 GK  (bottom, own goal)
+        new Vector2(0.50f, 0.28f), // 1 CB
+        new Vector2(0.30f, 0.46f), // 2 LW
+        new Vector2(0.70f, 0.46f), // 3 RW
+        new Vector2(0.50f, 0.86f), // 4 CF  (top, enemy goal)
+        new Vector2(0.22f, 0.66f), // 5 LF
+        new Vector2(0.78f, 0.66f), // 6 RF
+    };
+    // Extra per-slot pixel offset layered on top of the fractional anchor to spread the cards apart:
+    // +30px wider on the LW/RW and LF/RF wings (X). Whole formation shifted up 50px (Y) so GK clears
+    // the bottom, plus per-slot nudges: GK +30, CB +20, LW/RW +15, LF/RF +10, CF 0.
+    static readonly Vector2[] SlotOffset =
+    {
+        new Vector2(  0f,  -80f), // 0 GK  (bottom row)
+        new Vector2(  0f,  -30f), // 1 CB
+        new Vector2(-30f,   10f), // 2 LW
+        new Vector2( 30f,   10f), // 3 RW
+        new Vector2(  0f,   20f), // 4 CF  (top row)
+        new Vector2(-30f,   40f), // 5 LF
+        new Vector2( 30f,   40f), // 6 RF
     };
     static readonly string[] PosName = { "GK", "CB", "LW", "RW", "CF", "LF", "RF" };
+    static readonly string[] TabLabel = { "WINGS", "CENTER", "DEFENSE", "GK" };
+    static readonly string[] TabSprite =
+        { "Sprites/wings-button", "Sprites/center-button", "Sprites/defender-button", "Sprites/goalkeeper-button" };
 
     private Transform root;
     private NavigationManager nav;
-    private TextMeshProUGUI ovrText, goldText, diamondText, emptyHint;
-    private RectTransform formationContainer;
-    private RectTransform listContent;
+    private TextMeshProUGUI ovrText, goldText, diamondText;
+    private RectTransform formationContainer; // holds the 7 formation cards
+    private RectTransform listContent;        // scroll content: BENCH rows
+    private GameObject comingSoonPanel;
+    private readonly Image[] tabFaces = new Image[4]; // position tab Images; selected = gold tint, else faded
+
+    private int selectedSlot = -1; // formation slot chosen for a swap, -1 = none
+    private int activeTab = 0;     // 0 wings, 1 center, 2 defense, 3 goalkeeper
 
     public void Build(Transform parent, NavigationManager navigation)
     {
         root = parent;
         nav = navigation;
 
-        MakeText(root, "TEAM", 40f, new Vector2(0.5f, 1f), new Vector2(0f, -34f),
-                 new Vector2(500f, 50f), Color.white, TextAlignmentOptions.Center);
+        BuildBackground();
+        BuildTopBar();
+        BuildLeftPanel();
+        BuildCenterPool();
+        BuildRightPanel();
+        BuildComingSoon();
 
-        // header: gold (left), OVR (centre), diamonds (right)
-        goldText = MakeText(root, "Gold: 0", 22f, new Vector2(0.5f, 1f), new Vector2(-340f, -84f),
-                            new Vector2(280f, 36f), Gold, TextAlignmentOptions.Left);
-        ovrText = MakeText(root, "OVR 0", 30f, new Vector2(0.5f, 1f), new Vector2(0f, -84f),
-                           new Vector2(220f, 40f), Gold, TextAlignmentOptions.Center);
-        diamondText = MakeText(root, "Diamonds: 0", 22f, new Vector2(0.5f, 1f), new Vector2(340f, -84f),
-                               new Vector2(280f, 36f), Cyan, TextAlignmentOptions.Right);
-
-        // left: the pitch with the 7 formation slots
-        Image pitch = MakePanel(root, new Vector2(540f, 430f), new Vector2(-350f, -40f), Panel);
-        formationContainer = NewRect("Formation", pitch.transform);
-        formationContainer.anchorMin = Vector2.zero;
-        formationContainer.anchorMax = Vector2.one;
-        formationContainer.offsetMin = formationContainer.offsetMax = Vector2.zero;
-
-        // right: scrollable owned + market list
-        listContent = BuildScroll(root, new Vector2(600f, 430f), new Vector2(330f, -40f));
-
-        emptyHint = MakeText(root, "No players yet.\nRun Tools → Generate Sample Players, then re-open the hub.",
-                             20f, new Vector2(0.5f, 0.5f), new Vector2(330f, -40f), new Vector2(560f, 120f),
-                             Color.white, TextAlignmentOptions.Center);
-        emptyHint.gameObject.SetActive(false);
-
+        SyncTabHighlight();
         Refresh();
     }
+
+    // ----------------------------------------------------------------- background
+
+    void BuildBackground()
+    {
+        Image bg = NewImage("Background", root);
+        bg.sprite = LoadSprite("Sprites/team-page-backround"); // note: asset filename is misspelled
+        bg.raycastTarget = true;                               // blocks clicks bleeding to the hub
+        if (bg.sprite == null) bg.color = new Color(0.03f, 0.12f, 0.24f); // pool-blue fallback
+        Stretch(bg.rectTransform);
+    }
+
+    // ----------------------------------------------------------------- top bar
+
+    void BuildTopBar()
+    {
+        Image bar = PanelStretch(root, new Vector2(0f, 1f), new Vector2(1f, 1f),
+                                 new Vector2(0f, -80f), Vector2.zero, DarkBar);
+        bar.gameObject.name = "TopBar";
+        Transform t = bar.transform;
+
+        // Left: back arrow → close the team screen, return to hub.
+        MakeIconButton(t, BackArrow(), new Vector2(0f, 0.5f), new Vector2(42f, 0f),
+                       new Vector2(50f, 50f), () => { if (nav != null) nav.CloseTeamScreen(); });
+
+        // Centre: TEAM title.
+        MakeText(t, "TEAM", 32f, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(300f, 44f),
+                 Color.white, TextAlignmentOptions.Center);
+
+        // Right-of-currencies: TEAM STRENGTH label + OVR number.
+        MakeText(t, "TEAM STRENGTH", 13f, new Vector2(1f, 0.5f), new Vector2(-300f, 13f),
+                 new Vector2(170f, 18f), new Color(1f, 1f, 1f, 0.85f), TextAlignmentOptions.Right);
+        ovrText = MakeText(t, "OVR 0", 20f, new Vector2(1f, 0.5f), new Vector2(-300f, -11f),
+                           new Vector2(170f, 26f), Gold, TextAlignmentOptions.Right);
+
+        // Far right: diamond icon + count | gold icon + count.
+        MakeIcon(t, "Sprites/diamond-coin", new Vector2(1f, 0.5f), new Vector2(-178f, 0f), 26f);
+        diamondText = MakeText(t, "0", 16f, new Vector2(1f, 0.5f), new Vector2(-132f, 0f),
+                               new Vector2(56f, 28f), Cyan, TextAlignmentOptions.Right);
+        MakeText(t, "|", 18f, new Vector2(1f, 0.5f), new Vector2(-100f, 0f), new Vector2(12f, 28f),
+                 new Color(1f, 1f, 1f, 0.4f), TextAlignmentOptions.Center);
+        MakeIcon(t, "Sprites/gold-coin", new Vector2(1f, 0.5f), new Vector2(-78f, 0f), 26f);
+        goldText = MakeText(t, "0", 16f, new Vector2(1f, 0.5f), new Vector2(-34f, 0f),
+                            new Vector2(60f, 28f), Gold, TextAlignmentOptions.Right);
+    }
+
+    // ----------------------------------------------------------------- left tactics panel
+
+    void BuildLeftPanel()
+    {
+        Image panel = PanelStretch(root, new Vector2(0f, 0f), new Vector2(0f, 1f),
+                                   Vector2.zero, new Vector2(220f, -80f), PanelDk);
+        Transform p = panel.transform;
+
+        MakeText(p, "TACTIC", 18f, new Vector2(0.5f, 1f), new Vector2(0f, -24f), new Vector2(200f, 22f),
+                 new Color(1f, 1f, 1f, 0.85f), TextAlignmentOptions.Center);
+        MakeText(p, "2-3-1", 30f, new Vector2(0.5f, 1f), new Vector2(0f, -56f), new Vector2(200f, 38f),
+                 Gold, TextAlignmentOptions.Center);
+
+        // Star rating: 1 filled + 4 empty, 24px each, centred.
+        const float starSize = 24f, gap = 6f;
+        float rowW = 5f * starSize + 4f * gap;
+        for (int i = 0; i < 5; i++)
+        {
+            Image star = NewImage("Star", p);
+            star.sprite = Star();
+            star.raycastTarget = false;
+            star.color = i == 0 ? Gold : new Color(1f, 1f, 1f, 0.18f);
+            float sx = -rowW * 0.5f + starSize * 0.5f + i * (starSize + gap);
+            SetRect(star.rectTransform, new Vector2(0.5f, 1f), new Vector2(sx, -104f),
+                    new Vector2(starSize, starSize));
+        }
+
+        // Three stacked sprite buttons, lowered to leave empty space above for future content.
+        // FORMATIONS is bigger (220x80); the other two stay 200x70. All → COMING SOON.
+        MakeSpriteLabelButton(p, "Sprites/formations-button", "FORMATIONS", new Vector2(0f, 20f), new Vector2(220f, 80f), ShowComingSoon);
+        MakeSpriteLabelButton(p, "Sprites/players-button", "PLAYERS", new Vector2(0f, -55f), new Vector2(200f, 70f), ShowComingSoon);
+        MakeSpriteLabelButton(p, "Sprites/substitutions-button", "SUBSTITUTIONS", new Vector2(0f, -130f), new Vector2(200f, 70f), ShowComingSoon);
+    }
+
+    void MakeSpriteLabelButton(Transform parent, string spritePath, string label, Vector2 pos,
+                               Vector2 size, UnityEngine.Events.UnityAction onClick)
+    {
+        GameObject go = new GameObject("Btn_" + label);
+        go.transform.SetParent(parent, false);
+        RectTransform rt = go.AddComponent<RectTransform>();
+        SetRect(rt, new Vector2(0.5f, 0.5f), pos, size);
+
+        Image img = go.AddComponent<Image>();
+        img.sprite = LoadSprite(spritePath);
+        img.preserveAspect = true;
+        if (img.sprite == null) { img.sprite = Rounded(); img.type = Image.Type.Sliced; img.color = Navy; }
+
+        Button btn = go.AddComponent<Button>();
+        btn.targetGraphic = img;
+        if (onClick != null) btn.onClick.AddListener(onClick);
+
+        // No text label drawn on top — the button sprites already have their text baked in.
+        AddHover(go);
+    }
+
+    // ----------------------------------------------------------------- centre pool + formation
+
+    void BuildCenterPool()
+    {
+        Image pool = PanelStretch(root, new Vector2(0f, 0f), new Vector2(1f, 1f),
+                                  new Vector2(232f, 12f), new Vector2(-312f, -92f), PoolBlue);
+        Transform p = pool.transform;
+
+        MakeGoalNet(p, top: true);   // enemy goal (top)
+        MakeGoalNet(p, top: false);  // own goal (bottom)
+
+        formationContainer = NewRect("Formation", p);
+        formationContainer.anchorMin = Vector2.zero;
+        formationContainer.anchorMax = Vector2.one;
+        formationContainer.offsetMin = new Vector2(8f, 40f);  // inset so cards clear the goals
+        formationContainer.offsetMax = new Vector2(-8f, -40f);
+    }
+
+    void MakeGoalNet(Transform parent, bool top)
+    {
+        Image frame = NewImage("Goal", parent);
+        frame.sprite = Rounded(); frame.type = Image.Type.Sliced;
+        frame.color = new Color(1f, 1f, 1f, 0.5f);
+        frame.raycastTarget = false;
+        SetRect(frame.rectTransform, new Vector2(0.5f, top ? 1f : 0f),
+                new Vector2(0f, top ? -16f : 16f), new Vector2(150f, 24f));
+
+        Image fill = NewImage("Mouth", frame.transform);
+        fill.sprite = Rounded(); fill.type = Image.Type.Sliced;
+        fill.color = new Color(0.04f, 0.10f, 0.20f, 0.7f);
+        fill.raycastTarget = false;
+        RectTransform frt = fill.rectTransform;
+        frt.anchorMin = Vector2.zero; frt.anchorMax = Vector2.one;
+        frt.offsetMin = new Vector2(2f, 2f); frt.offsetMax = new Vector2(-2f, -2f);
+    }
+
+    void RefreshFormation()
+    {
+        ClearChildren(formationContainer);
+        PlayerData[] starters = RosterManager.Instance.GetStarters();
+        for (int slot = 0; slot < 7; slot++) BuildFormationCard(slot, starters[slot]);
+    }
+
+    void BuildFormationCard(int slot, PlayerData player)
+    {
+        bool selected = slot == selectedSlot;
+        Color border = selected ? Gold : (player != null ? player.RarityColor : Grey);
+
+        Image frame = NewImage("Slot" + slot, formationContainer);
+        frame.sprite = Rounded(); frame.type = Image.Type.Sliced; frame.color = border;
+        RectTransform frt = frame.rectTransform;
+        frt.anchorMin = frt.anchorMax = SlotFrac[slot];
+        frt.pivot = new Vector2(0.5f, 0.5f);
+        frt.anchoredPosition = SlotOffset[slot];
+        frt.sizeDelta = new Vector2(75f, 90f);
+
+        Image fill = NewImage("Fill", frame.transform);
+        fill.sprite = Rounded(); fill.type = Image.Type.Sliced; fill.color = Navy;
+        fill.raycastTarget = false;
+        RectTransform fillRt = fill.rectTransform;
+        fillRt.anchorMin = Vector2.zero; fillRt.anchorMax = Vector2.one;
+        float inset = selected ? 4f : 3f;
+        fillRt.offsetMin = new Vector2(inset, inset); fillRt.offsetMax = new Vector2(-inset, -inset);
+
+        MakeText(frame.transform, PosName[slot], 14f, new Vector2(0.5f, 1f), new Vector2(0f, -12f),
+                 new Vector2(86f, 18f), Cyan, TextAlignmentOptions.Center);
+
+        MakePortrait(frame.transform, new Vector2(0.5f, 0.5f), new Vector2(0f, 10f), 38f, player);
+
+        if (player == null)
+        {
+            MakeText(frame.transform, "EMPTY", 13f, new Vector2(0.5f, 0f), new Vector2(0f, 18f),
+                     new Vector2(86f, 18f), Grey, TextAlignmentOptions.Center);
+        }
+        else
+        {
+            MakeText(frame.transform, Short(player.fullName, 11), 10f, new Vector2(0.5f, 0f),
+                     new Vector2(0f, 26f), new Vector2(86f, 16f), Color.white, TextAlignmentOptions.Center);
+            MakeText(frame.transform, "OVR " + player.overall, 10f, new Vector2(0.5f, 0f),
+                     new Vector2(0f, 10f), new Vector2(86f, 16f), Gold, TextAlignmentOptions.Center);
+        }
+
+        int captured = slot;
+        Button btn = frame.gameObject.AddComponent<Button>();
+        btn.targetGraphic = frame;
+        btn.onClick.AddListener(() => OnSlotClicked(captured));
+        AddHover(frame.gameObject);
+    }
+
+    void OnSlotClicked(int slot)
+    {
+        selectedSlot = slot;
+        activeTab = CategoryOf((PlayerPosition)slot); // jump to the tab that can fill this slot
+        SyncTabHighlight();
+        RefreshFormation();
+        RefreshList();
+    }
+
+    // ----------------------------------------------------------------- right panel (tabs + list)
+
+    void BuildRightPanel()
+    {
+        Image panel = PanelStretch(root, new Vector2(1f, 0f), new Vector2(1f, 1f),
+                                   new Vector2(-300f, 0f), new Vector2(0f, -80f), PanelDk);
+        Transform p = panel.transform;
+
+        // Four position tabs in a fixed-size row anchored to the panel's top-right.
+        for (int i = 0; i < 4; i++)
+            MakeTabButton(p, i);
+
+        // Scrollable BENCH list filling the rest of the panel.
+        listContent = BuildScroll(p);
+    }
+
+    void MakeTabButton(Transform parent, int index)
+    {
+        // Fixed 70x45 tabs (80x50 would overflow: 4*80+3*8=344 > 300px panel), in a horizontal
+        // row anchored to the panel's top-right with an 8px gap. NO localScale on these — ever.
+        const float w = 70f, h = 45f, gap = 8f, rightPad = 8f, topPad = 8f;
+
+        GameObject go = new GameObject("Tab_" + TabLabel[index]);
+        go.transform.SetParent(parent, false); // child of the right panel, not the root canvas
+        RectTransform rt = go.AddComponent<RectTransform>();
+        rt.anchorMin = rt.anchorMax = new Vector2(1f, 1f);
+        rt.pivot = new Vector2(1f, 1f);
+        int columnFromRight = (TabLabel.Length - 1) - index; // index 0 = leftmost, 3 = rightmost
+        rt.anchoredPosition = new Vector2(-(rightPad + columnFromRight * (w + gap)), -topPad);
+        rt.sizeDelta = new Vector2(w, h);
+
+        // The Image component IS the button — no background panel, no outline behind it.
+        Image face = go.AddComponent<Image>();
+        face.sprite = LoadSprite(TabSprite[index]);
+        face.preserveAspect = true;
+        if (face.sprite == null) // labelled fallback if a tab sprite is missing
+        {
+            face.sprite = Rounded(); face.type = Image.Type.Sliced;
+            MakeText(go.transform, TabLabel[index], 11f, new Vector2(0.5f, 0.5f), Vector2.zero,
+                     Vector2.zero, Color.white, TextAlignmentOptions.Center);
+        }
+        tabFaces[index] = face;
+
+        int captured = index;
+        Button btn = go.AddComponent<Button>();
+        btn.targetGraphic = face;
+        btn.onClick.AddListener(() => OnTabClicked(captured));
+    }
+
+    void OnTabClicked(int index)
+    {
+        activeTab = index;
+        SyncTabHighlight();
+        RefreshList();
+    }
+
+    void SyncTabHighlight()
+    {
+        for (int i = 0; i < tabFaces.Length; i++)
+        {
+            Image face = tabFaces[i];
+            if (face == null) continue;
+            // Color tint only — no scale, no border, no background panel.
+            face.color = (i == activeTab) ? new Color(1f, 0.85f, 0.2f, 1f)  // selected: gold tint
+                                          : new Color(1f, 1f, 1f, 0.6f);     // unselected: faded white
+        }
+    }
+
+    // ----------------------------------------------------------------- refresh
 
     // Rebuild every dynamic part from the current roster + catalog.
     void Refresh()
     {
         RosterManager rm = RosterManager.Instance;
-        PlayerDatabase db = PlayerDatabase.Instance;
-
         ovrText.text = "OVR " + rm.TeamOverall();
-        goldText.text = "Gold: " + rm.Coins;
-        diamondText.text = "Diamonds: " + rm.Diamonds;
-        emptyHint.gameObject.SetActive(db.Count == 0);
+        goldText.text = rm.Coins.ToString();
+        diamondText.text = rm.Diamonds.ToString();
 
-        ClearChildren(formationContainer);
-        ClearChildren(listContent);
-
-        // formation
-        PlayerData[] starters = rm.GetStarters();
-        for (int slot = 0; slot < 7; slot++) BuildFormationCard(slot, starters[slot]);
-
-        // list: owned first (so the bench is on top), then the buyable market
-        HashSet<string> ownedSeen = new HashSet<string>();
-        foreach (PlayerData p in rm.GetOwnedPlayers())
-        {
-            if (p == null || !ownedSeen.Add(p.id)) continue;
-            BuildListRow(p, owned: true);
-        }
-        foreach (PlayerData p in db.AllPlayers())
-        {
-            if (p == null || rm.IsOwned(p.id)) continue;
-            BuildListRow(p, owned: false);
-        }
+        RefreshFormation();
+        RefreshList();
 
         if (nav != null) nav.RefreshCurrency();
     }
 
-    // ---------------------------------------------------------------- formation card
-
-    void BuildFormationCard(int slot, PlayerData player)
+    void RefreshList()
     {
-        Color border = player != null ? player.RarityColor : Grey;
-        RectTransform card = MakeCard(formationContainer, new Vector2(118f, 135f), SlotAt[slot], border);
+        ClearChildren(listContent);
+        RosterManager rm = RosterManager.Instance;
 
-        MakeText(card, PosName[slot], 16f, new Vector2(0.5f, 1f), new Vector2(0f, -16f),
-                 new Vector2(110f, 22f), Cyan, TextAlignmentOptions.Center);
-
-        Image silo = NewImage("Silo", card);
-        silo.sprite = (player != null && player.portrait != null) ? player.portrait : Silhouette();
-        silo.preserveAspect = true;
-        silo.raycastTarget = false;
-        SetRect(silo.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, 12f), new Vector2(58f, 58f));
-
-        if (player == null)
+        // BENCH: owned players not currently in a starter slot, filtered to the active tab.
+        AddSectionHeader("BENCH");
+        int benchShown = 0;
+        HashSet<string> seen = new HashSet<string>();
+        foreach (PlayerData p in rm.GetOwnedPlayers())
         {
-            MakeText(card, "EMPTY", 15f, new Vector2(0.5f, 0f), new Vector2(0f, 22f),
-                     new Vector2(110f, 22f), Grey, TextAlignmentOptions.Center);
-            return;
+            if (p == null || !seen.Add(p.id)) continue;
+            if (rm.IsStarter(p.id) || CategoryOf(p.position) != activeTab) continue;
+            BuildBenchRow(p);
+            benchShown++;
         }
-
-        MakeText(card, Short(player.fullName), 15f, new Vector2(0.5f, 0f), new Vector2(0f, 32f),
-                 new Vector2(112f, 22f), Color.white, TextAlignmentOptions.Center);
-        MakeText(card, "OVR " + player.overall, 15f, new Vector2(0.5f, 0f), new Vector2(0f, 12f),
-                 new Vector2(112f, 22f), Gold, TextAlignmentOptions.Center);
+        if (benchShown == 0) AddEmptyNote("No bench players for this tab.");
     }
 
-    // ---------------------------------------------------------------- list row
-
-    void BuildListRow(PlayerData player, bool owned)
+    void BuildBenchRow(PlayerData player)
     {
         string id = player.id; // local copy for the button closures
         RosterManager rm = RosterManager.Instance;
-        bool starter = owned && rm.IsStarter(id);
 
-        RectTransform row = MakeCard(listContent, new Vector2(0f, 92f), Vector2.zero, player.RarityColor);
-        LayoutElement le = row.gameObject.AddComponent<LayoutElement>();
-        le.minHeight = 92f; le.preferredHeight = 92f; le.flexibleWidth = 1f;
+        RectTransform row = MakeRowCard(player.RarityColor, 74f);
+        MakePortrait(row, new Vector2(0f, 0.5f), new Vector2(28f, 0f), 42f, player);
+        MakeText(row, Short(player.fullName, 14), 14f, new Vector2(0f, 0.5f), new Vector2(52f, 16f),
+                 new Vector2(118f, 18f), Color.white, TextAlignmentOptions.Left);
+        MakeText(row, PosName[(int)player.position] + "  ·  OVR " + player.overall, 11f,
+                 new Vector2(0f, 0.5f), new Vector2(52f, -6f), new Vector2(118f, 16f),
+                 new Color(1f, 1f, 1f, 0.7f), TextAlignmentOptions.Left);
+        MakeRarityDot(row, player);
 
-        Image silo = NewImage("Silo", row);
-        silo.sprite = player.portrait != null ? player.portrait : Silhouette();
-        silo.preserveAspect = true;
-        silo.raycastTarget = false;
-        SetRect(silo.rectTransform, new Vector2(0f, 0.5f), new Vector2(44f, 0f), new Vector2(60f, 60f));
-
-        MakeText(row, player.fullName, 20f, new Vector2(0f, 0.5f), new Vector2(86f, 16f),
-                 new Vector2(270f, 28f), Color.white, TextAlignmentOptions.Left);
-
-        string status = !owned ? player.priceGold + " g" : starter ? "STARTER" : "BENCH";
-        Color statusColor = !owned ? Gold : starter ? Cyan : Color.white;
-        MakeText(row, PosName[(int)player.position] + "  ·  OVR " + player.overall + "  ·  " + player.rarity,
-                 15f, new Vector2(0f, 0.5f), new Vector2(86f, -16f), new Vector2(320f, 22f),
-                 new Color(1f, 1f, 1f, 0.75f), TextAlignmentOptions.Left);
-        MakeText(row, status, 16f, new Vector2(0f, 0.5f), new Vector2(360f, 16f),
-                 new Vector2(140f, 24f), statusColor, TextAlignmentOptions.Left);
-
-        if (!owned)
-        {
-            int price = player.priceGold;
-            Button buy = MakeButton(row, "BUY " + price, new Vector2(120f, 44f), new Vector2(1f, 0.5f),
-                                    new Vector2(-66f, 0f), 16f, () => { rm.BuyPlayer(id); Refresh(); });
-            SetAffordable(buy, rm.Coins >= price);
-        }
-        else
-        {
-            if (!starter)
-                MakeButton(row, "START", new Vector2(92f, 40f), new Vector2(1f, 0.5f),
-                           new Vector2(-168f, 24f), 15f,
-                           () => { rm.SetStarter((int)player.position, id); Refresh(); });
-
-            int upCost = rm.UpgradeCost(player);
-            Button up = MakeButton(row, "UP " + upCost, new Vector2(92f, 40f), new Vector2(1f, 0.5f),
-                                   new Vector2(-168f, -24f), 15f, () => { rm.UpgradePlayer(id); Refresh(); });
-            SetAffordable(up, rm.Coins >= upCost);
-
-            MakeButton(row, "SELL +" + rm.SellValue(player), new Vector2(92f, 40f), new Vector2(1f, 0.5f),
-                       new Vector2(-58f, 0f), 14f, () => { rm.SellPlayer(id); Refresh(); });
-        }
+        // START → put this owned player into the selected slot (or its natural slot if none chosen).
+        MakeButton(row, "START", new Vector2(80f, 32f), new Vector2(1f, 0.5f), new Vector2(-46f, 0f),
+                   14f, () => { rm.SetStarter(StartSlotFor(player), id); Refresh(); }, Cyan);
     }
 
-    static void SetAffordable(Button btn, bool affordable)
+    // Where a START click sends an owned player: the slot the user highlighted, else its natural slot.
+    int StartSlotFor(PlayerData player)
+        => selectedSlot >= 0 ? selectedSlot : (int)player.position;
+
+    void MakeRarityDot(Transform parent, PlayerData player)
     {
-        if (affordable) return;
-        btn.interactable = false;
-        Transform fill = btn.transform.Find("Fill");
-        if (fill != null) fill.GetComponent<Image>().color = new Color(0.25f, 0.25f, 0.28f, 1f);
+        Image dot = NewImage("Rarity", parent);
+        dot.sprite = Circle(); dot.color = player.RarityColor; dot.raycastTarget = false;
+        SetRect(dot.rectTransform, new Vector2(0f, 0.5f), new Vector2(176f, 0f), new Vector2(12f, 12f));
     }
 
-    // ---------------------------------------------------------------- scroll view
+    // ----------------------------------------------------------------- scroll list scaffolding
 
-    RectTransform BuildScroll(Transform parent, Vector2 size, Vector2 pos)
+    RectTransform BuildScroll(Transform parent)
     {
-        GameObject scrollGo = new GameObject("PlayerScroll");
+        GameObject scrollGo = new GameObject("BenchMarketScroll");
         scrollGo.transform.SetParent(parent, false);
         RectTransform srt = scrollGo.AddComponent<RectTransform>();
-        SetRect(srt, new Vector2(0.5f, 0.5f), pos, size);
+        srt.anchorMin = new Vector2(0f, 0f); srt.anchorMax = new Vector2(1f, 1f);
+        srt.offsetMin = new Vector2(8f, 8f); srt.offsetMax = new Vector2(-8f, -72f); // below the tabs
         Image bg = scrollGo.AddComponent<Image>();
-        bg.sprite = Rounded(); bg.type = Image.Type.Sliced; bg.color = Panel;
+        bg.sprite = Rounded(); bg.type = Image.Type.Sliced; bg.color = new Color(0f, 0f, 0f, 0.25f);
 
         ScrollRect sr = scrollGo.AddComponent<ScrollRect>();
         sr.horizontal = false; sr.vertical = true; sr.scrollSensitivity = 24f;
@@ -217,10 +434,10 @@ public class TeamScreenUI : MonoBehaviour
         vp.transform.SetParent(scrollGo.transform, false);
         RectTransform vrt = vp.AddComponent<RectTransform>();
         vrt.anchorMin = Vector2.zero; vrt.anchorMax = Vector2.one;
-        vrt.offsetMin = new Vector2(6f, 6f); vrt.offsetMax = new Vector2(-6f, -6f);
+        vrt.offsetMin = new Vector2(4f, 4f); vrt.offsetMax = new Vector2(-4f, -4f);
         vrt.pivot = new Vector2(0.5f, 1f);
         Image vpImg = vp.AddComponent<Image>();
-        vpImg.color = new Color(1f, 1f, 1f, 0.01f); // near-invisible, but a raycast target so empty space scrolls
+        vpImg.color = new Color(1f, 1f, 1f, 0.01f); // near-invisible raycast target so empty space scrolls
         vp.AddComponent<RectMask2D>();
         sr.viewport = vrt;
 
@@ -231,7 +448,7 @@ public class TeamScreenUI : MonoBehaviour
         crt.pivot = new Vector2(0.5f, 1f);
         crt.offsetMin = crt.offsetMax = Vector2.zero;
         VerticalLayoutGroup vlg = content.AddComponent<VerticalLayoutGroup>();
-        vlg.spacing = 8f; vlg.padding = new RectOffset(8, 8, 8, 8);
+        vlg.spacing = 6f; vlg.padding = new RectOffset(6, 6, 6, 6);
         vlg.childAlignment = TextAnchor.UpperCenter;
         vlg.childControlWidth = true; vlg.childControlHeight = true;
         vlg.childForceExpandWidth = true; vlg.childForceExpandHeight = false;
@@ -243,7 +460,93 @@ public class TeamScreenUI : MonoBehaviour
         return crt;
     }
 
-    // ---------------------------------------------------------------- UI helpers
+    void AddSectionHeader(string label)
+    {
+        GameObject go = new GameObject("Header_" + label);
+        go.transform.SetParent(listContent, false);
+        go.AddComponent<RectTransform>();
+        LayoutElement le = go.AddComponent<LayoutElement>();
+        le.minHeight = 26f; le.preferredHeight = 26f; le.flexibleWidth = 1f;
+        MakeText(go.transform, label, 16f, new Vector2(0f, 0.5f), new Vector2(10f, 0f),
+                 new Vector2(240f, 22f), Cyan, TextAlignmentOptions.Left);
+    }
+
+    void AddEmptyNote(string text)
+    {
+        GameObject go = new GameObject("Empty");
+        go.transform.SetParent(listContent, false);
+        go.AddComponent<RectTransform>();
+        LayoutElement le = go.AddComponent<LayoutElement>();
+        le.minHeight = 30f; le.preferredHeight = 30f; le.flexibleWidth = 1f;
+        MakeText(go.transform, text, 12f, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(260f, 26f),
+                 new Color(1f, 1f, 1f, 0.5f), TextAlignmentOptions.Center);
+    }
+
+    // A rarity-bordered list row (border frame + navy fill) sized by the vertical layout group.
+    RectTransform MakeRowCard(Color border, float height)
+    {
+        Image frame = NewImage("Row", listContent);
+        frame.sprite = Rounded(); frame.type = Image.Type.Sliced; frame.color = border;
+        SetRect(frame.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(0f, height));
+        LayoutElement le = frame.gameObject.AddComponent<LayoutElement>();
+        le.minHeight = height; le.preferredHeight = height; le.flexibleWidth = 1f;
+
+        Image fill = NewImage("Fill", frame.transform);
+        fill.sprite = Rounded(); fill.type = Image.Type.Sliced; fill.color = Navy;
+        fill.raycastTarget = false;
+        RectTransform frt = fill.rectTransform;
+        frt.anchorMin = Vector2.zero; frt.anchorMax = Vector2.one;
+        frt.offsetMin = new Vector2(3f, 3f); frt.offsetMax = new Vector2(-3f, -3f);
+
+        return frame.rectTransform;
+    }
+
+    // ----------------------------------------------------------------- COMING SOON placeholder
+
+    void BuildComingSoon()
+    {
+        comingSoonPanel = new GameObject("ComingSoon");
+        comingSoonPanel.transform.SetParent(root, false);
+        RectTransform rt = comingSoonPanel.AddComponent<RectTransform>();
+        Stretch(rt);
+        Image backdrop = comingSoonPanel.AddComponent<Image>();
+        backdrop.color = new Color(0.01f, 0.02f, 0.05f, 0.8f);
+        backdrop.raycastTarget = true;
+
+        Image sheet = NewImage("Sheet", comingSoonPanel.transform);
+        sheet.sprite = Rounded(); sheet.type = Image.Type.Sliced; sheet.color = PanelDk;
+        SetRect(sheet.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(520f, 240f));
+        MakeText(sheet.transform, "COMING SOON", 40f, new Vector2(0.5f, 0.5f), new Vector2(0f, 8f),
+                 new Vector2(480f, 60f), Gold, TextAlignmentOptions.Center);
+        MakeText(sheet.transform, "This feature is on the way.", 16f, new Vector2(0.5f, 0f),
+                 new Vector2(0f, 40f), new Vector2(480f, 24f), Color.white, TextAlignmentOptions.Center);
+        MakeButton(sheet.transform, "X", new Vector2(44f, 44f), new Vector2(1f, 1f), new Vector2(-28f, -28f),
+                   22f, HideComingSoon, SellRed);
+
+        comingSoonPanel.SetActive(false);
+    }
+
+    void ShowComingSoon()
+    {
+        if (comingSoonPanel == null) return;
+        comingSoonPanel.SetActive(true);
+        comingSoonPanel.transform.SetAsLastSibling();
+    }
+
+    void HideComingSoon()
+    {
+        if (comingSoonPanel != null) comingSoonPanel.SetActive(false);
+    }
+
+    // ----------------------------------------------------------------- shared UI helpers
+
+    static int CategoryOf(PlayerPosition pos) => pos switch
+    {
+        PlayerPosition.GK => 3,
+        PlayerPosition.CB => 2,
+        PlayerPosition.CF => 1,
+        _ => 0, // LW, RW, LF, RF → attack
+    };
 
     static void ClearChildren(Transform t)
     {
@@ -265,30 +568,40 @@ public class TeamScreenUI : MonoBehaviour
         return go.AddComponent<Image>();
     }
 
-    Image MakePanel(Transform parent, Vector2 size, Vector2 pos, Color color)
+    // An anchored rounded panel (stretches between aMin/aMax with the given edge offsets).
+    Image PanelStretch(Transform parent, Vector2 aMin, Vector2 aMax, Vector2 oMin, Vector2 oMax, Color color)
     {
         Image img = NewImage("Panel", parent);
         img.sprite = Rounded(); img.type = Image.Type.Sliced; img.color = color;
-        SetRect(img.rectTransform, new Vector2(0.5f, 0.5f), pos, size);
+        RectTransform rt = img.rectTransform;
+        rt.anchorMin = aMin; rt.anchorMax = aMax; rt.offsetMin = oMin; rt.offsetMax = oMax;
         return img;
     }
 
-    // A rarity-bordered card: a coloured rounded frame with a navy fill inset. Returns the
-    // frame's RectTransform — children added to it render above the fill.
-    RectTransform MakeCard(Transform parent, Vector2 size, Vector2 pos, Color border)
+    Image MakeIcon(Transform parent, string spritePath, Vector2 anchor, Vector2 pos, float size)
     {
-        Image frame = NewImage("Card", parent);
-        frame.sprite = Rounded(); frame.type = Image.Type.Sliced; frame.color = border;
-        SetRect(frame.rectTransform, new Vector2(0.5f, 0.5f), pos, size);
+        Image img = NewImage("Icon", parent);
+        img.sprite = LoadSprite(spritePath);
+        img.preserveAspect = true; img.raycastTarget = false;
+        if (img.sprite == null) img.color = Gold;
+        SetRect(img.rectTransform, anchor, pos, new Vector2(size, size));
+        return img;
+    }
 
-        Image fill = NewImage("Fill", frame.transform);
-        fill.sprite = Rounded(); fill.type = Image.Type.Sliced; fill.color = Navy;
-        fill.raycastTarget = false;
-        RectTransform frt = fill.rectTransform;
-        frt.anchorMin = Vector2.zero; frt.anchorMax = Vector2.one;
-        frt.offsetMin = new Vector2(3f, 3f); frt.offsetMax = new Vector2(-3f, -3f);
+    // A grey circle portrait placeholder with a head-and-shoulders silhouette (or real art if present).
+    void MakePortrait(Transform parent, Vector2 anchor, Vector2 pos, float size, PlayerData player)
+    {
+        Image circle = NewImage("Portrait", parent);
+        circle.sprite = Circle(); circle.color = new Color(0.30f, 0.34f, 0.42f, 1f);
+        circle.raycastTarget = false;
+        SetRect(circle.rectTransform, anchor, pos, new Vector2(size, size));
 
-        return frame.rectTransform;
+        Image silo = NewImage("Silo", circle.transform);
+        silo.sprite = (player != null && player.portrait != null) ? player.portrait : Silhouette();
+        silo.preserveAspect = true; silo.raycastTarget = false;
+        RectTransform s = silo.rectTransform;
+        s.anchorMin = Vector2.zero; s.anchorMax = Vector2.one;
+        s.offsetMin = new Vector2(4f, 2f); s.offsetMax = new Vector2(-4f, -2f);
     }
 
     TextMeshProUGUI MakeText(Transform parent, string content, float size, Vector2 anchor,
@@ -304,17 +617,17 @@ public class TeamScreenUI : MonoBehaviour
         return txt;
     }
 
-    // Cyan-bordered navy button with a 1.05x hover — same look as NavigationManager's buttons.
+    // Cyan-bordered navy button (border tint overridable) with a 1.05x hover.
     Button MakeButton(Transform parent, string label, Vector2 size, Vector2 anchor, Vector2 pos,
-                      float fontSize, UnityEngine.Events.UnityAction onClick)
+                      float fontSize, UnityEngine.Events.UnityAction onClick, Color border)
     {
         GameObject go = new GameObject("Btn");
         go.transform.SetParent(parent, false);
         RectTransform rt = go.AddComponent<RectTransform>();
         SetRect(rt, anchor, pos, size);
 
-        Image border = go.AddComponent<Image>();
-        border.sprite = Rounded(); border.type = Image.Type.Sliced; border.color = Cyan;
+        Image frame = go.AddComponent<Image>();
+        frame.sprite = Rounded(); frame.type = Image.Type.Sliced; frame.color = border;
 
         Image fill = NewImage("Fill", go.transform);
         fill.sprite = Rounded(); fill.type = Image.Type.Sliced; fill.color = new Color(0.05f, 0.1f, 0.25f, 1f);
@@ -324,15 +637,45 @@ public class TeamScreenUI : MonoBehaviour
         frt.offsetMin = new Vector2(3f, 3f); frt.offsetMax = new Vector2(-3f, -3f);
 
         Button btn = go.AddComponent<Button>();
-        btn.targetGraphic = border;
+        btn.targetGraphic = frame;
         if (onClick != null) btn.onClick.AddListener(onClick);
 
         TextMeshProUGUI txt = MakeText(go.transform, label, fontSize, new Vector2(0.5f, 0.5f),
                                        Vector2.zero, Vector2.zero, Color.white, TextAlignmentOptions.Center);
-        RectTransform trt = txt.rectTransform;
-        trt.anchorMin = Vector2.zero; trt.anchorMax = Vector2.one;
-        trt.offsetMin = trt.offsetMax = Vector2.zero;
+        Stretch(txt.rectTransform);
 
+        AddHover(go);
+        return btn;
+    }
+
+    // A rounded button whose face is a generated/loaded icon sprite (e.g. the back arrow).
+    Button MakeIconButton(Transform parent, Sprite icon, Vector2 anchor, Vector2 pos, Vector2 size,
+                          UnityEngine.Events.UnityAction onClick)
+    {
+        GameObject go = new GameObject("BtnIcon");
+        go.transform.SetParent(parent, false);
+        RectTransform rt = go.AddComponent<RectTransform>();
+        SetRect(rt, anchor, pos, size);
+
+        Image frame = go.AddComponent<Image>();
+        frame.sprite = Rounded(); frame.type = Image.Type.Sliced; frame.color = Cyan;
+
+        Image fill = NewImage("Fill", go.transform);
+        fill.sprite = Rounded(); fill.type = Image.Type.Sliced; fill.color = new Color(0.05f, 0.1f, 0.25f, 1f);
+        fill.raycastTarget = false;
+        RectTransform frt = fill.rectTransform;
+        frt.anchorMin = Vector2.zero; frt.anchorMax = Vector2.one;
+        frt.offsetMin = new Vector2(3f, 3f); frt.offsetMax = new Vector2(-3f, -3f);
+
+        Image glyph = NewImage("Glyph", go.transform);
+        glyph.sprite = icon; glyph.color = Color.white; glyph.raycastTarget = false; glyph.preserveAspect = true;
+        RectTransform grt = glyph.rectTransform;
+        grt.anchorMin = Vector2.zero; grt.anchorMax = Vector2.one;
+        grt.offsetMin = new Vector2(12f, 12f); grt.offsetMax = new Vector2(-12f, -12f);
+
+        Button btn = go.AddComponent<Button>();
+        btn.targetGraphic = frame;
+        if (onClick != null) btn.onClick.AddListener(onClick);
         AddHover(go);
         return btn;
     }
@@ -348,6 +691,12 @@ public class TeamScreenUI : MonoBehaviour
         trigger.triggers.Add(exit);
     }
 
+    static void Stretch(RectTransform rt)
+    {
+        rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
+        rt.offsetMin = rt.offsetMax = Vector2.zero;
+    }
+
     static void SetRect(RectTransform rt, Vector2 anchor, Vector2 pos, Vector2 size)
     {
         rt.anchorMin = rt.anchorMax = anchor;
@@ -356,10 +705,19 @@ public class TeamScreenUI : MonoBehaviour
         rt.sizeDelta = size;
     }
 
-    static string Short(string s)
-        => string.IsNullOrEmpty(s) ? "" : (s.Length <= 12 ? s : s.Substring(0, 12));
+    static string Short(string s, int max)
+        => string.IsNullOrEmpty(s) ? "" : (s.Length <= max ? s : s.Substring(0, max));
 
-    // ---------------------------------------------------------------- generated sprites
+    static Sprite LoadSprite(string path)
+    {
+        Sprite s = Resources.Load<Sprite>(path);
+        if (s == null)
+            Debug.LogWarning("TeamScreenUI: sprite not found at Resources/" + path +
+                             " — check the file exists there and its Texture Type is 'Sprite (2D and UI)'.");
+        return s;
+    }
+
+    // ----------------------------------------------------------------- generated sprites
 
     static Sprite Rounded()
     {
@@ -383,6 +741,88 @@ public class TeamScreenUI : MonoBehaviour
         return roundedSprite;
     }
 
+    static Sprite Circle()
+    {
+        if (circleSprite != null) return circleSprite;
+        const int s = 64;
+        Texture2D tex = new Texture2D(s, s, TextureFormat.RGBA32, false);
+        Color32[] px = new Color32[s * s];
+        float r = s * 0.5f - 1f;
+        Vector2 c = new Vector2(s * 0.5f - 0.5f, s * 0.5f - 0.5f);
+        for (int y = 0; y < s; y++)
+            for (int x = 0; x < s; x++)
+            {
+                float d = Vector2.Distance(new Vector2(x, y), c);
+                px[y * s + x] = new Color32(255, 255, 255, (byte)(Mathf.Clamp01(r - d) * 255f));
+            }
+        tex.SetPixels32(px); tex.Apply(); tex.wrapMode = TextureWrapMode.Clamp;
+        circleSprite = Sprite.Create(tex, new Rect(0, 0, s, s), new Vector2(0.5f, 0.5f), 100f);
+        return circleSprite;
+    }
+
+    // A white, tintable five-point star (point-in-polygon fill).
+    static Sprite Star()
+    {
+        if (starSprite != null) return starSprite;
+        const int s = 64;
+        Texture2D tex = new Texture2D(s, s, TextureFormat.RGBA32, false);
+        Color32[] px = new Color32[s * s];
+        Vector2 c = new Vector2(s * 0.5f, s * 0.5f);
+        float outer = s * 0.47f, inner = outer * 0.42f;
+        Vector2[] pts = new Vector2[10];
+        for (int i = 0; i < 10; i++)
+        {
+            float ang = Mathf.PI * 0.5f + i * Mathf.PI / 5f; // first point straight up
+            float rad = (i % 2 == 0) ? outer : inner;
+            pts[i] = c + new Vector2(Mathf.Cos(ang) * rad, Mathf.Sin(ang) * rad);
+        }
+        for (int y = 0; y < s; y++)
+            for (int x = 0; x < s; x++)
+            {
+                bool inside = PointInPoly(new Vector2(x + 0.5f, y + 0.5f), pts);
+                px[y * s + x] = inside ? new Color32(255, 255, 255, 255) : new Color32(0, 0, 0, 0);
+            }
+        tex.SetPixels32(px); tex.Apply(); tex.wrapMode = TextureWrapMode.Clamp;
+        starSprite = Sprite.Create(tex, new Rect(0, 0, s, s), new Vector2(0.5f, 0.5f), 100f);
+        return starSprite;
+    }
+
+    // A white, tintable left-pointing arrow (triangle head + shaft) for the back button.
+    static Sprite BackArrow()
+    {
+        if (backSprite != null) return backSprite;
+        const int s = 64;
+        Texture2D tex = new Texture2D(s, s, TextureFormat.RGBA32, false);
+        Color32[] px = new Color32[s * s];
+        Vector2[] head =
+        {
+            new Vector2(0.22f * s, 0.50f * s),
+            new Vector2(0.56f * s, 0.24f * s),
+            new Vector2(0.56f * s, 0.76f * s),
+        };
+        for (int y = 0; y < s; y++)
+            for (int x = 0; x < s; x++)
+            {
+                Vector2 p = new Vector2(x + 0.5f, y + 0.5f);
+                bool inHead = PointInPoly(p, head);
+                bool inShaft = x >= 0.50f * s && x <= 0.82f * s && y >= 0.43f * s && y <= 0.57f * s;
+                px[y * s + x] = (inHead || inShaft) ? new Color32(255, 255, 255, 255) : new Color32(0, 0, 0, 0);
+            }
+        tex.SetPixels32(px); tex.Apply(); tex.wrapMode = TextureWrapMode.Clamp;
+        backSprite = Sprite.Create(tex, new Rect(0, 0, s, s), new Vector2(0.5f, 0.5f), 100f);
+        return backSprite;
+    }
+
+    static bool PointInPoly(Vector2 p, Vector2[] v)
+    {
+        bool inside = false;
+        for (int i = 0, j = v.Length - 1; i < v.Length; j = i++)
+            if (((v[i].y > p.y) != (v[j].y > p.y)) &&
+                (p.x < (v[j].x - v[i].x) * (p.y - v[i].y) / (v[j].y - v[i].y) + v[i].x))
+                inside = !inside;
+        return inside;
+    }
+
     // A neutral head-and-shoulders silhouette placeholder (until real portraits exist).
     static Sprite Silhouette()
     {
@@ -390,7 +830,7 @@ public class TeamScreenUI : MonoBehaviour
         const int s = 96;
         Texture2D tex = new Texture2D(s, s, TextureFormat.RGBA32, false);
         Color32[] px = new Color32[s * s];
-        Color32 body = new Color32(150, 162, 184, 255);
+        Color32 body = new Color32(180, 190, 208, 255);
         Color32 clear = new Color32(0, 0, 0, 0);
         Vector2 head = new Vector2(s * 0.5f, s * 0.64f);
         float headR = s * 0.19f;
@@ -399,7 +839,7 @@ public class TeamScreenUI : MonoBehaviour
             {
                 bool inHead = Vector2.Distance(new Vector2(x, y), head) <= headR;
                 float bx = Mathf.Abs(x - s * 0.5f);
-                float tNeck = Mathf.InverseLerp(0.46f * s, 0.10f * s, y); // 0 at neck, 1 at bottom
+                float tNeck = Mathf.InverseLerp(0.46f * s, 0.10f * s, y);
                 float halfW = Mathf.Lerp(s * 0.20f, s * 0.34f, Mathf.Clamp01(tNeck));
                 bool inBody = y >= 0.10f * s && y <= 0.46f * s && bx <= halfW;
                 px[y * s + x] = (inHead || inBody) ? body : clear;
