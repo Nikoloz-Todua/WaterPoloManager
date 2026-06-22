@@ -684,11 +684,34 @@ Both in `Assets/Sprites/Players/Animations/`.
 ## B10. Club Logo / Team Name Popup 🟡 PARTIAL (logo placeholder circle + "My Club" name shown in the hub top bar; popup itself not built)
 - Manager standing, large club logo, overall team rating, changeable nationality flag, **Highlights** (saved goals), **Records** (games, W/L/D, goals for/against, biggest win/loss, win %, trophies).
 
-## B11. Career Screen 🟡 PARTIAL (shell built: Division 3 badge, fake 5-team standings, season line, PLAY → SampleScene; no simulation/progression)
-- Full-screen change (not popup); top tab + bottom buttons stay; social icon → Home icon. Shows **Division 3** + ranked teams.
-- **Standings:** other teams play simulated background matches (random scores); better performers rank higher; results visible.
-- **Progression:** Div 3 (20 matches, 1st → cup → Div 2) → Div 2 → Div 1 → Champions League (repeatable).
-- **Match screen (Division clicked):** full-screen; two symmetrical pools (left = you + cards + cup/logo, right = opponent), center Division logo + "Game 1 of 15", **PLAY** button.
+## B11. Career Screen 🟡 PARTIAL
+
+Game Mode screen opens when PLAY tapped on hub.
+4 competition tiers — each unlocks after winning the previous.
+Unlock state stored in PlayerPrefs (div1_won / pl_won / cc_won).
+
+| Tier | Badge | Competition | Teams | Format | Unlock |
+|---|---|---|---|---|---|
+| 4 | Green | Division 1 | 8 | 14 matches round-robin | Always open |
+| 3 | Purple | Premier League | 10 | 18 matches round-robin | Win Division 1 |
+| 2 | Blue | Continental Cup | 8 | Group stage + knockouts | Win Premier League |
+| 1 | Gold | World Champions League | 8 | Group stage + knockouts | Win Continental Cup |
+
+Pool variants per competition (visual only, same SampleScene):
+- Division 1 → current outdoor pool (existing SampleScene)
+- Premier League → indoor club pool (future art)
+- Continental Cup → arena pool with crowd (future art)
+- World Champions League → Olympic arena (future art)
+
+Card images in Assets/Resources/Sprites/:
+division1-card / premier-league-card / continental-cup-card / world-champions-league-card
+
+National team tournaments (European/World Championship) → v2 only.
+This is a club management game.
+
+NavigationManager.cs: PLAY button → GameModeScreen overlay
+(not directly to SampleScene anymore).
+Competition logic (standings, simulation, promotion) → not yet built.
 
 ## B12. Team Screen 🟡 PARTIAL (DATA FOUNDATION DONE: real player cards + local-save roster + a working Team screen; drag-swap, captain, portraits, max-17 enforcement still to do)
 > Foundation: **Player System Architecture** (end of Part A) — human roster (max 17), player card structure, rarity borders (Common/Rare/Legendary), images from Firebase Storage.

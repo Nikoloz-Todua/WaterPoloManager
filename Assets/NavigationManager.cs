@@ -11,7 +11,7 @@ using TMPro;
 //   • top bar: club avatar + name + XP bar + level badge, settings gear, diamond/gold counters
 //   • left column: RANKING / SHOP / TEAM square buttons
 //   • top-right: season-countdown panel
-//   • bottom bar: season-pass (locked), missions (with badge), welcome panel, PLAY → SampleScene
+//   • bottom bar: season-pass (locked), missions (with badge), card slots, PLAY → Game Mode overlay
 // RANKING and SHOP open "COMING SOON" slide-in overlays; TEAM opens the existing TeamScreenUI as a
 // slide-in overlay. No bottom navigation tabs. Sprites load from Assets/Resources/Sprites/.
 public class NavigationManager : MonoBehaviour
@@ -28,16 +28,20 @@ public class NavigationManager : MonoBehaviour
     private static readonly Color Green = new Color(0.2f, 0.72f, 0.32f);
     private static readonly Color Red = new Color(0.85f, 0.2f, 0.2f);
     private static readonly Color GreyAvatar = new Color(0.5f, 0.53f, 0.6f);
+    private static readonly Color GameModeBg = new Color(0.039f, 0.086f, 0.157f, 1f); // #0A1628 game-mode backdrop
+    private static readonly Color CardGold = new Color(1f, 0.843f, 0f);               // #FFD700 unlocked-card frame
 
     private static Sprite roundedSprite;  // cached; regenerated after a domain reload
     private static Sprite circleSprite;   // white, tintable
     private static Sprite lockSprite;     // procedural padlock
+    private static Sprite gradientSprite; // bottom-up black gradient for card name legibility
 
     private Transform canvasRoot;
     private CanvasGroup hubFade;
-    private TextMeshProUGUI goldLabel, diamondLabel; // top-bar currencies, fed by RosterManager
+    private TextMeshProUGUI goldLabel, diamondLabel;     // hub top-bar currencies, fed by RosterManager
+    private TextMeshProUGUI gmGoldLabel, gmDiamondLabel; // game-mode top-bar currencies, fed by RosterManager
 
-    private GameObject rankingOverlay, shopOverlay, teamOverlay;
+    private GameObject rankingOverlay, shopOverlay, teamOverlay, gameModeOverlay;
     private Coroutine slideRoutine;
 
     void Start()
@@ -150,6 +154,8 @@ public class NavigationManager : MonoBehaviour
         RosterManager rm = RosterManager.Instance;
         if (goldLabel != null) goldLabel.text = rm.Coins.ToString();
         if (diamondLabel != null) diamondLabel.text = rm.Diamonds.ToString();
+        if (gmGoldLabel != null) gmGoldLabel.text = rm.Coins.ToString();
+        if (gmDiamondLabel != null) gmDiamondLabel.text = rm.Diamonds.ToString();
     }
 
     // ------------------------------------------------------------- left column
@@ -225,10 +231,10 @@ public class NavigationManager : MonoBehaviour
         // Card slots (visual placeholders) between the missions button and PLAY.
         BuildCardSlots(barGo.transform);
 
-        // Play (right) → start a match.
+        // Play (right) → open the Game Mode overlay (competition picker), not the match directly.
         MakeImageButton(barGo.transform, "BtnPlay", "Sprites/play-button", new Vector2(1f, 0.5f),
                         new Vector2(-160f, 0f), new Vector2(320f, 120f), // centre shifted so the wider button stays flush-right on screen
-                        () => SceneManager.LoadScene("SampleScene"));
+                        () => ShowOverlay(gameModeOverlay));
     }
 
     // Four visual-only "card slot" placeholders between the missions button and PLAY: a dark
@@ -284,6 +290,7 @@ public class NavigationManager : MonoBehaviour
         rankingOverlay = BuildComingSoonOverlay("RANKING");
         shopOverlay = BuildComingSoonOverlay("SHOP");
         teamOverlay = BuildTeamOverlay();
+        gameModeOverlay = BuildGameModeOverlay();
     }
 
     // Dark full-screen overlay with a centred sheet: "COMING SOON" + close [X]. Starts hidden.
@@ -351,6 +358,226 @@ public class NavigationManager : MonoBehaviour
 
     // Called by TeamScreenUI's back arrow to slide the team overlay closed and return to the hub.
     public void CloseTeamScreen() => HideOverlay(teamOverlay);
+
+    // ------------------------------------------------------------- game mode
+
+    // Full-screen "GAME MODE" overlay (built in code, no prefab — same slide-in shell as the team
+    // overlay). Four competition cards in a row; each unlocks after the previous is won (PlayerPrefs:
+    // div1_won / pl_won / cc_won). Tapping an unlocked card starts the match (SampleScene for now — all
+    // competitions share the one scene until the per-competition pools + simulation are built).
+    GameObject BuildGameModeOverlay()
+    {
+        GameObject ov = new GameObject("Overlay_GAMEMODE");
+        ov.transform.SetParent(canvasRoot, false);
+        RectTransform ort = ov.AddComponent<RectTransform>();
+        Stretch(ort);
+        Image backdrop = ov.AddComponent<Image>();
+        backdrop.color = OverlayDark;
+        backdrop.raycastTarget = true;
+        ov.AddComponent<CanvasGroup>();
+
+        // Full-canvas sheet — slid in from the right by SlideOverlay, which finds the "Sheet" child.
+        GameObject sheetGo = new GameObject("Sheet");
+        sheetGo.transform.SetParent(ov.transform, false);
+        RectTransform srt = sheetGo.AddComponent<RectTransform>();
+        srt.anchorMin = Vector2.zero;
+        srt.anchorMax = Vector2.one;
+        srt.pivot = new Vector2(0.5f, 0.5f);
+        srt.sizeDelta = Vector2.zero;
+        srt.anchoredPosition = Vector2.zero;
+
+        // Dark-blue background (#0A1628); also swallows clicks that miss the cards.
+        Image bg = sheetGo.AddComponent<Image>();
+        bg.color = GameModeBg;
+        bg.raycastTarget = true;
+
+        // ---- top bar (80px): back arrow | "GAME MODE" | diamond + gold currencies ----
+        Image bar = MakePanel(sheetGo.transform, new Vector2(0.5f, 1f), Vector2.zero, new Vector2(0f, 80f), DarkBar);
+        bar.gameObject.name = "GMTopBar";
+        bar.raycastTarget = true;
+        RectTransform brt = bar.rectTransform;
+        brt.anchorMin = new Vector2(0f, 1f);
+        brt.anchorMax = new Vector2(1f, 1f);
+        brt.pivot = new Vector2(0.5f, 1f);
+        brt.anchoredPosition = Vector2.zero;
+        brt.sizeDelta = new Vector2(0f, 80f);
+
+        // Back arrow → close (default TMP font has no ← glyph, so use ASCII "<" on a rounded button).
+        GameObject backGo = new GameObject("BtnBack");
+        backGo.transform.SetParent(bar.transform, false);
+        RectTransform backRt = backGo.AddComponent<RectTransform>();
+        SetRect(backRt, new Vector2(0f, 0.5f), new Vector2(46f, 0f), new Vector2(48f, 48f));
+        Image backImg = backGo.AddComponent<Image>();
+        backImg.sprite = GetRoundedSprite();
+        backImg.type = Image.Type.Sliced;
+        backImg.color = new Color(0.16f, 0.2f, 0.28f, 1f);
+        Button backBtn = backGo.AddComponent<Button>();
+        backBtn.targetGraphic = backImg;
+        backBtn.onClick.AddListener(() => HideOverlay(gameModeOverlay));
+        TextMeshProUGUI backTxt = MakeText(backGo.transform, "<", 34f, new Vector2(0.5f, 0.5f),
+                                           Vector2.zero, new Vector2(48f, 48f), Color.white,
+                                           TextAlignmentOptions.Center);
+        Stretch(backTxt.rectTransform);
+        AddHover(backGo);
+
+        // Title.
+        MakeText(bar.transform, "GAME MODE", 36f, new Vector2(0.5f, 0.5f), Vector2.zero,
+                 new Vector2(420f, 50f), Color.white, TextAlignmentOptions.Center);
+
+        // Currencies, right side, right-to-left: gold count, gold icon, diamond count, diamond icon.
+        gmGoldLabel = MakeText(bar.transform, "0", 18f, new Vector2(1f, 0.5f), new Vector2(-40f, 0f),
+                               new Vector2(66f, 30f), Color.white, TextAlignmentOptions.Right);
+        MakeIcon(bar.transform, "Sprites/gold-coin", new Vector2(1f, 0.5f), new Vector2(-95f, 0f), 34f);
+        gmDiamondLabel = MakeText(bar.transform, "0", 18f, new Vector2(1f, 0.5f), new Vector2(-150f, 0f),
+                                  new Vector2(54f, 30f), Color.white, TextAlignmentOptions.Right);
+        MakeIcon(bar.transform, "Sprites/diamond-coin", new Vector2(1f, 0.5f), new Vector2(-200f, 0f), 34f);
+
+        // ---- card row: 4 cards, 30px side margins, equal gaps, centred in the area below the bar ----
+        const float margin = 30f, cardH = 480f, gap = 24f, cardY = -40f; // cardY drops the row into the 640px main area
+        float rowW = 1280f - 2f * margin;     // 1220 usable width
+        float cardW = (rowW - 3f * gap) / 4f; // ~287 each (320 spec width can't fit 4 + margins at 1280)
+        for (int i = 0; i < 4; i++)
+        {
+            float cx = -rowW * 0.5f + cardW * 0.5f + i * (cardW + gap);
+            BuildGameModeCard(sheetGo.transform, i, new Vector2(cx, cardY), new Vector2(cardW, cardH));
+        }
+
+        ov.SetActive(false);
+        return ov;
+    }
+
+    // One competition card. Rounded (via Mask) art fill + tier badge + bottom-gradient name. Locked
+    // cards get a dark veil + padlock + "WIN … TO UNLOCK"; unlocked cards get a gold frame and start
+    // the match on tap.
+    void BuildGameModeCard(Transform parent, int index, Vector2 pos, Vector2 size)
+    {
+        string[] names = { "DIVISION 1", "PREMIER LEAGUE", "CONTINENTAL CUP", "WORLD CHAMPIONS LEAGUE" };
+        string[] sprites = { "Sprites/division1-card", "Sprites/premier-league-card",
+                             "Sprites/continental-cup-card", "Sprites/world-champions-league-card" };
+        Color[] tierColors = { new Color(0.180f, 0.800f, 0.251f),   // #2ECC40 green
+                               new Color(0.608f, 0.349f, 0.714f),   // #9B59B6 purple
+                               new Color(0.161f, 0.502f, 0.725f),   // #2980B9 blue
+                               new Color(0.953f, 0.612f, 0.071f) }; // #F39C12 gold
+        string[] tierNums = { "4", "3", "2", "1" };
+        string[] lockText = { "", "WIN DIVISION 1 TO UNLOCK", "WIN PREMIER LEAGUE TO UNLOCK",
+                              "WIN CONTINENTAL CUP TO UNLOCK" };
+
+        bool unlocked = IsCompetitionUnlocked(index);
+        float w = size.x;
+
+        // Card root — the outer rounded rect shows through as the gold frame on unlocked cards.
+        GameObject cardGo = new GameObject("Card_" + index);
+        cardGo.transform.SetParent(parent, false);
+        RectTransform cardRt = cardGo.AddComponent<RectTransform>();
+        SetRect(cardRt, new Vector2(0.5f, 0.5f), pos, size);
+        Image frame = cardGo.AddComponent<Image>();
+        frame.sprite = GetRoundedSprite();
+        frame.type = Image.Type.Sliced;
+        frame.color = unlocked ? CardGold : new Color(0.08f, 0.12f, 0.2f, 1f);
+        frame.raycastTarget = false;
+
+        // Inner masked container rounds the art + every overlay to radius 20.
+        float border = unlocked ? 3f : 0f; // gold frame thickness shows around the inner card
+        GameObject innerGo = new GameObject("Inner");
+        innerGo.transform.SetParent(cardGo.transform, false);
+        RectTransform innerRt = innerGo.AddComponent<RectTransform>();
+        innerRt.anchorMin = Vector2.zero;
+        innerRt.anchorMax = Vector2.one;
+        innerRt.offsetMin = new Vector2(border, border);
+        innerRt.offsetMax = new Vector2(-border, -border);
+        Image innerImg = innerGo.AddComponent<Image>();
+        innerImg.sprite = GetRoundedSprite();
+        innerImg.type = Image.Type.Sliced;
+        innerImg.color = new Color(0.05f, 0.09f, 0.16f, 1f); // card fallback bg (shows if art is missing)
+        Mask mask = innerGo.AddComponent<Mask>();
+        mask.showMaskGraphic = true;
+
+        // Art — fills the card; the mask supplies the rounded corners.
+        Image art = NewImage(innerGo.transform, "Art");
+        art.sprite = LoadSprite(sprites[index]);
+        art.preserveAspect = false;
+        art.raycastTarget = false;
+        if (art.sprite == null) art.color = tierColors[index];
+        Stretch(art.rectTransform);
+
+        // Bottom gradient for name legibility (black, fades up).
+        Image grad = NewImage(innerGo.transform, "Gradient");
+        grad.sprite = BottomGradient();
+        grad.color = new Color(0f, 0f, 0f, 0.85f);
+        grad.raycastTarget = false;
+        RectTransform gradRt = grad.rectTransform;
+        gradRt.anchorMin = new Vector2(0f, 0f);
+        gradRt.anchorMax = new Vector2(1f, 0f);
+        gradRt.pivot = new Vector2(0.5f, 0f);
+        gradRt.anchoredPosition = Vector2.zero;
+        gradRt.sizeDelta = new Vector2(0f, 120f);
+
+        // Competition name (bottom-centre, wraps for long names).
+        MakeText(innerGo.transform, names[index], 22f, new Vector2(0.5f, 0f), new Vector2(0f, 30f),
+                 new Vector2(w - 16f, 60f), Color.white, TextAlignmentOptions.Center);
+
+        // Tier badge (top-left): rounded square tinted by tier + white number.
+        Image badge = NewImage(innerGo.transform, "TierBadge");
+        badge.sprite = GetRoundedSprite();
+        badge.type = Image.Type.Sliced;
+        badge.color = tierColors[index];
+        badge.raycastTarget = false;
+        SetRect(badge.rectTransform, new Vector2(0f, 1f), new Vector2(37f, -37f), new Vector2(50f, 50f));
+        MakeText(badge.transform, tierNums[index], 24f, new Vector2(0.5f, 0.5f), Vector2.zero,
+                 new Vector2(50f, 50f), Color.white, TextAlignmentOptions.Center);
+
+        if (!unlocked)
+        {
+            // Dark veil over the whole card.
+            Image veil = NewImage(innerGo.transform, "LockVeil");
+            veil.sprite = GetRoundedSprite();
+            veil.type = Image.Type.Sliced;
+            veil.color = new Color(0f, 0f, 0f, 0.7f);
+            veil.raycastTarget = true; // locked → swallow taps
+            Stretch(veil.rectTransform);
+
+            // White circle + padlock (default TMP font has no 🔒 glyph → reuse the procedural padlock).
+            Image circ = NewImage(veil.transform, "LockCircle");
+            circ.sprite = Circle();
+            circ.color = Color.white;
+            circ.raycastTarget = false;
+            SetRect(circ.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, 26f), new Vector2(60f, 60f));
+            Image padlock = NewImage(circ.transform, "Lock");
+            padlock.sprite = MakeLockSprite();
+            padlock.color = new Color(0.06f, 0.1f, 0.18f, 1f); // dark padlock on the white circle
+            padlock.raycastTarget = false;
+            SetRect(padlock.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(34f, 34f));
+
+            // Unlock instruction below the lock.
+            MakeText(veil.transform, lockText[index], 14f, new Vector2(0.5f, 0.5f), new Vector2(0f, -34f),
+                     new Vector2(w - 24f, 44f), new Color(1f, 1f, 1f, 0.92f), TextAlignmentOptions.Center);
+        }
+        else
+        {
+            // Transparent full-card hit target on top → fully tappable; whole card scales on hover.
+            Image hit = NewImage(cardGo.transform, "Hit");
+            hit.color = new Color(0f, 0f, 0f, 0f);
+            hit.raycastTarget = true;
+            Stretch(hit.rectTransform);
+            Button btn = hit.gameObject.AddComponent<Button>();
+            btn.targetGraphic = hit;
+            btn.onClick.AddListener(() => { HideOverlay(gameModeOverlay); SceneManager.LoadScene("SampleScene"); });
+            AddHover(cardGo);
+        }
+    }
+
+    // Unlock gates: Division 1 is always open; each higher tier needs the previous competition won.
+    static bool IsCompetitionUnlocked(int index)
+    {
+        switch (index)
+        {
+            case 0: return true;                                       // Division 1
+            case 1: return PlayerPrefs.GetInt("div1_won", 0) == 1;     // Premier League
+            case 2: return PlayerPrefs.GetInt("pl_won", 0) == 1;       // Continental Cup
+            case 3: return PlayerPrefs.GetInt("cc_won", 0) == 1;       // World Champions League
+            default: return false;
+        }
+    }
 
     void ShowOverlay(GameObject overlay)
     {
@@ -693,5 +920,25 @@ public class NavigationManager : MonoBehaviour
         tex.wrapMode = TextureWrapMode.Clamp;
         lockSprite = Sprite.Create(tex, new Rect(0, 0, s, s), new Vector2(0.5f, 0.5f), 100f);
         return lockSprite;
+    }
+
+    // Vertical gradient: opaque (white, tintable) at the bottom → transparent at the top. Tinted black
+    // per card for the name strip. One column is enough — it stretches horizontally.
+    static Sprite BottomGradient()
+    {
+        if (gradientSprite != null) return gradientSprite;
+        const int w = 4, h = 128;
+        Texture2D tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
+        Color32[] px = new Color32[w * h];
+        for (int y = 0; y < h; y++) // texture y=0 is the bottom row → most opaque
+        {
+            byte a = (byte)((1f - y / (float)(h - 1)) * 255f);
+            for (int x = 0; x < w; x++) px[y * w + x] = new Color32(255, 255, 255, a);
+        }
+        tex.SetPixels32(px);
+        tex.Apply();
+        tex.wrapMode = TextureWrapMode.Clamp;
+        gradientSprite = Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(0.5f, 0.5f), 100f);
+        return gradientSprite;
     }
 }
