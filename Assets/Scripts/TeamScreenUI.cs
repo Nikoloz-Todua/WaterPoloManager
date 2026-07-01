@@ -24,7 +24,7 @@ public class TeamScreenUI : MonoBehaviour
     static readonly Color Grey     = new Color(0.55f, 0.55f, 0.58f);
     static readonly Color SellRed  = new Color(0.82f, 0.28f, 0.28f);
 
-    static Sprite roundedSprite, silhouetteSprite, circleSprite, starSprite, backSprite;
+    static Sprite roundedSprite, silhouetteSprite, circleSprite, starSprite, backSprite, backButtonSprite;
 
     // Normalised slot positions inside the pool (x: 0=left..1=right, y: 0=bottom..1=top). Index ==
     // starter slot == (int)position. Visual 2-3-1: CF top, LF/RF, LW/RW, CB, GK bottom near own goal.
@@ -103,9 +103,9 @@ public class TeamScreenUI : MonoBehaviour
         bar.gameObject.name = "TopBar";
         Transform t = bar.transform;
 
-        // Left: back arrow → close the team screen, return to hub.
-        MakeIconButton(t, BackArrow(), new Vector2(0f, 0.5f), new Vector2(42f, 0f),
-                       new Vector2(50f, 50f), () => { if (nav != null) nav.CloseTeamScreen(); });
+        // Left: universal back-button sprite → close the team screen, return to hub.
+        MakeBackButton(t, new Vector2(0f, 0.5f), new Vector2(46f, 0f), new Vector2(60f, 60f),
+                       () => { if (nav != null) nav.CloseTeamScreen(); });
 
         // Centre: TEAM title.
         MakeText(t, "TEAM", 32f, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(300f, 44f),
@@ -678,6 +678,38 @@ public class TeamScreenUI : MonoBehaviour
         if (onClick != null) btn.onClick.AddListener(onClick);
         AddHover(go);
         return btn;
+    }
+
+    // The universal back button: the shared back-button sprite at native aspect (no frame). Falls back
+    // to the procedural arrow if the sprite is missing.
+    Button MakeBackButton(Transform parent, Vector2 anchor, Vector2 pos, Vector2 size,
+                          UnityEngine.Events.UnityAction onClick)
+    {
+        GameObject go = new GameObject("BtnBack");
+        go.transform.SetParent(parent, false);
+        RectTransform rt = go.AddComponent<RectTransform>();
+        SetRect(rt, anchor, pos, size);
+
+        Image img = go.AddComponent<Image>();
+        img.sprite = BackButtonSprite();
+        img.preserveAspect = true;
+        if (img.sprite == null) img.sprite = BackArrow(); // procedural fallback
+
+        Button btn = go.AddComponent<Button>();
+        btn.targetGraphic = img;
+        if (onClick != null) btn.onClick.AddListener(onClick);
+        AddHover(go);
+        return btn;
+    }
+
+    // back-button art wrapped from its Texture2D so it loads regardless of the PNG's sprite import mode.
+    static Sprite BackButtonSprite()
+    {
+        if (backButtonSprite != null) return backButtonSprite;
+        Texture2D tex = Resources.Load<Texture2D>("Sprites/back-button");
+        if (tex == null) return null;
+        backButtonSprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f), 100f);
+        return backButtonSprite;
     }
 
     static void AddHover(GameObject go)

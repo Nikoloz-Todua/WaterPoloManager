@@ -101,6 +101,9 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 | `BallFlight.cs` | Ball VFX, **auto-added to the Ball at runtime** by `PlayerMovement` (no wiring), singleton. Speed-gated **TrailRenderer** (>5 u/s); **high-shot** scale swell (≤1.2×) + warm glow; **skip-shot** bounce 1.5u before the goal (Y jitter, squash + expanding water ripple, 35% `KeeperFooled`); **lob** breathing blue-grey water shadow; **spin** (shots 54°/s, fast loose 18°/s, lobs 9°/s — none on skip / plain pass, only >6 u/s, snaps upright on catch). All scaling uniform, recomputed from a clean base each frame (never drifts on a re-parent). Exposes `ShotHeight`, `SkipActive`/`SkipBounced`, `LobActive`/`LobTeam`, `KeeperFooled`. |
 | `GoalColliderFixer.cs` | Editor tool (**Tools → Fix Goal Colliders**). Resizes GoalRight/GoalLeft Box Collider 2D to the visual goal mouth (size (4,15) → world ≈0.8×3.0u at scale 0.2). Idempotent; marks the scene dirty (Ctrl+S to save). |
 | `PlayerLabel.cs` | ⬜ **NOT YET BUILT** (planned). Future: world-space player-number labels floating above each swimmer. |
+| `LeagueSeason.cs` | Static session-persistent league state. 8 teams per competition, 14-match schedule, simulated AI results, standings tracking (P/W/D/L/GF/GA/Pts). |
+| `GameModeCardFX.cs` | Card hover/select animations, locked-card shake, staggered entry for Game Mode screen. |
+| `GameModeBackgroundFX.cs` | Ken Burns + vignette + light specks animated background for Game Mode. |
 
 **Architecture rule for any AI:** keep `TeamSide` + `MatchContext` + `WaterPoloBrain`. It is roster-size-agnostic by design. To scale teams: add player/bot objects, drop them into the team `members` arrays + TeamManager arrays; formation & AI scale automatically.
 
@@ -152,6 +155,9 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 
 **UI — Canvas (TextMeshPro), + EventSystem (auto)**
 - **ScoreboardBG** (Raw Image, `score-tab.png`) holding **PlayerScoreText** + **BotScoreText** (separate score fields) and **PlayerNameText** + **BotNameText**; **TimerText** ("1:30"), **QuarterText** ("Q1"), **ResultText** (hidden until full time), **DefenseModeText** ("DEFENSE: PRESS/ZONE"), **ExclusionText** (exclusion countdowns), **ShotClockText** ("30"), **EventFeedText** (last 5 events), **PenaltyText** ("PENALTY!", hidden until a penalty; wired into `PenaltyManager.Penalty Text`). The **stamina HUD panel** (P#/GK + bar) is built at runtime inside `TouchControls` — not a Canvas object.
+
+**HubScene**
+- **HubScene** — all UI procedural via NavigationManager.cs. Sprites from Assets/Resources/Sprites/ at runtime.
 
 ## A7. Animation system (Visual Pass 1 — COMPLETE)
 
@@ -226,6 +232,8 @@ Filter Mode: Bilinear, Max Size: 4096
 - Goal net art
 - Poolside/edge tiles
 - Player ripple effects
+
+Game Mode screen with 4 competition cards, lock-sign sprite, animated background, card polish. League Standings (8-team table with simulated results). Pre-Match screen (two pool-screen pools, 6 formation markers, PLAY button). Full nav flow: Hub → Game Mode → Standings → Pre-Match → SampleScene. Universal back-button sprite.
 
 ## A9. Controls (keyboard — for PC testing; touch comes later)
 
@@ -684,7 +692,7 @@ Both in `Assets/Sprites/Players/Animations/`.
 ## B10. Club Logo / Team Name Popup 🟡 PARTIAL (logo placeholder circle + "My Club" name shown in the hub top bar; popup itself not built)
 - Manager standing, large club logo, overall team rating, changeable nationality flag, **Highlights** (saved goals), **Records** (games, W/L/D, goals for/against, biggest win/loss, win %, trophies).
 
-## B11. Career Screen 🟡 PARTIAL
+## B11. Career Screen 🟡 PARTIAL (standings + pre-match built, career progression pending)
 
 Game Mode screen opens when PLAY tapped on hub.
 4 competition tiers — each unlocks after winning the previous.
@@ -730,7 +738,7 @@ Competition logic (standings, simulation, promotion) → not yet built.
 
 ## B16. MATCH GAMEPLAY (the core)
 
-### B16.1 Pre-Match Intro ⬜
+### B16.1 Pre-Match Intro 🟡 PARTIAL (pre-match screen built, intro anim not yet)
 - Optional skippable intro (≤10s): both teams enter pool and warm up.
 
 ### B16.2 Match Start — Sprint Duel ✅ DONE

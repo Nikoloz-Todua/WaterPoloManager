@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.SceneManagement;
@@ -35,6 +36,18 @@ public class NavigationManager : MonoBehaviour
     private static Sprite circleSprite;   // white, tintable
     private static Sprite lockSprite;     // procedural padlock
     private static Sprite gradientSprite; // bottom-up black gradient for card name legibility
+    private static Sprite lockSignSprite; // lock-sign art, cropped to its content box
+    private static Sprite vignetteSprite; // radial edge-darkening overlay
+
+    // Full-frame sprites wrapped straight from their Texture2D (works regardless of the PNG's sprite
+    // import mode). Keyed by Resources path so pool-screen / back-button / competition bg share one cache.
+    private static readonly Dictionary<string, Sprite> textureSpriteCache = new Dictionary<string, Sprite>();
+
+    // Game-mode cards, captured at build so the overlay can replay a staggered entry each time it opens.
+    private readonly List<RectTransform> gmCardRects = new List<RectTransform>();
+    private readonly List<CanvasGroup> gmCardGroups = new List<CanvasGroup>();
+    private readonly List<Vector2> gmCardBasePos = new List<Vector2>();
+    private readonly List<bool> gmCardSelected = new List<bool>();
 
     private Transform canvasRoot;
     private CanvasGroup hubFade;
@@ -42,7 +55,12 @@ public class NavigationManager : MonoBehaviour
     private TextMeshProUGUI gmGoldLabel, gmDiamondLabel; // game-mode top-bar currencies, fed by RosterManager
 
     private GameObject rankingOverlay, shopOverlay, teamOverlay, gameModeOverlay;
+    private GameObject standingsOverlay, preMatchOverlay; // built lazily, content rebuilt on each open
     private Coroutine slideRoutine;
+
+    // Competition display names, shared by the cards, standings and pre-match screens.
+    private static readonly string[] CompNames =
+        { "DIVISION 1", "PREMIER LEAGUE", "CONTINENTAL CUP", "WORLD CHAMPIONS LEAGUE" };
 
     void Start()
     {
@@ -386,10 +404,14 @@ public class NavigationManager : MonoBehaviour
         srt.sizeDelta = Vector2.zero;
         srt.anchoredPosition = Vector2.zero;
 
-        // Dark-blue background (#0A1628); also swallows clicks that miss the cards.
+        // Dark-blue background (#0A1628); also swallows clicks that miss the cards. Sits behind the
+        // pool render below and shows through as a fallback if the art fails to load.
         Image bg = sheetGo.AddComponent<Image>();
         bg.color = GameModeBg;
         bg.raycastTarget = true;
+
+        // Animated pool-screen backdrop (Ken-Burns drift + breathing vignette + drifting specks).
+        BuildGameModeBackground(sheetGo.transform);
 
         // ---- top bar (80px): back arrow | "GAME MODE" | diamond + gold currencies ----
         Image bar = MakePanel(sheetGo.transform, new Vector2(0.5f, 1f), Vector2.zero, new Vector2(0f, 80f), DarkBar);
@@ -402,23 +424,8 @@ public class NavigationManager : MonoBehaviour
         brt.anchoredPosition = Vector2.zero;
         brt.sizeDelta = new Vector2(0f, 80f);
 
-        // Back arrow → close (default TMP font has no ← glyph, so use ASCII "<" on a rounded button).
-        GameObject backGo = new GameObject("BtnBack");
-        backGo.transform.SetParent(bar.transform, false);
-        RectTransform backRt = backGo.AddComponent<RectTransform>();
-        SetRect(backRt, new Vector2(0f, 0.5f), new Vector2(46f, 0f), new Vector2(48f, 48f));
-        Image backImg = backGo.AddComponent<Image>();
-        backImg.sprite = GetRoundedSprite();
-        backImg.type = Image.Type.Sliced;
-        backImg.color = new Color(0.16f, 0.2f, 0.28f, 1f);
-        Button backBtn = backGo.AddComponent<Button>();
-        backBtn.targetGraphic = backImg;
-        backBtn.onClick.AddListener(() => HideOverlay(gameModeOverlay));
-        TextMeshProUGUI backTxt = MakeText(backGo.transform, "<", 34f, new Vector2(0.5f, 0.5f),
-                                           Vector2.zero, new Vector2(48f, 48f), Color.white,
-                                           TextAlignmentOptions.Center);
-        Stretch(backTxt.rectTransform);
-        AddHover(backGo);
+        // Back arrow → close (universal back-button sprite).
+        MakeBackButton(bar.transform, () => HideOverlay(gameModeOverlay));
 
         // Title.
         MakeText(bar.transform, "GAME MODE", 36f, new Vector2(0.5f, 0.5f), Vector2.zero,
@@ -436,6 +443,7 @@ public class NavigationManager : MonoBehaviour
         const float margin = 30f, cardH = 480f, gap = 24f, cardY = -40f; // cardY drops the row into the 640px main area
         float rowW = 1280f - 2f * margin;     // 1220 usable width
         float cardW = (rowW - 3f * gap) / 4f; // ~287 each (320 spec width can't fit 4 + margins at 1280)
+        gmCardRects.Clear(); gmCardGroups.Clear(); gmCardBasePos.Clear(); gmCardSelected.Clear();
         for (int i = 0; i < 4; i++)
         {
             float cx = -rowW * 0.5f + cardW * 0.5f + i * (cardW + gap);
@@ -446,9 +454,47 @@ public class NavigationManager : MonoBehaviour
         return ov;
     }
 
-    // One competition card. Rounded (via Mask) art fill + tier badge + bottom-gradient name. Locked
-    // cards get a dark veil + padlock + "WIN … TO UNLOCK"; unlocked cards get a gold frame and start
-    // the match on tap.
+    // Builds the three background layers behind the cards and wires them to GameModeBackgroundFX,
+    // which animates them only while the overlay is open. Called before the top bar and cards so
+    // everything here renders behind them. Draw-call budget: backdrop + vignette + specks ≈ 3.
+    void BuildGameModeBackground(Transform sheet)
+    {
+        // Competition backdrop — oversized (stretch + 90/70px margin) so the slow pan/zoom never
+        // exposes an edge. The animation (Ken-Burns drift) plays over whatever image is here.
+        Image backdrop = NewImage(sheet, "GMBackdrop");
+        backdrop.sprite = CompetitionBgSprite();
+        backdrop.raycastTarget = false;
+        backdrop.preserveAspect = false;                 // fill the oversized rect on any aspect
+        backdrop.color = backdrop.sprite != null
+            ? new Color(0.82f, 0.85f, 0.92f, 1f)         // slight dim so the cards stay the focal point
+            : GameModeBg;                                // solid fallback if the art is missing
+        RectTransform prt = backdrop.rectTransform;
+        prt.anchorMin = Vector2.zero;
+        prt.anchorMax = Vector2.one;
+        prt.pivot = new Vector2(0.5f, 0.5f);
+        prt.offsetMin = new Vector2(-90f, -70f);
+        prt.offsetMax = new Vector2(90f, 70f);
+
+        // Soft radial vignette that gently breathes (alpha pulsed by the FX component).
+        Image vig = NewImage(sheet, "GMVignette");
+        vig.sprite = Vignette();
+        vig.raycastTarget = false;
+        vig.color = new Color(0f, 0f, 0f, 0.35f);
+        Stretch(vig.rectTransform);
+
+        // Empty full-screen container the specks live under (kept behind the cards).
+        GameObject specksGo = new GameObject("GMSpecks");
+        specksGo.transform.SetParent(sheet, false);
+        Stretch(specksGo.AddComponent<RectTransform>());
+
+        GameModeBackgroundFX fx = sheet.gameObject.GetComponent<GameModeBackgroundFX>();
+        if (fx == null) fx = sheet.gameObject.AddComponent<GameModeBackgroundFX>();
+        fx.Init(prt, vig, specksGo.transform, Circle(), 14, 1280f, 720f);
+    }
+
+    // One competition card. Rounded (via Mask) art fill + bottom-gradient name. Locked cards get a
+    // dark veil + the lock-sign badge + "WIN … TO UNLOCK" and shake on tap; unlocked cards get a gold
+    // frame and open the league standings on tap. Interaction/animation lives in GameModeCardFX.
     void BuildGameModeCard(Transform parent, int index, Vector2 pos, Vector2 size)
     {
         string[] names = { "DIVISION 1", "PREMIER LEAGUE", "CONTINENTAL CUP", "WORLD CHAMPIONS LEAGUE" };
@@ -458,11 +504,11 @@ public class NavigationManager : MonoBehaviour
                                new Color(0.608f, 0.349f, 0.714f),   // #9B59B6 purple
                                new Color(0.161f, 0.502f, 0.725f),   // #2980B9 blue
                                new Color(0.953f, 0.612f, 0.071f) }; // #F39C12 gold
-        string[] tierNums = { "4", "3", "2", "1" };
         string[] lockText = { "", "WIN DIVISION 1 TO UNLOCK", "WIN PREMIER LEAGUE TO UNLOCK",
                               "WIN CONTINENTAL CUP TO UNLOCK" };
 
         bool unlocked = IsCompetitionUnlocked(index);
+        bool selected = unlocked && index == 0; // Division 1 is the default-highlighted card
         float w = size.x;
 
         // Card root — the outer rounded rect shows through as the gold frame on unlocked cards.
@@ -470,6 +516,7 @@ public class NavigationManager : MonoBehaviour
         cardGo.transform.SetParent(parent, false);
         RectTransform cardRt = cardGo.AddComponent<RectTransform>();
         SetRect(cardRt, new Vector2(0.5f, 0.5f), pos, size);
+        CanvasGroup cardCg = cardGo.AddComponent<CanvasGroup>(); // drives the staggered fade-in on open
         Image frame = cardGo.AddComponent<Image>();
         frame.sprite = GetRoundedSprite();
         frame.type = Image.Type.Sliced;
@@ -516,16 +563,6 @@ public class NavigationManager : MonoBehaviour
         MakeText(innerGo.transform, names[index], 22f, new Vector2(0.5f, 0f), new Vector2(0f, 30f),
                  new Vector2(w - 16f, 60f), Color.white, TextAlignmentOptions.Center);
 
-        // Tier badge (top-left): rounded square tinted by tier + white number.
-        Image badge = NewImage(innerGo.transform, "TierBadge");
-        badge.sprite = GetRoundedSprite();
-        badge.type = Image.Type.Sliced;
-        badge.color = tierColors[index];
-        badge.raycastTarget = false;
-        SetRect(badge.rectTransform, new Vector2(0f, 1f), new Vector2(37f, -37f), new Vector2(50f, 50f));
-        MakeText(badge.transform, tierNums[index], 24f, new Vector2(0.5f, 0.5f), Vector2.zero,
-                 new Vector2(50f, 50f), Color.white, TextAlignmentOptions.Center);
-
         if (!unlocked)
         {
             // Dark veil over the whole card.
@@ -533,37 +570,40 @@ public class NavigationManager : MonoBehaviour
             veil.sprite = GetRoundedSprite();
             veil.type = Image.Type.Sliced;
             veil.color = new Color(0f, 0f, 0f, 0.7f);
-            veil.raycastTarget = true; // locked → swallow taps
+            veil.raycastTarget = true; // locked → swallow taps (GameModeCardFX turns them into a bounce)
             Stretch(veil.rectTransform);
 
-            // White circle + padlock (default TMP font has no 🔒 glyph → reuse the procedural padlock).
-            Image circ = NewImage(veil.transform, "LockCircle");
-            circ.sprite = Circle();
-            circ.color = Color.white;
-            circ.raycastTarget = false;
-            SetRect(circ.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, 26f), new Vector2(60f, 60f));
-            Image padlock = NewImage(circ.transform, "Lock");
-            padlock.sprite = MakeLockSprite();
-            padlock.color = new Color(0.06f, 0.1f, 0.18f, 1f); // dark padlock on the white circle
-            padlock.raycastTarget = false;
-            SetRect(padlock.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(34f, 34f));
+            // The user's glossy red lock-sign, cropped to its content and shown at native (square) aspect.
+            Image lockImg = NewImage(veil.transform, "LockSign");
+            lockImg.sprite = LockSignSprite();
+            lockImg.preserveAspect = true;
+            lockImg.raycastTarget = false;
+            lockImg.color = new Color(0.88f, 0.88f, 0.92f, 1f); // slightly dimmed; the tap flash brightens it
+            if (lockImg.sprite == null) { lockImg.sprite = MakeLockSprite(); lockImg.color = Color.white; }
+            SetRect(lockImg.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, 30f), new Vector2(84f, 84f));
 
             // Unlock instruction below the lock.
-            MakeText(veil.transform, lockText[index], 14f, new Vector2(0.5f, 0.5f), new Vector2(0f, -34f),
-                     new Vector2(w - 24f, 44f), new Color(1f, 1f, 1f, 0.92f), TextAlignmentOptions.Center);
+            TextMeshProUGUI unlockLabel = MakeText(veil.transform, lockText[index], 14f,
+                new Vector2(0.5f, 0.5f), new Vector2(0f, -34f), new Vector2(w - 24f, 44f),
+                new Color(1f, 1f, 1f, 0.92f), TextAlignmentOptions.Center);
+
+            cardGo.AddComponent<GameModeCardFX>().InitLocked(lockImg, unlockLabel);
         }
         else
         {
-            // Transparent full-card hit target on top → fully tappable; whole card scales on hover.
+            // Transparent full-card hit target on top → fully tappable; the whole card scales on hover.
             Image hit = NewImage(cardGo.transform, "Hit");
             hit.color = new Color(0f, 0f, 0f, 0f);
             hit.raycastTarget = true;
             Stretch(hit.rectTransform);
-            Button btn = hit.gameObject.AddComponent<Button>();
-            btn.targetGraphic = hit;
-            btn.onClick.AddListener(() => { HideOverlay(gameModeOverlay); SceneManager.LoadScene("SampleScene"); });
-            AddHover(cardGo);
+            cardGo.AddComponent<GameModeCardFX>().InitUnlocked(frame, CardGold, selected,
+                () => OpenStandings(index)); // open the league standings instead of the match directly
         }
+
+        gmCardRects.Add(cardRt);
+        gmCardGroups.Add(cardCg);
+        gmCardBasePos.Add(pos);
+        gmCardSelected.Add(selected);
     }
 
     // Unlock gates: Division 1 is always open; each higher tier needs the previous competition won.
@@ -579,20 +619,456 @@ public class NavigationManager : MonoBehaviour
         }
     }
 
+    // =============================================================== league standings
+
+    // Flow: Game Mode card → Standings → NEXT MATCH → Pre-Match → PLAY → SampleScene. The standings and
+    // pre-match overlays are built lazily and their content is rebuilt on every open (the table changes
+    // as the season progresses), then slid in via the shared SlideOverlay.
+
+    public void OpenStandings(int competitionIndex)
+    {
+        LeagueSeason.Ensure(competitionIndex, PlayerTeamName());
+        if (standingsOverlay == null) standingsOverlay = BuildScreenOverlay("Overlay_STANDINGS");
+        RectTransform sheet = standingsOverlay.transform.Find("Sheet") as RectTransform;
+        ClearChildren(sheet);
+        BuildStandingsContent(sheet);
+        ShowOverlay(standingsOverlay);
+    }
+
+    void OpenPreMatch()
+    {
+        if (LeagueSeason.Current == null || LeagueSeason.Current.IsComplete) return;
+        if (preMatchOverlay == null) preMatchOverlay = BuildScreenOverlay("Overlay_PREMATCH");
+        RectTransform sheet = preMatchOverlay.transform.Find("Sheet") as RectTransform;
+        ClearChildren(sheet);
+        BuildPreMatchContent(sheet);
+        ShowOverlay(preMatchOverlay);
+    }
+
+    // Empty slide-in overlay shell (dark backdrop + CanvasGroup + full-canvas "Sheet"). Content is
+    // added into the Sheet by the callers and cleared/rebuilt on each open.
+    GameObject BuildScreenOverlay(string name)
+    {
+        GameObject ov = new GameObject(name);
+        ov.transform.SetParent(canvasRoot, false);
+        Stretch(ov.AddComponent<RectTransform>());
+        Image backdrop = ov.AddComponent<Image>();
+        backdrop.color = OverlayDark;
+        backdrop.raycastTarget = true;
+        ov.AddComponent<CanvasGroup>();
+
+        GameObject sheetGo = new GameObject("Sheet");
+        sheetGo.transform.SetParent(ov.transform, false);
+        RectTransform srt = sheetGo.AddComponent<RectTransform>();
+        srt.anchorMin = Vector2.zero;
+        srt.anchorMax = Vector2.one;
+        srt.pivot = new Vector2(0.5f, 0.5f);
+        srt.sizeDelta = Vector2.zero;
+        srt.anchoredPosition = Vector2.zero;
+
+        ov.SetActive(false);
+        return ov;
+    }
+
+    void BuildStandingsContent(Transform sheet)
+    {
+        LeagueSeason s = LeagueSeason.Current;
+        if (s == null) return;
+        int comp = Mathf.Clamp(s.competitionIndex, 0, CompNames.Length - 1);
+
+        AddScreenBackground(sheet, 0.85f);
+        MakeTopBar(sheet, CompNames[comp], () => HideOverlay(standingsOverlay));
+
+        // Backing panel behind the table for readability over the artwork.
+        Image panel = MakePanel(sheet, new Vector2(0.5f, 1f), new Vector2(0f, -300f),
+                                new Vector2(1180f, 420f), new Color(0.02f, 0.04f, 0.09f, 0.82f));
+        panel.raycastTarget = false;
+
+        MakeStandingsRow(sheet, -116f, true, false, "POS", "TEAM", "P", "W", "D", "L", "GD", "PTS");
+        List<int> order = s.Standings();
+        for (int rank = 0; rank < order.Count; rank++)
+        {
+            int ti = order[rank];
+            bool isPlayer = ti == LeagueSeason.PlayerIndex;
+            MakeStandingsRow(sheet, -160f - rank * 44f, false, isPlayer,
+                (rank + 1).ToString(), s.teams[ti], s.played[ti].ToString(), s.won[ti].ToString(),
+                s.drawn[ti].ToString(), s.lost[ti].ToString(), Signed(s.GoalDiff(ti)), s.Points(ti).ToString());
+        }
+
+        if (s.IsComplete)
+        {
+            MakeText(sheet, "SEASON COMPLETE", 22f, new Vector2(0.5f, 0f), new Vector2(0f, 120f),
+                     new Vector2(600f, 30f), Gold, TextAlignmentOptions.Center);
+            MakeActionButton(sheet, "CLAIM REWARDS", new Vector2(0.5f, 0f), new Vector2(0f, 42f),
+                             new Vector2(460f, 64f), Gold,
+                () => Debug.Log("CLAIM REWARDS (placeholder) — " + CompNames[comp] + " season complete."));
+        }
+        else
+        {
+            MakeActionButton(sheet, "NEXT MATCH    vs. " + s.NextOpponentName, new Vector2(0.5f, 0f),
+                             new Vector2(0f, 42f), new Vector2(560f, 66f), Green, OpenPreMatch);
+        }
+    }
+
+    // One standings row: a tinted strip with 8 columns. The player's row is gold-highlighted.
+    void MakeStandingsRow(Transform parent, float centerY, bool header, bool player,
+                          string pos, string name, string p, string w, string d, string l, string gd, string pts)
+    {
+        float h = header ? 36f : 40f;
+        Image row = NewImage(parent, header ? "HeaderRow" : "Row");
+        row.sprite = GetRoundedSprite();
+        row.type = Image.Type.Sliced;
+        row.color = header ? new Color(0.10f, 0.16f, 0.28f, 0.98f)
+                  : player ? new Color(0.90f, 0.72f, 0.14f, 0.60f)   // gold highlight = the player's club
+                           : new Color(0.06f, 0.10f, 0.18f, 0.55f);
+        row.raycastTarget = false;
+        SetRect(row.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, centerY), new Vector2(1150f, h));
+
+        Color col = header ? new Color(0.72f, 0.85f, 1f, 1f) : Color.white;
+        float fs = header ? 16f : 19f;
+        Vector2 box = new Vector2(60f, h);
+        MakeText(row.transform, pos, fs, new Vector2(0.5f, 0.5f), new Vector2(-515f, 0f), box, col, TextAlignmentOptions.Center);
+        MakeText(row.transform, name, fs, new Vector2(0.5f, 0.5f), new Vector2(-300f, 0f), new Vector2(340f, h), col, TextAlignmentOptions.Left);
+        MakeText(row.transform, p, fs, new Vector2(0.5f, 0.5f), new Vector2(-60f, 0f), box, col, TextAlignmentOptions.Center);
+        MakeText(row.transform, w, fs, new Vector2(0.5f, 0.5f), new Vector2(20f, 0f), box, col, TextAlignmentOptions.Center);
+        MakeText(row.transform, d, fs, new Vector2(0.5f, 0.5f), new Vector2(100f, 0f), box, col, TextAlignmentOptions.Center);
+        MakeText(row.transform, l, fs, new Vector2(0.5f, 0.5f), new Vector2(180f, 0f), box, col, TextAlignmentOptions.Center);
+        MakeText(row.transform, gd, fs, new Vector2(0.5f, 0.5f), new Vector2(285f, 0f), new Vector2(90f, h), col, TextAlignmentOptions.Center);
+        MakeText(row.transform, pts, fs, new Vector2(0.5f, 0.5f), new Vector2(420f, 0f), new Vector2(100f, h), col, TextAlignmentOptions.Center);
+    }
+
+    // =============================================================== pre-match
+
+    void BuildPreMatchContent(Transform sheet)
+    {
+        LeagueSeason s = LeagueSeason.Current;
+        if (s == null) return;
+        int comp = Mathf.Clamp(s.competitionIndex, 0, CompNames.Length - 1);
+
+        AddScreenBackground(sheet, 0.55f); // dimmed
+        MakeTopBar(sheet, CompNames[comp], () => HideOverlay(preMatchOverlay));
+
+        int opp = s.NextOpponent;
+        string playerName = s.teams[LeagueSeason.PlayerIndex];
+        string oppName = opp >= 0 ? s.teams[opp] : "TBD";
+        int oppStars = opp >= 0 ? s.stars[opp] : 3;
+
+        const float poolW = 470f, poolH = 264f, poolY = 34f, poolX = 322f;
+        BuildPreMatchPool(sheet, new Vector2(-poolX, poolY), new Vector2(poolW, poolH), true, Blue);
+        BuildPreMatchPool(sheet, new Vector2(poolX, poolY), new Vector2(poolW, poolH), false, Red);
+
+        // Center column: league badge (text), game counter, VS, PLAY.
+        MakeText(sheet, CompNames[comp], 20f, new Vector2(0.5f, 0.5f), new Vector2(0f, 196f),
+                 new Vector2(200f, 48f), Gold, TextAlignmentOptions.Center);
+        MakeText(sheet, "GAME " + (s.matchesPlayed + 1) + " OF " + LeagueSeason.MatchesTotal, 18f,
+                 new Vector2(0.5f, 0.5f), new Vector2(0f, 150f), new Vector2(200f, 26f), Color.white,
+                 TextAlignmentOptions.Center);
+        MakeText(sheet, "VS", 44f, new Vector2(0.5f, 0.5f), new Vector2(0f, 70f), new Vector2(160f, 56f),
+                 new Color(1f, 1f, 1f, 0.9f), TextAlignmentOptions.Center);
+        MakeActionButton(sheet, "PLAY", new Vector2(0.5f, 0.5f), new Vector2(0f, -30f), new Vector2(180f, 72f),
+            Green, () =>
+            {
+                // Placeholder result until real match reporting is wired: simulate the player's score,
+                // then load the match. The standings reflect it next time they're opened.
+                s.RecordPlayerResult(Random.Range(0, 13), Random.Range(0, 13));
+                SceneManager.LoadScene("SampleScene");
+            });
+
+        // Below each pool: logo + name + star rating.
+        BuildTeamInfo(sheet, new Vector2(-poolX, -150f), playerName, s.stars[LeagueSeason.PlayerIndex], Blue);
+        BuildTeamInfo(sheet, new Vector2(poolX, -150f), oppName, oppStars, Red);
+    }
+
+    // A pool render with a coloured frame and 6 formation markers. Opponent formations mirror vertically.
+    void BuildPreMatchPool(Transform sheet, Vector2 center, Vector2 size, bool isPlayer, Color color)
+    {
+        Image frame = NewImage(sheet, isPlayer ? "PlayerPoolFrame" : "OpponentPoolFrame");
+        frame.sprite = GetRoundedSprite();
+        frame.type = Image.Type.Sliced;
+        frame.color = new Color(color.r, color.g, color.b, 0.95f);
+        frame.raycastTarget = false;
+        SetRect(frame.rectTransform, new Vector2(0.5f, 0.5f), center, size + new Vector2(8f, 8f));
+
+        Image pool = NewImage(sheet, isPlayer ? "PlayerPool" : "OpponentPool"); // drawn after → on top of frame
+        pool.sprite = PoolScreenSprite();
+        pool.preserveAspect = false;
+        pool.raycastTarget = false;
+        pool.color = pool.sprite != null ? Color.white : new Color(0.10f, 0.35f, 0.60f, 1f);
+        SetRect(pool.rectTransform, new Vector2(0.5f, 0.5f), center, size);
+
+        BuildFormationMarkers(pool.transform, size, isPlayer);
+    }
+
+    void BuildFormationMarkers(Transform pool, Vector2 size, bool isPlayer)
+    {
+        // Labels mirror TeamSide's field roles (+ a GK marker); positions are fractions of the pool rect.
+        (string label, float fx, float fy)[] form =
+        {
+            ("GK", 0f, -0.40f), ("CB", 0f, -0.16f),
+            ("LW", -0.30f, 0.02f), ("RW", 0.30f, 0.02f),
+            ("LF", -0.16f, 0.24f), ("RF", 0.16f, 0.24f)
+        };
+        foreach (var f in form)
+        {
+            float my = isPlayer ? f.fy : -f.fy; // opponent attacks the other way → mirror
+            Image m = NewImage(pool, "Pos_" + f.label);
+            m.sprite = GetRoundedSprite();
+            m.type = Image.Type.Sliced;
+            m.color = new Color(0.96f, 0.97f, 1f, 0.95f);
+            m.raycastTarget = false;
+            SetRect(m.rectTransform, new Vector2(0.5f, 0.5f),
+                    new Vector2(f.fx * size.x, my * size.y), new Vector2(42f, 50f));
+            MakeText(m.transform, f.label, 15f, new Vector2(0.5f, 0.5f), Vector2.zero,
+                     new Vector2(42f, 50f), new Color(0.06f, 0.10f, 0.18f, 1f), TextAlignmentOptions.Center);
+        }
+    }
+
+    void BuildTeamInfo(Transform sheet, Vector2 center, string name, int stars, Color color)
+    {
+        Image logo = NewImage(sheet, "TeamLogo");
+        logo.sprite = Circle();
+        logo.color = color;
+        logo.raycastTarget = false;
+        SetRect(logo.rectTransform, new Vector2(0.5f, 0.5f), center + new Vector2(0f, 28f), new Vector2(54f, 54f));
+        MakeText(sheet, name, 20f, new Vector2(0.5f, 0.5f), center + new Vector2(0f, -12f),
+                 new Vector2(320f, 28f), Color.white, TextAlignmentOptions.Center);
+        MakeText(sheet, StarString(stars), 22f, new Vector2(0.5f, 0.5f), center + new Vector2(0f, -42f),
+                 new Vector2(180f, 26f), Gold, TextAlignmentOptions.Center);
+    }
+
+    // ---- shared screen helpers (top bar / back button / currency / backdrop / buttons) ----
+
+    // Full-width 80px dark top bar with a universal back button, centred title, and currency readout.
+    Image MakeTopBar(Transform sheet, string title, UnityEngine.Events.UnityAction onBack)
+    {
+        Image bar = MakePanel(sheet, new Vector2(0.5f, 1f), Vector2.zero, new Vector2(0f, 80f), DarkBar);
+        bar.gameObject.name = "TopBar";
+        bar.raycastTarget = true;
+        RectTransform brt = bar.rectTransform;
+        brt.anchorMin = new Vector2(0f, 1f);
+        brt.anchorMax = new Vector2(1f, 1f);
+        brt.pivot = new Vector2(0.5f, 1f);
+        brt.anchoredPosition = Vector2.zero;
+        brt.sizeDelta = new Vector2(0f, 80f);
+
+        MakeBackButton(bar.transform, onBack);
+        MakeText(bar.transform, title, 34f, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(560f, 50f),
+                 Color.white, TextAlignmentOptions.Center);
+        AddCurrencyDisplay(bar.transform);
+        return bar;
+    }
+
+    void AddCurrencyDisplay(Transform bar)
+    {
+        RosterManager rm = RosterManager.Instance;
+        int coins = rm != null ? rm.Coins : 0;
+        int diamonds = rm != null ? rm.Diamonds : 0;
+        MakeText(bar, coins.ToString(), 18f, new Vector2(1f, 0.5f), new Vector2(-40f, 0f), new Vector2(66f, 30f),
+                 Color.white, TextAlignmentOptions.Right);
+        MakeIcon(bar, "Sprites/gold-coin", new Vector2(1f, 0.5f), new Vector2(-95f, 0f), 34f);
+        MakeText(bar, diamonds.ToString(), 18f, new Vector2(1f, 0.5f), new Vector2(-150f, 0f), new Vector2(54f, 30f),
+                 Color.white, TextAlignmentOptions.Right);
+        MakeIcon(bar, "Sprites/diamond-coin", new Vector2(1f, 0.5f), new Vector2(-200f, 0f), 34f);
+    }
+
+    // Solid dark base (swallows clicks) + competition-page-background dimmed by `brightness`.
+    void AddScreenBackground(Transform sheet, float brightness)
+    {
+        Image baseImg = NewImage(sheet, "BaseBG");
+        baseImg.color = GameModeBg;
+        baseImg.raycastTarget = true;
+        Stretch(baseImg.rectTransform);
+
+        Image bg = NewImage(sheet, "CompetitionBG");
+        bg.sprite = CompetitionBgSprite();
+        bg.raycastTarget = false;
+        bg.preserveAspect = false;
+        bg.color = bg.sprite != null ? new Color(brightness, brightness, brightness, 1f) : GameModeBg;
+        Stretch(bg.rectTransform);
+    }
+
+    // The universal back button — the back-button sprite at native aspect, anchored top-left of a bar.
+    Button MakeBackButton(Transform parent, UnityEngine.Events.UnityAction onClick)
+    {
+        GameObject go = new GameObject("BtnBack");
+        go.transform.SetParent(parent, false);
+        RectTransform rt = go.AddComponent<RectTransform>();
+        SetRect(rt, new Vector2(0f, 0.5f), new Vector2(52f, 0f), new Vector2(64f, 64f));
+
+        Image img = go.AddComponent<Image>();
+        img.sprite = BackButtonSprite();
+        img.preserveAspect = true;
+        if (img.sprite == null) // rounded fallback with a "<" glyph if the sprite is missing
+        {
+            img.sprite = GetRoundedSprite();
+            img.type = Image.Type.Sliced;
+            img.color = new Color(0.16f, 0.2f, 0.28f, 1f);
+            TextMeshProUGUI t = MakeText(go.transform, "<", 34f, new Vector2(0.5f, 0.5f), Vector2.zero,
+                                         new Vector2(64f, 64f), Color.white, TextAlignmentOptions.Center);
+            Stretch(t.rectTransform);
+        }
+
+        Button btn = go.AddComponent<Button>();
+        btn.targetGraphic = img;
+        if (onClick != null) btn.onClick.AddListener(onClick);
+        AddHover(go);
+        return btn;
+    }
+
+    // A prominent rounded, labelled action button (NEXT MATCH / PLAY / CLAIM REWARDS).
+    Button MakeActionButton(Transform parent, string label, Vector2 anchor, Vector2 pos, Vector2 size,
+                            Color color, UnityEngine.Events.UnityAction onClick)
+    {
+        GameObject go = new GameObject("BtnAction");
+        go.transform.SetParent(parent, false);
+        RectTransform rt = go.AddComponent<RectTransform>();
+        SetRect(rt, anchor, pos, size);
+
+        Image img = go.AddComponent<Image>();
+        img.sprite = GetRoundedSprite();
+        img.type = Image.Type.Sliced;
+        img.color = color;
+
+        Button btn = go.AddComponent<Button>();
+        btn.targetGraphic = img;
+        if (onClick != null) btn.onClick.AddListener(onClick);
+
+        TextMeshProUGUI t = MakeText(go.transform, label, Mathf.Min(26f, size.y * 0.38f),
+                                     new Vector2(0.5f, 0.5f), Vector2.zero, size, Color.white,
+                                     TextAlignmentOptions.Center);
+        Stretch(t.rectTransform);
+        AddHover(go);
+        return btn;
+    }
+
+    static void ClearChildren(Transform t)
+    {
+        if (t == null) return;
+        for (int i = t.childCount - 1; i >= 0; i--) Destroy(t.GetChild(i).gameObject);
+    }
+
+    // The player's club name. TeamSide only exists in the match scene, so in the hub this falls back
+    // to "MY TEAM" (per spec).
+    static string PlayerTeamName()
+    {
+        TeamSide ts = FindFirstObjectByType<TeamSide>();
+        if (ts != null && !string.IsNullOrEmpty(ts.teamName) && ts.teamName != "Team") return ts.teamName;
+        return "MY TEAM";
+    }
+
+    static string StarString(int n)
+    {
+        n = Mathf.Clamp(n, 0, 5);
+        return new string('★', n) + new string('☆', 5 - n);
+    }
+
+    static string Signed(int v) => v > 0 ? "+" + v : v.ToString();
+
     void ShowOverlay(GameObject overlay)
     {
         if (overlay == null) return;
         overlay.SetActive(true);
         overlay.transform.SetAsLastSibling();
         if (slideRoutine != null) StopCoroutine(slideRoutine);
-        slideRoutine = StartCoroutine(SlideOverlay(overlay, true));
+        slideRoutine = overlay == gameModeOverlay
+            ? StartCoroutine(RevealGameMode(true))   // fade backdrop + stagger the cards in
+            : StartCoroutine(SlideOverlay(overlay, true));
     }
 
     void HideOverlay(GameObject overlay)
     {
         if (overlay == null) return;
         if (slideRoutine != null) StopCoroutine(slideRoutine);
-        slideRoutine = StartCoroutine(SlideOverlay(overlay, false));
+        slideRoutine = overlay == gameModeOverlay
+            ? StartCoroutine(RevealGameMode(false))
+            : StartCoroutine(SlideOverlay(overlay, false));
+    }
+
+    // Game-mode open/close: fade the backdrop, then stagger the cards in (fade + scale 0.9→1.0,
+    // rising from just below their resting spot), each 0.08s after the previous, left → right.
+    IEnumerator RevealGameMode(bool show)
+    {
+        CanvasGroup cg = gameModeOverlay.GetComponent<CanvasGroup>();
+        if (gameModeOverlay.transform.Find("Sheet") is RectTransform sheet)
+            sheet.anchoredPosition = Vector2.zero; // this overlay fades rather than slides
+        float dur = Mathf.Max(0.01f, fadeSeconds);
+        float t = 0f;
+
+        if (show)
+        {
+            // Reset every card to its hidden pose before the reveal.
+            for (int i = 0; i < gmCardRects.Count; i++)
+            {
+                if (gmCardGroups[i] != null) gmCardGroups[i].alpha = 0f;
+                if (gmCardRects[i] != null)
+                {
+                    gmCardRects[i].localScale = Vector3.one * 0.9f;
+                    gmCardRects[i].anchoredPosition = gmCardBasePos[i] + new Vector2(0f, -40f);
+                }
+                StartCoroutine(RevealCard(i, 0.28f, i * 0.08f));
+            }
+
+            if (cg != null) cg.alpha = 0f;
+            while (t < dur)
+            {
+                t += Time.unscaledDeltaTime;
+                if (cg != null) cg.alpha = Mathf.Clamp01(t / dur);
+                yield return null;
+            }
+            if (cg != null) cg.alpha = 1f;
+        }
+        else
+        {
+            float a0 = cg != null ? cg.alpha : 1f;
+            while (t < dur)
+            {
+                t += Time.unscaledDeltaTime;
+                if (cg != null) cg.alpha = Mathf.Lerp(a0, 0f, Mathf.Clamp01(t / dur));
+                yield return null;
+            }
+            if (cg != null) cg.alpha = 0f;
+            gameModeOverlay.SetActive(false);
+        }
+        slideRoutine = null;
+    }
+
+    // Animates one card from its hidden pose to resting after `delay`. The default-selected card
+    // gets a slight overshoot (ease-out-back) so its gold selection state visibly pops in.
+    IEnumerator RevealCard(int i, float dur, float delay)
+    {
+        if (i >= gmCardRects.Count) yield break;
+        RectTransform rt = gmCardRects[i];
+        CanvasGroup cg = gmCardGroups[i];
+        Vector2 basePos = gmCardBasePos[i];
+        bool overshoot = gmCardSelected[i];
+        if (rt == null) yield break;
+
+        float t = 0f;
+        while (t < delay) { t += Time.unscaledDeltaTime; yield return null; }
+
+        t = 0f;
+        while (t < dur)
+        {
+            t += Time.unscaledDeltaTime;
+            float k = Mathf.Clamp01(t / dur);
+            float fade = EaseOutCubic(k);
+            if (cg != null) cg.alpha = fade;
+            float s = Mathf.LerpUnclamped(0.9f, 1f, overshoot ? EaseOutBack(k) : fade);
+            rt.localScale = Vector3.one * s;
+            rt.anchoredPosition = basePos + new Vector2(0f, Mathf.Lerp(-40f, 0f, fade));
+            yield return null;
+        }
+        if (cg != null) cg.alpha = 1f;
+        rt.localScale = Vector3.one;
+        rt.anchoredPosition = basePos;
+    }
+
+    static float EaseOutCubic(float k) { float p = 1f - k; return 1f - p * p * p; }
+    static float EaseOutBack(float k)
+    {
+        const float c1 = 1.70158f, c3 = c1 + 1f;
+        float p = k - 1f;
+        return 1f + c3 * p * p * p + c1 * p * p;
     }
 
     // Slide the sheet in from / out to the right while the backdrop fades.
@@ -940,5 +1416,72 @@ public class NavigationManager : MonoBehaviour
         tex.wrapMode = TextureWrapMode.Clamp;
         gradientSprite = Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(0.5f, 0.5f), 100f);
         return gradientSprite;
+    }
+
+    // A full-frame sprite wrapped from a Resources texture (not Resources.Load<Sprite>) so it works no
+    // matter how the PNG's sprite import mode is set. Cached per path.
+    static Sprite TextureSprite(string path)
+    {
+        if (textureSpriteCache.TryGetValue(path, out Sprite cached) && cached != null) return cached;
+        Texture2D tex = Resources.Load<Texture2D>(path);
+        if (tex == null)
+        {
+            Debug.LogWarning("NavigationManager: texture not found at Resources/" + path +
+                             " — check the file exists there and its Texture Type is 'Sprite (2D and UI)'.");
+            return null;
+        }
+        Sprite sp = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f), 100f);
+        textureSpriteCache[path] = sp;
+        return sp;
+    }
+
+    static Sprite PoolScreenSprite() => TextureSprite("Sprites/pool-screen");
+    static Sprite BackButtonSprite() => TextureSprite("Sprites/back-button");
+    static Sprite CompetitionBgSprite() => TextureSprite("Sprites/competition-page-background");
+
+    // lock-sign art, cropped to just the red padlock button. The source PNG has wide transparent
+    // margins, so a full-frame sprite would render tiny; the content box (measured as fractions of the
+    // texture, so it survives a re-import at a different size) is cut out here via Sprite.Create.
+    static Sprite LockSignSprite()
+    {
+        if (lockSignSprite != null) return lockSignSprite;
+        Texture2D tex = Resources.Load<Texture2D>("Sprites/lock-sign");
+        if (tex == null)
+        {
+            Debug.LogWarning("NavigationManager: Resources/Sprites/lock-sign not found — using procedural lock.");
+            return null;
+        }
+        // Content box as texture fractions (x0,x1 from left; yTop,yBot from top) with a little padding.
+        const float x0 = 0.298f, x1 = 0.702f, yTop = 0.187f, yBot = 0.775f;
+        float rx = x0 * tex.width;
+        float ry = (1f - yBot) * tex.height;          // Unity texture space has y=0 at the bottom
+        float rw = (x1 - x0) * tex.width;
+        float rh = (yBot - yTop) * tex.height;
+        lockSignSprite = Sprite.Create(tex, new Rect(rx, ry, rw, rh), new Vector2(0.5f, 0.5f), 100f);
+        return lockSignSprite;
+    }
+
+    // Radial vignette: transparent centre → opaque toward the edges (white, tinted dark by the Image).
+    // Stretched over the screen it gives a soft, breathing edge-darkening.
+    static Sprite Vignette()
+    {
+        if (vignetteSprite != null) return vignetteSprite;
+        const int size = 256;
+        Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        Color32[] px = new Color32[size * size];
+        Vector2 c = new Vector2((size - 1) * 0.5f, (size - 1) * 0.5f);
+        float maxD = c.magnitude;
+        for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                float d = Vector2.Distance(new Vector2(x, y), c) / maxD; // 0 centre → 1 corner
+                float a = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.55f, 1f, d));
+                px[y * size + x] = new Color32(255, 255, 255, (byte)(a * 255f));
+            }
+        tex.SetPixels32(px);
+        tex.Apply();
+        tex.wrapMode = TextureWrapMode.Clamp;
+        vignetteSprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+        return vignetteSprite;
     }
 }
