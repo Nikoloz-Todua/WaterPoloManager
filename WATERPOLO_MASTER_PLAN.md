@@ -101,7 +101,7 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 | `BallFlight.cs` | Ball VFX, **auto-added to the Ball at runtime** by `PlayerMovement` (no wiring), singleton. Speed-gated **TrailRenderer** (>5 u/s); **high-shot** scale swell (≤1.2×) + warm glow; **skip-shot** bounce 1.5u before the goal (Y jitter, squash + expanding water ripple, 35% `KeeperFooled`); **lob** breathing blue-grey water shadow; **spin** (shots 54°/s, fast loose 18°/s, lobs 9°/s — none on skip / plain pass, only >6 u/s, snaps upright on catch). All scaling uniform, recomputed from a clean base each frame (never drifts on a re-parent). Exposes `ShotHeight`, `SkipActive`/`SkipBounced`, `LobActive`/`LobTeam`, `KeeperFooled`. |
 | `GoalColliderFixer.cs` | Editor tool (**Tools → Fix Goal Colliders**). Resizes GoalRight/GoalLeft Box Collider 2D to the visual goal mouth (size (4,15) → world ≈0.8×3.0u at scale 0.2). Idempotent; marks the scene dirty (Ctrl+S to save). |
 | `PlayerLabel.cs` | ⬜ **NOT YET BUILT** (planned). Future: world-space player-number labels floating above each swimmer. |
-| `LeagueSeason.cs` | Static session-persistent league state. 8 teams per competition, 14-match schedule, simulated AI results, standings tracking (P/W/D/L/GF/GA/Pts). |
+| `LeagueSeason.cs` | Static session-persistent **tournament** state, one per competition. 16 teams in 2 groups of 8 (player = team 0, Group A); 7-round group round-robin (circle method), each player match also simulates that round in both groups; top 4 per group → single-elim knockout (QF: A1vB4/A2vB3/B1vA4/B2vA3 → SF → Final, no draws — sudden-death goal). Player eliminated → rest of bracket simulates instantly. Phase enum (GroupStage/Quarterfinal/Semifinal/Final/Completed), per-group P/W/D/L/GF/GA/Pts, `KnockoutMatch` bracket, 30-club name pool (15 opponents drawn per division). Champion → NavigationManager persists the next-division unlock (PlayerPrefs div1_won/pl_won/cc_won/wcl_won). |
 | `GameModeCardFX.cs` | Card hover/select animations, locked-card shake, staggered entry for Game Mode screen. |
 | `GameModeBackgroundFX.cs` | Ken Burns + vignette + light specks animated background for Game Mode. |
 
@@ -233,7 +233,7 @@ Filter Mode: Bilinear, Max Size: 4096
 - Poolside/edge tiles
 - Player ripple effects
 
-Game Mode screen with 4 competition cards, lock-sign sprite, animated background, card polish. League Standings (8-team table with simulated results). Pre-Match screen (two pool-screen pools, 6 formation markers, PLAY button). Full nav flow: Hub → Game Mode → Standings → Pre-Match → SampleScene. Universal back-button sprite.
+Game Mode screen with 4 competition cards, lock-sign sprite, animated background, card polish. Competition screen (per division): GROUP STAGE / KNOCKOUT tabs — two collapsible framed group tables (collapsed = top 5, Pos|Team|Pts; expanded = all 8 full columns; tap card to toggle; player row gold) in a vertical ScrollRect, plus a bracket view (QF 2x2, SF, Final; player's tie gold-framed, losers dimmed, "vs"/TBD for unplayed). Bottom bar: NEXT MATCH + TEAM shortcut (back from Team returns to the competition screen via `teamReturnTo` context; hub TEAM returns to hub). Pre-Match screen (two pool-screen pools, 6 formation markers, phase-aware match label, PLAY). Full nav flow: Hub → Game Mode → Competition → Pre-Match → SampleScene. Universal back-button sprite.
 
 ## A9. Controls (keyboard — for PC testing; touch comes later)
 
@@ -696,14 +696,16 @@ Both in `Assets/Sprites/Players/Animations/`.
 
 Game Mode screen opens when PLAY tapped on hub.
 4 competition tiers — each unlocks after winning the previous.
-Unlock state stored in PlayerPrefs (div1_won / pl_won / cc_won).
+Unlock state stored in PlayerPrefs (div1_won / pl_won / cc_won / wcl_won); set when the player wins a division's Final.
 
 | Tier | Badge | Competition | Teams | Format | Unlock |
 |---|---|---|---|---|---|
-| 4 | Green | Division 1 | 8 | 14 matches round-robin | Always open |
-| 3 | Purple | Premier League | 10 | 18 matches round-robin | Win Division 1 |
-| 2 | Blue | Continental Cup | 8 | Group stage + knockouts | Win Premier League |
-| 1 | Gold | World Champions League | 8 | Group stage + knockouts | Win Continental Cup |
+| 4 | Green | Division 1 | 16 | 2 groups of 8 + knockouts | Always open |
+| 3 | Purple | Premier League | 16 | 2 groups of 8 + knockouts | Win Division 1 |
+| 2 | Blue | Continental Cup | 16 | 2 groups of 8 + knockouts | Win Premier League |
+| 1 | Gold | World Champions League | 16 | 2 groups of 8 + knockouts | Win Continental Cup |
+
+All four divisions share the same tournament format (see `LeagueSeason.cs` in A5): 7 group matches, top 4 per group → QF → SF → Final.
 
 Pool variants per competition (visual only, same SampleScene):
 - Division 1 → current outdoor pool (existing SampleScene)
@@ -719,7 +721,9 @@ This is a club management game.
 
 NavigationManager.cs: PLAY button → GameModeScreen overlay
 (not directly to SampleScene anymore).
-Competition logic (standings, simulation, promotion) → not yet built.
+Competition logic: group standings + knockout simulation built (LeagueSeason.cs);
+promotion/relegation and real match-result reporting → not yet built
+(pre-match PLAY still records a random placeholder score).
 
 ## B12. Team Screen 🟡 PARTIAL (DATA FOUNDATION DONE: real player cards + local-save roster + a working Team screen; drag-swap, captain, portraits, max-17 enforcement still to do)
 > Foundation: **Player System Architecture** (end of Part A) — human roster (max 17), player card structure, rarity borders (Common/Rare/Legendary), images from Firebase Storage.

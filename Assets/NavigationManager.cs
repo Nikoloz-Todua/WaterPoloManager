@@ -62,6 +62,15 @@ public class NavigationManager : MonoBehaviour
     private static readonly string[] CompNames =
         { "DIVISION 1", "PREMIER LEAGUE", "CONTINENTAL CUP", "WORLD CHAMPIONS LEAGUE" };
 
+    // Competition-screen view state (reset on each open; rebuilt in place on tab/expand taps).
+    private int compTab;                                     // 0 = GROUP STAGE, 1 = KNOCKOUT
+    private readonly bool[] compGroupExpanded = new bool[2]; // per-group expanded table flag
+
+    // Where the TEAM overlay returns when closed: the hub ("HUB") or the competition screen
+    // ("COMPETITION"). Minimal navigation context — the underlying overlay usually just stays
+    // active beneath, this flag covers the case where it isn't.
+    private string teamReturnTo = "HUB";
+
     void Start()
     {
         EnsureEventSystem();
@@ -186,7 +195,7 @@ public class NavigationManager : MonoBehaviour
         MakeImageButton(canvasRoot, "BtnShop", "Sprites/shop-button", new Vector2(0f, 0.5f),
                         new Vector2(x, 0f), new Vector2(140f, 140f), () => ShowOverlay(shopOverlay));
         MakeImageButton(canvasRoot, "BtnTeam", "Sprites/team-button", new Vector2(0f, 0.5f),
-                        new Vector2(x, -step), new Vector2(115f, 115f), () => ShowOverlay(teamOverlay));
+                        new Vector2(x, -step), new Vector2(115f, 115f), () => OpenTeamScreen("HUB"));
     }
 
     // ------------------------------------------------------------ season timer
@@ -374,8 +383,29 @@ public class NavigationManager : MonoBehaviour
         return ov;
     }
 
-    // Called by TeamScreenUI's back arrow to slide the team overlay closed and return to the hub.
-    public void CloseTeamScreen() => HideOverlay(teamOverlay);
+    // Opens the TEAM overlay, remembering where its back arrow should land.
+    void OpenTeamScreen(string returnTo)
+    {
+        teamReturnTo = returnTo;
+        ShowOverlay(teamOverlay);
+    }
+
+    // Called by TeamScreenUI's back arrow. The overlay we came from normally stays active beneath the
+    // team sheet, so sliding it closed reveals the right screen on its own; the COMPETITION branch is
+    // a safety net that re-shows the competition screen if it was somehow deactivated. No coroutine
+    // there — starting a second slide would cancel the team overlay's closing animation.
+    public void CloseTeamScreen()
+    {
+        HideOverlay(teamOverlay);
+        if (teamReturnTo == "COMPETITION" && standingsOverlay != null && !standingsOverlay.activeSelf)
+        {
+            standingsOverlay.SetActive(true);
+            standingsOverlay.transform.SetSiblingIndex(teamOverlay.transform.GetSiblingIndex());
+            if (standingsOverlay.transform.Find("Sheet") is RectTransform sh) sh.anchoredPosition = Vector2.zero;
+            CanvasGroup cg = standingsOverlay.GetComponent<CanvasGroup>();
+            if (cg != null) cg.alpha = 1f;
+        }
+    }
 
     // ------------------------------------------------------------- game mode
 
@@ -619,20 +649,45 @@ public class NavigationManager : MonoBehaviour
         }
     }
 
-    // =============================================================== league standings
+    // Player won a division's Final → persist the unlock for the next tier (read back by
+    // IsCompetitionUnlocked; the Game Mode cards pick it up next time the hub loads).
+    static void MarkCompetitionWon(int competitionIndex)
+    {
+        string[] keys = { "div1_won", "pl_won", "cc_won", "wcl_won" };
+        if (competitionIndex < 0 || competitionIndex >= keys.Length) return;
+        PlayerPrefs.SetInt(keys[competitionIndex], 1);
+        PlayerPrefs.Save();
+    }
 
-    // Flow: Game Mode card → Standings → NEXT MATCH → Pre-Match → PLAY → SampleScene. The standings and
-    // pre-match overlays are built lazily and their content is rebuilt on every open (the table changes
-    // as the season progresses), then slid in via the shared SlideOverlay.
+    // =============================================================== competition screen
+
+    // Flow: Game Mode card → Competition screen (GROUP STAGE / KNOCKOUT tabs) → NEXT MATCH →
+    // Pre-Match → PLAY → SampleScene. The competition and pre-match overlays are built lazily and
+    // their content is rebuilt on every open (the tournament moves on between visits), then slid in
+    // via the shared SlideOverlay. Tab switches and group expand/collapse taps rebuild the sheet in
+    // place (no slide).
 
     public void OpenStandings(int competitionIndex)
     {
         LeagueSeason.Ensure(competitionIndex, PlayerTeamName());
+        // Fresh view state each open: group tab during the group stage, knockout once it starts.
+        compTab = LeagueSeason.Current.phase == LeagueSeason.Phase.GroupStage ? 0 : 1;
+        compGroupExpanded[0] = compGroupExpanded[1] = false;
         if (standingsOverlay == null) standingsOverlay = BuildScreenOverlay("Overlay_STANDINGS");
         RectTransform sheet = standingsOverlay.transform.Find("Sheet") as RectTransform;
         ClearChildren(sheet);
         BuildStandingsContent(sheet);
         ShowOverlay(standingsOverlay);
+    }
+
+    // Rebuild the competition sheet in place — used by the tabs and the group expand/collapse taps
+    // while the overlay is already open.
+    void RebuildStandings()
+    {
+        if (standingsOverlay == null) return;
+        RectTransform sheet = standingsOverlay.transform.Find("Sheet") as RectTransform;
+        ClearChildren(sheet);
+        BuildStandingsContent(sheet);
     }
 
     void OpenPreMatch()
@@ -678,63 +733,341 @@ public class NavigationManager : MonoBehaviour
 
         AddScreenBackground(sheet, 0.85f);
         MakeTopBar(sheet, CompNames[comp], () => HideOverlay(standingsOverlay));
+        BuildCompTabs(sheet, s);
 
-        // Backing panel behind the table for readability over the artwork.
-        Image panel = MakePanel(sheet, new Vector2(0.5f, 1f), new Vector2(0f, -300f),
-                                new Vector2(1180f, 420f), new Color(0.02f, 0.04f, 0.09f, 0.82f));
-        panel.raycastTarget = false;
+        if (compTab == 0) BuildGroupStageTab(sheet, s);
+        else BuildKnockoutTab(sheet, s);
 
-        MakeStandingsRow(sheet, -116f, true, false, "POS", "TEAM", "P", "W", "D", "L", "GD", "PTS");
-        List<int> order = s.Standings();
-        for (int rank = 0; rank < order.Count; rank++)
-        {
-            int ti = order[rank];
-            bool isPlayer = ti == LeagueSeason.PlayerIndex;
-            MakeStandingsRow(sheet, -160f - rank * 44f, false, isPlayer,
-                (rank + 1).ToString(), s.teams[ti], s.played[ti].ToString(), s.won[ti].ToString(),
-                s.drawn[ti].ToString(), s.lost[ti].ToString(), Signed(s.GoalDiff(ti)), s.Points(ti).ToString());
-        }
+        BuildCompBottomBar(sheet, s, comp);
+    }
 
-        if (s.IsComplete)
+    // ---- tabs ----
+
+    void BuildCompTabs(Transform sheet, LeagueSeason s)
+    {
+        bool koOpen = s.phase != LeagueSeason.Phase.GroupStage; // knockout tab locked until the groups end
+        MakeCompTab(sheet, "GROUP STAGE", new Vector2(-148f, -104f), compTab == 0, true,
+            () => { if (compTab != 0) { compTab = 0; RebuildStandings(); } });
+        MakeCompTab(sheet, "KNOCKOUT", new Vector2(148f, -104f), compTab == 1, koOpen,
+            () => { if (koOpen && compTab != 1) { compTab = 1; RebuildStandings(); } });
+    }
+
+    void MakeCompTab(Transform sheet, string label, Vector2 pos, bool selected, bool unlocked,
+                     UnityEngine.Events.UnityAction onClick)
+    {
+        GameObject go = new GameObject("Tab_" + label);
+        go.transform.SetParent(sheet, false);
+        RectTransform rt = go.AddComponent<RectTransform>();
+        SetRect(rt, new Vector2(0.5f, 1f), pos, new Vector2(280f, 44f));
+
+        Image img = go.AddComponent<Image>();
+        img.sprite = GetRoundedSprite();
+        img.type = Image.Type.Sliced;
+        img.color = selected ? new Color(0.13f, 0.24f, 0.36f, 0.98f) : new Color(0.05f, 0.09f, 0.15f, 0.9f);
+
+        Button btn = go.AddComponent<Button>();
+        btn.targetGraphic = img;
+        btn.onClick.AddListener(onClick);
+        if (unlocked) AddHover(go);
+
+        Color txt = !unlocked ? new Color(1f, 1f, 1f, 0.35f)
+                  : selected ? Color.white : new Color(0.7f, 0.78f, 0.88f, 1f);
+        MakeText(go.transform, label, 19f, new Vector2(0.5f, 0.5f), Vector2.zero,
+                 new Vector2(276f, 44f), txt, TextAlignmentOptions.Center);
+
+        if (selected) // gold underline marks the active tab (plain quad — no rounded slicing at 4px)
         {
-            MakeText(sheet, "SEASON COMPLETE", 22f, new Vector2(0.5f, 0f), new Vector2(0f, 120f),
-                     new Vector2(600f, 30f), Gold, TextAlignmentOptions.Center);
-            MakeActionButton(sheet, "CLAIM REWARDS", new Vector2(0.5f, 0f), new Vector2(0f, 42f),
-                             new Vector2(460f, 64f), Gold,
-                () => Debug.Log("CLAIM REWARDS (placeholder) — " + CompNames[comp] + " season complete."));
-        }
-        else
-        {
-            MakeActionButton(sheet, "NEXT MATCH    vs. " + s.NextOpponentName, new Vector2(0.5f, 0f),
-                             new Vector2(0f, 42f), new Vector2(560f, 66f), Green, OpenPreMatch);
+            Image u = NewImage(go.transform, "Underline");
+            u.color = Gold;
+            u.raycastTarget = false;
+            SetRect(u.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 3f), new Vector2(200f, 4f));
         }
     }
 
-    // One standings row: a tinted strip with 8 columns. The player's row is gold-highlighted.
-    void MakeStandingsRow(Transform parent, float centerY, bool header, bool player,
-                          string pos, string name, string p, string w, string d, string l, string gd, string pts)
+    // Vertical ScrollRect filling the area between the tabs and the bottom bar. Returns the content
+    // RectTransform; callers lay children out top-down and must set content.sizeDelta.y to the total.
+    RectTransform MakeCompScroll(Transform sheet)
     {
-        float h = header ? 36f : 40f;
-        Image row = NewImage(parent, header ? "HeaderRow" : "Row");
+        const float top = 134f, bottom = 98f, width = 1180f;
+        GameObject go = new GameObject("Scroll");
+        go.transform.SetParent(sheet, false);
+        RectTransform rt = go.AddComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0.5f, 0f);
+        rt.anchorMax = new Vector2(0.5f, 1f);
+        rt.pivot = new Vector2(0.5f, 0.5f);
+        rt.sizeDelta = new Vector2(width, -(top + bottom));
+        rt.anchoredPosition = new Vector2(0f, (bottom - top) * 0.5f);
+
+        Image img = go.AddComponent<Image>(); // invisible drag-catcher for the whole viewport
+        img.color = new Color(0f, 0f, 0f, 0f);
+        go.AddComponent<RectMask2D>();
+
+        GameObject contentGo = new GameObject("Content");
+        contentGo.transform.SetParent(go.transform, false);
+        RectTransform content = contentGo.AddComponent<RectTransform>();
+        content.anchorMin = new Vector2(0f, 1f);
+        content.anchorMax = new Vector2(1f, 1f);
+        content.pivot = new Vector2(0.5f, 1f);
+        content.anchoredPosition = Vector2.zero;
+        content.sizeDelta = new Vector2(0f, 10f);
+
+        ScrollRect scroll = go.AddComponent<ScrollRect>();
+        scroll.viewport = rt;
+        scroll.content = content;
+        scroll.horizontal = false;
+        scroll.vertical = true;
+        scroll.movementType = ScrollRect.MovementType.Clamped;
+        scroll.scrollSensitivity = 30f;
+        return content;
+    }
+
+    // ---- GROUP STAGE tab ----
+
+    void BuildGroupStageTab(Transform sheet, LeagueSeason s)
+    {
+        RectTransform content = MakeCompScroll(sheet);
+        float y = 4f;
+        for (int g = 0; g < 2; g++)
+            y += BuildGroupCard(content, s, g, y) + 16f;
+        content.sizeDelta = new Vector2(0f, y);
+    }
+
+    // One framed group table. Collapsed: top 5 in Pos | Team | Pts. Expanded: all 8 with full
+    // columns. Tapping anywhere on the card toggles (ScrollRect drags don't trigger the click).
+    // Returns the card height so the caller can stack the next one below.
+    float BuildGroupCard(RectTransform content, LeagueSeason s, int g, float yTop)
+    {
+        bool expanded = compGroupExpanded[g];
+        const float width = 1150f, headerH = 46f;
+        float rowH = expanded ? 34f : 30f;
+        float colHeadH = expanded ? 28f : 0f;
+        int rows = expanded ? LeagueSeason.GroupSize : 5;
+        float h = headerH + colHeadH + rows * rowH + 12f;
+
+        // Outer border + inset fill — same two-image framing as the hub card slots.
+        GameObject cardGo = new GameObject(g == 0 ? "GroupA" : "GroupB");
+        cardGo.transform.SetParent(content, false);
+        RectTransform rt = cardGo.AddComponent<RectTransform>();
+        SetRect(rt, new Vector2(0.5f, 1f), new Vector2(0f, -(yTop + h * 0.5f)), new Vector2(width, h));
+        Image frame = cardGo.AddComponent<Image>();
+        frame.sprite = GetRoundedSprite();
+        frame.type = Image.Type.Sliced;
+        frame.color = new Color(0.227f, 0.353f, 0.478f, 1f); // #3A5A7A border
+
+        Image fill = NewImage(cardGo.transform, "Fill");
+        fill.sprite = GetRoundedSprite();
+        fill.type = Image.Type.Sliced;
+        fill.color = new Color(0.102f, 0.165f, 0.227f, 0.96f); // #1A2A3A body
+        fill.raycastTarget = false;
+        RectTransform frt = fill.rectTransform;
+        frt.anchorMin = Vector2.zero;
+        frt.anchorMax = Vector2.one;
+        frt.offsetMin = new Vector2(2f, 2f);
+        frt.offsetMax = new Vector2(-2f, -2f);
+
+        Button btn = cardGo.AddComponent<Button>();
+        btn.targetGraphic = frame;
+        int gi = g;
+        btn.onClick.AddListener(() => { compGroupExpanded[gi] = !compGroupExpanded[gi]; RebuildStandings(); });
+
+        // Header bar: group name left, expand/collapse hint right.
+        Image head = NewImage(cardGo.transform, "Header");
+        head.sprite = GetRoundedSprite();
+        head.type = Image.Type.Sliced;
+        head.color = new Color(0.13f, 0.24f, 0.36f, 1f);
+        head.raycastTarget = false;
+        SetRect(head.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -(headerH * 0.5f + 2f)),
+                new Vector2(width - 8f, headerH - 4f));
+        MakeText(head.transform, g == 0 ? "GROUP A" : "GROUP B", 20f, new Vector2(0f, 0.5f),
+                 new Vector2(160f, 0f), new Vector2(300f, 30f), Cyan, TextAlignmentOptions.Left);
+        MakeText(head.transform, expanded ? "COLLAPSE" : "VIEW ALL", 15f, new Vector2(1f, 0.5f),
+                 new Vector2(-95f, 0f), new Vector2(170f, 24f), Gold, TextAlignmentOptions.Right);
+
+        List<int> order = s.GroupStandings(g);
+        if (expanded)
+            MakeGroupFullRow(cardGo.transform, -(headerH + colHeadH * 0.5f), rowH, true, false,
+                             "POS", "TEAM", "P", "W", "D", "L", "GD", "PTS");
+        for (int r = 0; r < rows; r++)
+        {
+            int ti = order[r];
+            bool player = ti == LeagueSeason.PlayerIndex;
+            float cy = -(headerH + colHeadH + rowH * 0.5f + r * rowH);
+            if (expanded)
+                MakeGroupFullRow(cardGo.transform, cy, rowH, false, player,
+                    (r + 1).ToString(), s.teams[ti], s.played[ti].ToString(), s.won[ti].ToString(),
+                    s.drawn[ti].ToString(), s.lost[ti].ToString(), Signed(s.GoalDiff(ti)),
+                    s.Points(ti).ToString());
+            else
+                MakeGroupCompactRow(cardGo.transform, cy, rowH, player,
+                                    (r + 1).ToString(), s.teams[ti], s.Points(ti).ToString());
+        }
+        return h;
+    }
+
+    static Color GroupRowColor(bool header, bool player) =>
+        header ? new Color(0.10f, 0.16f, 0.28f, 0.98f)
+      : player ? new Color(0.90f, 0.72f, 0.14f, 0.60f)   // gold highlight = the player's club
+               : new Color(0.06f, 0.10f, 0.18f, 0.55f);
+
+    Image MakeGroupRowStrip(Transform card, float centerY, float rowH, bool header, bool player)
+    {
+        Image row = NewImage(card, header ? "ColHeader" : "Row");
         row.sprite = GetRoundedSprite();
         row.type = Image.Type.Sliced;
-        row.color = header ? new Color(0.10f, 0.16f, 0.28f, 0.98f)
-                  : player ? new Color(0.90f, 0.72f, 0.14f, 0.60f)   // gold highlight = the player's club
-                           : new Color(0.06f, 0.10f, 0.18f, 0.55f);
+        row.color = GroupRowColor(header, player);
         row.raycastTarget = false;
-        SetRect(row.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, centerY), new Vector2(1150f, h));
+        SetRect(row.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, centerY),
+                new Vector2(1120f, rowH - 4f));
+        return row;
+    }
 
+    // Full 8-column row for an expanded group (also draws the column header when `header`).
+    void MakeGroupFullRow(Transform card, float centerY, float rowH, bool header, bool player,
+                          string pos, string name, string p, string w, string d, string l,
+                          string gd, string pts)
+    {
+        Image row = MakeGroupRowStrip(card, centerY, rowH, header, player);
         Color col = header ? new Color(0.72f, 0.85f, 1f, 1f) : Color.white;
-        float fs = header ? 16f : 19f;
-        Vector2 box = new Vector2(60f, h);
-        MakeText(row.transform, pos, fs, new Vector2(0.5f, 0.5f), new Vector2(-515f, 0f), box, col, TextAlignmentOptions.Center);
-        MakeText(row.transform, name, fs, new Vector2(0.5f, 0.5f), new Vector2(-300f, 0f), new Vector2(340f, h), col, TextAlignmentOptions.Left);
-        MakeText(row.transform, p, fs, new Vector2(0.5f, 0.5f), new Vector2(-60f, 0f), box, col, TextAlignmentOptions.Center);
-        MakeText(row.transform, w, fs, new Vector2(0.5f, 0.5f), new Vector2(20f, 0f), box, col, TextAlignmentOptions.Center);
-        MakeText(row.transform, d, fs, new Vector2(0.5f, 0.5f), new Vector2(100f, 0f), box, col, TextAlignmentOptions.Center);
-        MakeText(row.transform, l, fs, new Vector2(0.5f, 0.5f), new Vector2(180f, 0f), box, col, TextAlignmentOptions.Center);
-        MakeText(row.transform, gd, fs, new Vector2(0.5f, 0.5f), new Vector2(285f, 0f), new Vector2(90f, h), col, TextAlignmentOptions.Center);
-        MakeText(row.transform, pts, fs, new Vector2(0.5f, 0.5f), new Vector2(420f, 0f), new Vector2(100f, h), col, TextAlignmentOptions.Center);
+        float fs = header ? 14f : 17f;
+        Vector2 box = new Vector2(60f, rowH);
+        MakeText(row.transform, pos, fs, new Vector2(0.5f, 0.5f), new Vector2(-500f, 0f), box, col, TextAlignmentOptions.Center);
+        MakeText(row.transform, name, fs, new Vector2(0.5f, 0.5f), new Vector2(-290f, 0f), new Vector2(330f, rowH), col, TextAlignmentOptions.Left);
+        MakeText(row.transform, p, fs, new Vector2(0.5f, 0.5f), new Vector2(-55f, 0f), box, col, TextAlignmentOptions.Center);
+        MakeText(row.transform, w, fs, new Vector2(0.5f, 0.5f), new Vector2(25f, 0f), box, col, TextAlignmentOptions.Center);
+        MakeText(row.transform, d, fs, new Vector2(0.5f, 0.5f), new Vector2(105f, 0f), box, col, TextAlignmentOptions.Center);
+        MakeText(row.transform, l, fs, new Vector2(0.5f, 0.5f), new Vector2(185f, 0f), box, col, TextAlignmentOptions.Center);
+        MakeText(row.transform, gd, fs, new Vector2(0.5f, 0.5f), new Vector2(285f, 0f), new Vector2(90f, rowH), col, TextAlignmentOptions.Center);
+        MakeText(row.transform, pts, fs, new Vector2(0.5f, 0.5f), new Vector2(415f, 0f), new Vector2(100f, rowH), col, TextAlignmentOptions.Center);
+    }
+
+    // Compact 3-column row (Pos | Team | Pts) for a collapsed group.
+    void MakeGroupCompactRow(Transform card, float centerY, float rowH, bool player,
+                             string pos, string name, string pts)
+    {
+        Image row = MakeGroupRowStrip(card, centerY, rowH, false, player);
+        Vector2 box = new Vector2(60f, rowH);
+        MakeText(row.transform, pos, 16f, new Vector2(0.5f, 0.5f), new Vector2(-500f, 0f), box, Color.white, TextAlignmentOptions.Center);
+        MakeText(row.transform, name, 16f, new Vector2(0.5f, 0.5f), new Vector2(-230f, 0f), new Vector2(450f, rowH), Color.white, TextAlignmentOptions.Left);
+        MakeText(row.transform, pts, 16f, new Vector2(0.5f, 0.5f), new Vector2(485f, 0f), box, Color.white, TextAlignmentOptions.Center);
+    }
+
+    // ---- KNOCKOUT tab ----
+
+    void BuildKnockoutTab(Transform sheet, LeagueSeason s)
+    {
+        RectTransform content = MakeCompScroll(sheet);
+        float y = 2f;
+
+        y = AddBracketLabel(content, "QUARTERFINALS", y);
+        for (int i = 0; i < 4; i++)
+        {
+            float cx = (i % 2 == 0) ? -297f : 297f;                 // 2x2 grid
+            float cy = y + 38f + (i / 2) * 84f;
+            BuildBracketCard(content, s, s.quarterfinals[i], new Vector2(cx, -cy), new Vector2(576f, 72f));
+        }
+        y += 36f + 84f + 36f + 10f;
+
+        y = AddBracketLabel(content, "SEMIFINALS", y);
+        for (int i = 0; i < 2; i++)
+            BuildBracketCard(content, s, s.semifinals[i], new Vector2(i == 0 ? -297f : 297f, -(y + 36f)),
+                             new Vector2(576f, 72f));
+        y += 82f;
+
+        y = AddBracketLabel(content, "FINAL", y);
+        BuildBracketCard(content, s, s.Final, new Vector2(0f, -(y + 40f)), new Vector2(640f, 80f));
+        y += 90f;
+
+        content.sizeDelta = new Vector2(0f, y);
+    }
+
+    float AddBracketLabel(RectTransform content, string label, float y)
+    {
+        MakeText(content, label, 20f, new Vector2(0.5f, 1f), new Vector2(0f, -(y + 16f)),
+                 new Vector2(400f, 28f), Gold, TextAlignmentOptions.Center);
+        return y + 34f;
+    }
+
+    // One bracket match card: Team A | score - score | Team B ("vs" while unplayed, "TBD" for
+    // undecided slots). The player's tie gets a gold frame; a decided tie dims the loser.
+    void BuildBracketCard(RectTransform content, LeagueSeason s, LeagueSeason.KnockoutMatch m,
+                          Vector2 center, Vector2 size)
+    {
+        bool mine = m.Has(LeagueSeason.PlayerIndex);
+        GameObject go = new GameObject("Bracket");
+        go.transform.SetParent(content, false);
+        RectTransform rt = go.AddComponent<RectTransform>();
+        SetRect(rt, new Vector2(0.5f, 1f), center, size);
+        Image frame = go.AddComponent<Image>();
+        frame.sprite = GetRoundedSprite();
+        frame.type = Image.Type.Sliced;
+        frame.color = mine ? CardGold : new Color(0.227f, 0.353f, 0.478f, 1f);
+        frame.raycastTarget = false;
+
+        Image fill = NewImage(go.transform, "Fill");
+        fill.sprite = GetRoundedSprite();
+        fill.type = Image.Type.Sliced;
+        fill.color = new Color(0.08f, 0.13f, 0.18f, 0.97f);
+        fill.raycastTarget = false;
+        RectTransform frt = fill.rectTransform;
+        frt.anchorMin = Vector2.zero;
+        frt.anchorMax = Vector2.one;
+        frt.offsetMin = new Vector2(2f, 2f);
+        frt.offsetMax = new Vector2(-2f, -2f);
+
+        Color tbd = new Color(0.5f, 0.56f, 0.64f, 1f);
+        Color dim = new Color(0.55f, 0.6f, 0.68f, 1f);
+        string nameA = m.teamA >= 0 ? s.teams[m.teamA] : "TBD";
+        string nameB = m.teamB >= 0 ? s.teams[m.teamB] : "TBD";
+        Color colA = m.teamA < 0 ? tbd : !m.played ? Color.white : m.Winner == m.teamA ? Color.white : dim;
+        Color colB = m.teamB < 0 ? tbd : !m.played ? Color.white : m.Winner == m.teamB ? Color.white : dim;
+
+        float wing = size.x * 0.5f - 78f; // name box width each side, leaving the middle for the score
+        MakeText(fill.transform, nameA, 17f, new Vector2(0f, 0.5f), new Vector2(wing * 0.5f + 14f, 0f),
+                 new Vector2(wing, size.y), colA, TextAlignmentOptions.Left);
+        MakeText(fill.transform, nameB, 17f, new Vector2(1f, 0.5f), new Vector2(-(wing * 0.5f + 14f), 0f),
+                 new Vector2(wing, size.y), colB, TextAlignmentOptions.Right);
+        string mid = m.played ? m.scoreA + " - " + m.scoreB : "vs";
+        MakeText(fill.transform, mid, m.played ? 21f : 17f, new Vector2(0.5f, 0.5f), Vector2.zero,
+                 new Vector2(130f, size.y), m.played ? Color.white : dim, TextAlignmentOptions.Center);
+    }
+
+    // ---- bottom bar (always visible): NEXT MATCH / result state + TEAM shortcut ----
+
+    void BuildCompBottomBar(Transform sheet, LeagueSeason s, int comp)
+    {
+        Image bar = MakePanel(sheet, new Vector2(0.5f, 0f), Vector2.zero, new Vector2(0f, 92f), DarkBar);
+        bar.gameObject.name = "CompBottomBar";
+        bar.raycastTarget = true;
+        RectTransform brt = bar.rectTransform;
+        brt.anchorMin = new Vector2(0f, 0f);
+        brt.anchorMax = new Vector2(1f, 0f);
+        brt.pivot = new Vector2(0.5f, 0f);
+        brt.anchoredPosition = Vector2.zero;
+        brt.sizeDelta = new Vector2(0f, 92f);
+
+        // TEAM shortcut — back from the team screen returns here, not to the hub.
+        MakeImageButton(bar.transform, "BtnTeam", "Sprites/team-button", new Vector2(1f, 0.5f),
+                        new Vector2(-70f, 0f), new Vector2(78f, 78f), () => OpenTeamScreen("COMPETITION"));
+
+        if (!s.IsComplete)
+        {
+            MakeActionButton(bar.transform, "NEXT MATCH    vs. " + s.NextOpponentName,
+                             new Vector2(0.5f, 0.5f), new Vector2(-40f, 0f), new Vector2(560f, 64f),
+                             Green, OpenPreMatch);
+        }
+        else if (s.PlayerIsChampion)
+        {
+            MakeActionButton(bar.transform, "CHAMPIONS!  CLAIM REWARDS", new Vector2(0.5f, 0.5f),
+                             new Vector2(-40f, 0f), new Vector2(560f, 64f), Gold,
+                () => Debug.Log("CLAIM REWARDS (placeholder) — " + CompNames[comp] + " won."));
+        }
+        else
+        {
+            string champ = s.Champion >= 0 ? s.teams[s.Champion] : "?";
+            MakeText(bar.transform, "ELIMINATED IN THE " + s.eliminatedIn + "  -  " + champ + " ARE CHAMPIONS",
+                     19f, new Vector2(0.5f, 0.5f), new Vector2(-40f, 0f), new Vector2(900f, 60f),
+                     new Color(1f, 1f, 1f, 0.9f), TextAlignmentOptions.Center);
+        }
     }
 
     // =============================================================== pre-match
@@ -757,11 +1090,11 @@ public class NavigationManager : MonoBehaviour
         BuildPreMatchPool(sheet, new Vector2(-poolX, poolY), new Vector2(poolW, poolH), true, Blue);
         BuildPreMatchPool(sheet, new Vector2(poolX, poolY), new Vector2(poolW, poolH), false, Red);
 
-        // Center column: league badge (text), game counter, VS, PLAY.
+        // Center column: league badge (text), phase/match label, VS, PLAY.
         MakeText(sheet, CompNames[comp], 20f, new Vector2(0.5f, 0.5f), new Vector2(0f, 196f),
                  new Vector2(200f, 48f), Gold, TextAlignmentOptions.Center);
-        MakeText(sheet, "GAME " + (s.matchesPlayed + 1) + " OF " + LeagueSeason.MatchesTotal, 18f,
-                 new Vector2(0.5f, 0.5f), new Vector2(0f, 150f), new Vector2(200f, 26f), Color.white,
+        MakeText(sheet, s.MatchLabel, 18f,
+                 new Vector2(0.5f, 0.5f), new Vector2(0f, 150f), new Vector2(300f, 26f), Color.white,
                  TextAlignmentOptions.Center);
         MakeText(sheet, "VS", 44f, new Vector2(0.5f, 0.5f), new Vector2(0f, 70f), new Vector2(160f, 56f),
                  new Color(1f, 1f, 1f, 0.9f), TextAlignmentOptions.Center);
@@ -769,8 +1102,9 @@ public class NavigationManager : MonoBehaviour
             Green, () =>
             {
                 // Placeholder result until real match reporting is wired: simulate the player's score,
-                // then load the match. The standings reflect it next time they're opened.
+                // then load the match. The tournament reflects it next time the screen is opened.
                 s.RecordPlayerResult(Random.Range(0, 13), Random.Range(0, 13));
+                if (s.PlayerIsChampion) MarkCompetitionWon(s.competitionIndex);
                 SceneManager.LoadScene("SampleScene");
             });
 
