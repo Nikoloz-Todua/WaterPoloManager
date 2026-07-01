@@ -11,7 +11,9 @@ using UnityEngine;
 // so a player's natural starting slot is simply (int)position.
 public enum PlayerPosition { GK, CB, LW, RW, CF, LF, RF }
 
-public enum Rarity { Common, Rare, Legendary }
+// NOTE: serialized as ints in the .asset files — inserting Epic shifted Legendary from 2 to 3,
+// and every existing legendary .asset was migrated (rarity: 2 → 3) when Epic was added.
+public enum Rarity { Common, Rare, Epic, Legendary }
 
 [CreateAssetMenu(fileName = "NewPlayer", menuName = "Water Polo/Player", order = 0)]
 public class PlayerData : ScriptableObject
@@ -62,10 +64,13 @@ public class PlayerData : ScriptableObject
     // ScriptableObject edits during Play persist in the Editor). The catalog stays pristine.
     public PlayerData Clone() => Instantiate(this);
 
-    // Border tint for the card frame (Common grey, Rare blue, Legendary gold).
-    public Color RarityColor => rarity switch
+    // Border tint for the card frame (Common grey, Rare blue, Epic purple, Legendary gold).
+    public Color RarityColor => RarityTint(rarity);
+
+    public static Color RarityTint(Rarity r) => r switch
     {
         Rarity.Legendary => new Color(1f, 0.82f, 0.2f),
+        Rarity.Epic => new Color(0.61f, 0.35f, 0.71f),
         Rarity.Rare => new Color(0.25f, 0.5f, 1f),
         _ => new Color(0.6f, 0.6f, 0.62f),
     };

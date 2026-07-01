@@ -10,21 +10,21 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 89ff3f0669253db4589c22d28ca1524c, type: 3}
-  m_Name: rf_nagy
+  m_Name: lw_szabo
   m_EditorClassIdentifier: Assembly-CSharp::PlayerData
-  id: rf_nagy
-  fullName: B. Nagy
+  id: lw_szabo
+  fullName: Z. Szabo
   nation: Hungary
-  position: 6
-  overall: 87
+  position: 2
+  overall: 83
   stats:
-    speed: 85
-    shooting: 85
-    passing: 91
-    defense: 88
-    stamina: 85
-    goalKeeping: 60
-  rarity: 3
+    speed: 89
+    shooting: 84
+    passing: 81
+    defense: 81
+    stamina: 81
+    goalKeeping: 56
+  rarity: 2
   portrait: {fileID: 0}
-  priceGold: 1810
+  priceGold: 1390
   isBot: 0

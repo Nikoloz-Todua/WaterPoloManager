@@ -50,6 +50,14 @@ public static class SamplePlayerGenerator
         // RF
         new Spec("rf_ivanov",  "V. Ivanov",   "Russia",     PlayerPosition.RF, Rarity.Common,    66),
         new Spec("rf_nagy",    "B. Nagy",     "Hungary",    PlayerPosition.RF, Rarity.Legendary, 85),
+        // Epic tier (between Rare and Legendary) — added with the card-pack shop so Epic pack
+        // rolls have players to draw. Re-run Tools → Generate Sample Players to create them.
+        new Spec("gk_papas",   "E. Papas",    "Greece",     PlayerPosition.GK, Rarity.Epic,      80),
+        new Spec("cb_moretti", "A. Moretti",  "Italy",      PlayerPosition.CB, Rarity.Epic,      79),
+        new Spec("lw_szabo",   "Z. Szabo",    "Hungary",    PlayerPosition.LW, Rarity.Epic,      81),
+        new Spec("rw_delgado", "C. Delgado",  "Spain",      PlayerPosition.RW, Rarity.Epic,      80),
+        new Spec("cf_bogdan",  "M. Bogdan",   "Serbia",     PlayerPosition.CF, Rarity.Epic,      82),
+        new Spec("rf_leclerc", "Y. Leclerc",  "France",     PlayerPosition.RF, Rarity.Epic,      78),
     };
 
     [MenuItem("Tools/Generate Sample Players")]
@@ -112,7 +120,7 @@ public static class SamplePlayerGenerator
 
     static int Price(int overall, Rarity r)
     {
-        float mult = r == Rarity.Legendary ? 2.6f : r == Rarity.Rare ? 1.6f : 1.0f;
+        float mult = r == Rarity.Legendary ? 2.6f : r == Rarity.Epic ? 2.1f : r == Rarity.Rare ? 1.6f : 1.0f;
         return Mathf.RoundToInt(overall * 8 * mult / 10f) * 10; // nearest 10 gold
     }
 

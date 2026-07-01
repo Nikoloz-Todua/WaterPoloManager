@@ -71,6 +71,14 @@ public class NavigationManager : MonoBehaviour
     // active beneath, this flag covers the case where it isn't.
     private string teamReturnTo = "HUB";
 
+    // Post-match reward slots (bottom bar): container rebuilt on any state change, countdown
+    // labels ticked from Update, ready-flags so a finished countdown triggers one rebuild.
+    private Transform rewardSlotRow;
+    private readonly TextMeshProUGUI[] rewardTimeLabels = new TextMeshProUGUI[PostMatchRewardManager.SlotCount];
+    private readonly bool[] rewardShownReady = new bool[PostMatchRewardManager.SlotCount];
+    private GameObject rewardPopup; // built per open, destroyed on close
+    private float rewardTickTimer;
+
     void Start()
     {
         EnsureEventSystem();
@@ -255,8 +263,8 @@ public class NavigationManager : MonoBehaviour
         MakeText(dot.transform, "1", 15f, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(26f, 26f),
                  Color.white, TextAlignmentOptions.Center);
 
-        // Card slots (visual placeholders) between the missions button and PLAY.
-        BuildCardSlots(barGo.transform);
+        // Post-match reward slots (live) between the missions button and PLAY.
+        BuildRewardSlots(barGo.transform);
 
         // Play (right) → open the Game Mode overlay (competition picker), not the match directly.
         MakeImageButton(barGo.transform, "BtnPlay", "Sprites/play-button", new Vector2(1f, 0.5f),
@@ -264,32 +272,51 @@ public class NavigationManager : MonoBehaviour
                         () => ShowOverlay(gameModeOverlay));
     }
 
-    // Four visual-only "card slot" placeholders between the missions button and PLAY: a dark
-    // rounded panel with a rounded outline, a small white-circle lock placeholder, and a timer label.
-    void BuildCardSlots(Transform parent)
+    // ------------------------------------------------------ post-match reward slots
+
+    // Live Clash-style reward slots between the missions button and PLAY. State comes from
+    // PostMatchRewardManager (persistent JSON); the row is rebuilt on any state change, and
+    // Update ticks the countdown labels of Unlocking slots.
+    void BuildRewardSlots(Transform parent)
     {
-        string[] times = { "3H", "7H", "12H", "24H" };
-        Color slotFill = new Color(0.102f, 0.165f, 0.227f, 0.784f); // #1A2A3A @ alpha 200
-        Color slotOutline = new Color(0.165f, 0.290f, 0.416f, 1f);  // #2A4A6A
-        const float w = 70f, h = 90f, gap = 8f, rowCenterX = 90f; // centred in the gap between missions and PLAY
+        GameObject rowGo = new GameObject("RewardSlots");
+        rowGo.transform.SetParent(parent, false);
+        RectTransform rrt = rowGo.AddComponent<RectTransform>();
+        SetRect(rrt, new Vector2(0.5f, 0.5f), new Vector2(90f, 0f), new Vector2(320f, 100f));
+        rewardSlotRow = rowGo.transform;
+        RebuildRewardSlots();
+    }
 
-        for (int i = 0; i < times.Length; i++)
+    void RebuildRewardSlots()
+    {
+        if (rewardSlotRow == null) return;
+        ClearChildren(rewardSlotRow);
+        PostMatchRewardManager mgr = PostMatchRewardManager.Instance;
+        const float w = 70f, h = 90f, gap = 8f;
+
+        for (int i = 0; i < PostMatchRewardManager.SlotCount; i++)
         {
-            float sx = rowCenterX + (i - 1.5f) * (w + gap);
+            int idx = i;
+            PostMatchRewardManager.Slot slot = mgr.GetSlot(i);
+            bool ready = mgr.IsReady(i);
+            rewardTimeLabels[i] = null;
+            rewardShownReady[i] = ready;
+            float sx = (i - 1.5f) * (w + gap);
 
-            // outline frame
-            Image frame = NewImage(parent, "CardSlot" + (i + 1));
+            // outline frame + dark inset fill (same look as the old placeholders)
+            Image frame = NewImage(rewardSlotRow, "RewardSlot" + (i + 1));
             frame.sprite = GetRoundedSprite();
             frame.type = Image.Type.Sliced;
-            frame.color = slotOutline;
-            frame.raycastTarget = false;
+            frame.color = ready ? CardGold : new Color(0.165f, 0.290f, 0.416f, 1f);
+            frame.raycastTarget = true;
             SetRect(frame.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(sx, 0f), new Vector2(w, h));
 
-            // dark fill inset 2px (leaves the outline as a thin border)
             Image fill = NewImage(frame.transform, "Fill");
             fill.sprite = GetRoundedSprite();
             fill.type = Image.Type.Sliced;
-            fill.color = slotFill;
+            fill.color = slot.State == PostMatchRewardManager.SlotState.Empty
+                ? new Color(0.05f, 0.08f, 0.12f, 0.55f)                 // greyed empty slot
+                : new Color(0.102f, 0.165f, 0.227f, 0.9f);              // #1A2A3A
             fill.raycastTarget = false;
             RectTransform frt = fill.rectTransform;
             frt.anchorMin = Vector2.zero;
@@ -297,17 +324,142 @@ public class NavigationManager : MonoBehaviour
             frt.offsetMin = new Vector2(2f, 2f);
             frt.offsetMax = new Vector2(-2f, -2f);
 
-            // lock placeholder (plain white circle, 20px), centred and nudged up
-            Image lockImg = NewImage(frame.transform, "Lock");
-            lockImg.sprite = Circle();
-            lockImg.color = Color.white;
-            lockImg.raycastTarget = false;
-            SetRect(lockImg.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, 10f), new Vector2(20f, 20f));
+            if (slot.State == PostMatchRewardManager.SlotState.Empty)
+            {
+                MakeText(frame.transform, "EMPTY", 11f, new Vector2(0.5f, 0.5f), Vector2.zero,
+                         new Vector2(64f, 18f), new Color(1f, 1f, 1f, 0.35f), TextAlignmentOptions.Center);
+                continue;
+            }
 
-            // timer label below the lock
-            MakeText(frame.transform, times[i], 12f, new Vector2(0.5f, 0.5f), new Vector2(0f, -22f),
-                     new Vector2(64f, 18f), Color.white, TextAlignmentOptions.Center);
+            // Tier pack art + status label.
+            CardPack.TierPackDef def = CardPack.GetTierPack(slot.Tier);
+            Image icon = NewImage(frame.transform, "PackIcon");
+            icon.sprite = LoadSprite(def.SpritePath);
+            icon.preserveAspect = true;
+            icon.raycastTarget = false;
+            if (icon.sprite == null) icon.color = CardPack.TierColor(slot.Tier);
+            SetRect(icon.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, 12f), new Vector2(54f, 54f));
+
+            string label;
+            Color labelCol = Color.white;
+            if (ready) { label = "OPEN!"; labelCol = Gold; }
+            else if (slot.State == PostMatchRewardManager.SlotState.Unlocking)
+                label = PostMatchRewardManager.FormatRemaining(mgr.SecondsRemaining(i));
+            else label = def.UnlockLabel; // Locked: shows the tier's unlock duration (3H/7H/12H/24H)
+
+            TextMeshProUGUI lbl = MakeText(frame.transform, label, 12f, new Vector2(0.5f, 0.5f),
+                new Vector2(0f, -26f), new Vector2(66f, 20f), labelCol, TextAlignmentOptions.Center);
+            if (!ready && slot.State == PostMatchRewardManager.SlotState.Unlocking) rewardTimeLabels[i] = lbl;
+
+            Button btn = frame.gameObject.AddComponent<Button>();
+            btn.targetGraphic = frame;
+            if (ready) btn.onClick.AddListener(() => OpenReadyRewardSlot(idx));
+            else if (slot.State == PostMatchRewardManager.SlotState.Locked)
+                btn.onClick.AddListener(() => OpenRewardPopup(idx));
+            AddHover(frame.gameObject);
         }
+    }
+
+    // Ticks the Unlocking countdowns twice a second; a countdown that hits zero rebuilds the row
+    // so the slot flips to the gold OPEN! state.
+    void Update()
+    {
+        if (rewardSlotRow == null) return;
+        rewardTickTimer -= Time.unscaledDeltaTime;
+        if (rewardTickTimer > 0f) return;
+        rewardTickTimer = 0.5f;
+
+        PostMatchRewardManager mgr = PostMatchRewardManager.Instance;
+        for (int i = 0; i < PostMatchRewardManager.SlotCount; i++)
+        {
+            if (mgr.GetSlot(i).State != PostMatchRewardManager.SlotState.Unlocking) continue;
+            if (mgr.IsReady(i))
+            {
+                if (!rewardShownReady[i]) { RebuildRewardSlots(); return; }
+            }
+            else if (rewardTimeLabels[i] != null)
+                rewardTimeLabels[i].text = PostMatchRewardManager.FormatRemaining(mgr.SecondsRemaining(i));
+        }
+    }
+
+    // "TAP TO UNLOCK" popup for a Locked slot: pack art, tier name, "UP TO N PLAYERS", the tier's
+    // internal drop-rate rows, and START UNLOCKING. Built fresh each open, destroyed on close.
+    void OpenRewardPopup(int slotIndex)
+    {
+        PostMatchRewardManager mgr = PostMatchRewardManager.Instance;
+        PostMatchRewardManager.Slot slot = mgr.GetSlot(slotIndex);
+        if (slot == null || slot.State != PostMatchRewardManager.SlotState.Locked) return;
+        CardPack.TierPackDef def = CardPack.GetTierPack(slot.Tier);
+
+        if (rewardPopup != null) Destroy(rewardPopup);
+        GameObject ov = new GameObject("RewardPopup");
+        ov.transform.SetParent(canvasRoot, false);
+        ov.transform.SetAsLastSibling();
+        Stretch(ov.AddComponent<RectTransform>());
+        Image dark = ov.AddComponent<Image>();
+        dark.color = OverlayDark;
+        dark.raycastTarget = true;
+        rewardPopup = ov;
+
+        Image sheet = NewImage(ov.transform, "Sheet");
+        sheet.sprite = GetRoundedSprite();
+        sheet.type = Image.Type.Sliced;
+        sheet.color = DarkPanel;
+        SetRect(sheet.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(660f, 520f));
+
+        Image art = NewImage(sheet.transform, "PackArt");
+        art.sprite = LoadSprite(def.SpritePath);
+        art.preserveAspect = true;
+        art.raycastTarget = false;
+        if (art.sprite == null) art.color = CardPack.TierColor(slot.Tier);
+        SetRect(art.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -92f), new Vector2(130f, 130f));
+
+        MakeText(sheet.transform, def.name, 28f, new Vector2(0.5f, 1f), new Vector2(0f, -178f),
+                 new Vector2(500f, 36f), CardPack.TierColor(slot.Tier), TextAlignmentOptions.Center);
+        MakeText(sheet.transform, "UP TO " + def.maxCards + " PLAYERS", 18f, new Vector2(0.5f, 1f),
+                 new Vector2(0f, -212f), new Vector2(500f, 26f), Color.white, TextAlignmentOptions.Center);
+
+        // Drop-rate rows: rarity dot + rarity name + percentage.
+        float rowY = -252f;
+        foreach (var (rarity, weight) in def.odds)
+        {
+            Image dot = NewImage(sheet.transform, "Dot");
+            dot.sprite = Circle();
+            dot.color = PlayerData.RarityTint(rarity);
+            dot.raycastTarget = false;
+            SetRect(dot.rectTransform, new Vector2(0.5f, 1f), new Vector2(-160f, rowY), new Vector2(20f, 20f));
+            MakeText(sheet.transform, rarity.ToString().ToUpper(), 17f, new Vector2(0.5f, 1f),
+                     new Vector2(-30f, rowY), new Vector2(220f, 24f), Color.white, TextAlignmentOptions.Left);
+            MakeText(sheet.transform, (weight * 100f).ToString("0.#") + "%", 17f, new Vector2(0.5f, 1f),
+                     new Vector2(130f, rowY), new Vector2(120f, 24f), Gold, TextAlignmentOptions.Right);
+            rowY -= 32f;
+        }
+
+        // One unlock at a time (Clash rule): the button greys out while another slot counts down.
+        bool busy = mgr.AnyUnlocking();
+        Button start = MakeActionButton(sheet.transform, busy ? "ANOTHER PACK IS UNLOCKING" : "START UNLOCKING",
+            new Vector2(0.5f, 0f), new Vector2(0f, 52f), new Vector2(400f, 64f),
+            busy ? new Color(0.3f, 0.34f, 0.4f, 1f) : Green, () =>
+            {
+                if (PostMatchRewardManager.Instance.AnyUnlocking()) return;
+                PostMatchRewardManager.Instance.StartUnlock(slotIndex);
+                Destroy(rewardPopup);
+                rewardPopup = null;
+                RebuildRewardSlots();
+            });
+        start.interactable = !busy;
+
+        MakeCloseButton(sheet.transform, () => { Destroy(rewardPopup); rewardPopup = null; });
+    }
+
+    // Tap on a Ready slot: open the pack, grant cards (duplicates → coins), show the reveal.
+    void OpenReadyRewardSlot(int slotIndex)
+    {
+        List<CardPack.GrantResult> results = PostMatchRewardManager.Instance.OpenSlot(slotIndex);
+        if (results == null) return;
+        RefreshCurrency();
+        RebuildRewardSlots();
+        PackRevealUI.Show(canvasRoot, results, RefreshCurrency);
     }
 
     // ---------------------------------------------------------------- overlays
@@ -315,7 +467,7 @@ public class NavigationManager : MonoBehaviour
     void BuildOverlays()
     {
         rankingOverlay = BuildComingSoonOverlay("RANKING");
-        shopOverlay = BuildComingSoonOverlay("SHOP");
+        shopOverlay = BuildShopOverlay();
         teamOverlay = BuildTeamOverlay();
         gameModeOverlay = BuildGameModeOverlay();
     }
@@ -389,6 +541,37 @@ public class NavigationManager : MonoBehaviour
         teamReturnTo = returnTo;
         ShowOverlay(teamOverlay);
     }
+
+    // Dark full-screen overlay hosting ShopUI on a full-canvas sheet (same shell as the team
+    // overlay). ShopUI owns its own back arrow → CloseShopScreen.
+    GameObject BuildShopOverlay()
+    {
+        GameObject ov = new GameObject("Overlay_SHOP");
+        ov.transform.SetParent(canvasRoot, false);
+        Stretch(ov.AddComponent<RectTransform>());
+        Image backdrop = ov.AddComponent<Image>();
+        backdrop.color = OverlayDark;
+        backdrop.raycastTarget = true;
+        ov.AddComponent<CanvasGroup>();
+
+        GameObject sheetGo = new GameObject("Sheet");
+        sheetGo.transform.SetParent(ov.transform, false);
+        RectTransform srt = sheetGo.AddComponent<RectTransform>();
+        srt.anchorMin = Vector2.zero;
+        srt.anchorMax = Vector2.one;
+        srt.pivot = new Vector2(0.5f, 0.5f);
+        srt.sizeDelta = Vector2.zero;
+        srt.anchoredPosition = Vector2.zero;
+
+        ShopUI shop = sheetGo.AddComponent<ShopUI>();
+        shop.Build(sheetGo.transform, this);
+
+        ov.SetActive(false);
+        return ov;
+    }
+
+    // Called by ShopUI's back arrow.
+    public void CloseShopScreen() => HideOverlay(shopOverlay);
 
     // Called by TeamScreenUI's back arrow. The overlay we came from normally stays active beneath the
     // team sheet, so sliding it closed reveals the right screen on its own; the COMPETITION branch is

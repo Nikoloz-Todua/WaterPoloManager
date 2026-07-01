@@ -180,6 +180,34 @@ public class RosterManager : MonoBehaviour
         return true;
     }
 
+    // Zero-cost grant (card packs, rewards): adds a catalog player to the bench for free.
+    // False if already owned or not in the catalog — pack openers turn that into duplicate
+    // compensation (coins) instead.
+    public bool GrantPlayer(string id)
+    {
+        if (IsOwned(id)) return false;
+        PlayerData original = PlayerDatabase.Instance.Get(id);
+        if (original == null) return false;
+
+        roster.ownedPlayerIds.Add(id);
+        ownedRuntime[id] = original.Clone();
+        Save();
+        return true;
+    }
+
+    // Currency grants/spends for the shop + rewards. All currency flows through the roster save —
+    // no parallel tracking anywhere else.
+    public void AddCoins(int n) { roster.coins = Mathf.Max(0, roster.coins + n); Save(); }
+    public void AddDiamonds(int n) { roster.diamonds = Mathf.Max(0, roster.diamonds + n); Save(); }
+
+    public bool SpendDiamonds(int n)
+    {
+        if (n < 0 || roster.diamonds < n) return false;
+        roster.diamonds -= n;
+        Save();
+        return true;
+    }
+
     // Sell an owned player for SellValue; clears it from any starter slot first.
     public bool SellPlayer(string id)
     {

@@ -10,21 +10,21 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 89ff3f0669253db4589c22d28ca1524c, type: 3}
-  m_Name: rf_nagy
+  m_Name: rw_delgado
   m_EditorClassIdentifier: Assembly-CSharp::PlayerData
-  id: rf_nagy
-  fullName: B. Nagy
-  nation: Hungary
-  position: 6
-  overall: 87
+  id: rw_delgado
+  fullName: C. Delgado
+  nation: Spain
+  position: 3
+  overall: 82
   stats:
-    speed: 85
-    shooting: 85
-    passing: 91
-    defense: 88
-    stamina: 85
-    goalKeeping: 60
-  rarity: 3
+    speed: 88
+    shooting: 83
+    passing: 80
+    defense: 80
+    stamina: 80
+    goalKeeping: 55
+  rarity: 2
   portrait: {fileID: 0}
-  priceGold: 1810
+  priceGold: 1380
   isBot: 0

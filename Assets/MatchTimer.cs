@@ -127,6 +127,10 @@ public class MatchTimer : MonoBehaviour
         int bot = scoreManager != null ? scoreManager.AwayScore : 0;
         int outcome = you > bot ? 1 : (bot > you ? -1 : 0);
 
+        // Completing a match (full time only — not forfeits) earns a reward-slot card pack,
+        // shown on the hub's bottom bar.
+        PostMatchRewardManager.Instance.AddRewardForMatch();
+
         // Full result screen (overlay + buttons); the bare text is only a fallback
         // for a scene without a MatchResultUI component.
         if (MatchResultUI.Instance != null)

@@ -24,7 +24,7 @@ MonoBehaviour:
     defense: 88
     stamina: 88
     goalKeeping: 63
-  rarity: 2
+  rarity: 3
   portrait: {fileID: 0}
   priceGold: 1890
   isBot: 0
