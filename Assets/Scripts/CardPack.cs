@@ -2,77 +2,25 @@ using System.Collections.Generic;
 using UnityEngine;
 
 // Card-pack data model + open logic — plain static C# (no MonoBehaviour), same pattern as
-// LeagueSeason. Two separate pack concepts share this file:
-//   • ShopPackType — the 4 purchasable shop packs (Basic/Super/Gold/Legendary). Each has a price
-//     and a drop table of "chance of at least one card of X rarity" rows; opening rolls each row.
-//   • CardTier — the 4 post-match reward packs (Common/Rare/Epic/Legendary "cards"). Each has an
-//     unlock time and internal per-card rarity odds; opening rolls `maxCards` slots against them.
+// LeagueSeason. ONE pack identity system: CardTier (Common/Rare/Epic/Legendary "cards").
+// The same 4 packs are sold in the shop (instant open, gem/ad/cash prices) and earned as
+// post-match reward slots (timed unlock). Each tier has ONE odds table — the per-card rarity
+// weights — used for every open and shown by PackInfoPopup everywhere an "i" button exists.
 // Opening returns catalog PlayerData (never clones) — callers grant ids via RosterManager.
 public enum CardTier { Common, Rare, Epic, Legendary }
-public enum ShopPackType { Basic, Super, Gold, Legendary }
 
 public static class CardPack
 {
-    // ---- shop packs ------------------------------------------------------------
-
-    public class ShopPackDef
-    {
-        public ShopPackType type;
-        public string name;
-        public int priceGems;         // 0 = not buyable with gems
-        public string realMoney;      // e.g. "$2.99"; null = no cash option
-        public bool watchAdOption;    // Basic pack can be opened via an ad instead of gems
-        public int maxCards;
-        public (Rarity rarity, float chance)[] dropTable; // "at least one of X" rows, 0..1
-        public string SpritePath => TierSprite(TierForArt);
-        public CardTier TierForArt => (CardTier)(int)type; // Basic→Common art … Legendary→Legendary art
-    }
-
-    static readonly ShopPackDef[] ShopPacks =
-    {
-        new ShopPackDef { type = ShopPackType.Basic, name = "BASIC PACK", priceGems = 100,
-            watchAdOption = true, maxCards = 2,
-            dropTable = new[] { (Rarity.Common, 1f), (Rarity.Rare, 0.30f) } },
-        new ShopPackDef { type = ShopPackType.Super, name = "SUPER PACK", priceGems = 100,
-            maxCards = 3,
-            dropTable = new[] { (Rarity.Common, 1f), (Rarity.Rare, 0.72f), (Rarity.Epic, 0.18f) } },
-        new ShopPackDef { type = ShopPackType.Gold, name = "GOLD PACK", priceGems = 250,
-            maxCards = 3,
-            dropTable = new[] { (Rarity.Rare, 1f), (Rarity.Epic, 0.45f), (Rarity.Legendary, 0.09f) } },
-        new ShopPackDef { type = ShopPackType.Legendary, name = "LEGENDARY PACK", priceGems = 400,
-            realMoney = "$2.99", maxCards = 4,
-            dropTable = new[] { (Rarity.Common, 1f), (Rarity.Rare, 0.973f),
-                                (Rarity.Epic, 0.657f), (Rarity.Legendary, 1f) } },
-    };
-
-    public static ShopPackDef GetShopPack(ShopPackType t) => ShopPacks[(int)t];
-
-    // Roll every "at least one of X" row; each hit adds one card of that rarity (capped at maxCards).
-    public static List<PlayerData> OpenShopPack(ShopPackType t)
-    {
-        ShopPackDef def = GetShopPack(t);
-        List<PlayerData> result = new List<PlayerData>();
-        foreach (var (rarity, chance) in def.dropTable)
-        {
-            if (result.Count >= def.maxCards) break;
-            if (Random.value <= chance)
-            {
-                PlayerData p = DrawOfRarity(rarity);
-                if (p != null) result.Add(p);
-            }
-        }
-        if (result.Count == 0) { PlayerData p = DrawOfRarity(Rarity.Common); if (p != null) result.Add(p); }
-        return result;
-    }
-
-    // ---- post-match reward (tier) packs -----------------------------------------
-
     public class TierPackDef
     {
         public CardTier tier;
         public string name;
-        public float unlockHours;
+        public float unlockHours;        // reward-slot unlock duration
         public int maxCards;
+        public int priceGems;            // shop gem price (instant open)
+        public string realMoney;         // e.g. "$2.99"; null = no cash option
+        public bool watchAdOption;       // Common card can be opened via an ad instead of gems
+        public bool guaranteedLegendary; // Legendary card: every open contains a Legendary
         public (Rarity rarity, float weight)[] odds; // per-card rarity distribution, weights sum to 1
         public string SpritePath => TierSprite(tier);
         public string UnlockLabel => unlockHours >= 1f ? Mathf.RoundToInt(unlockHours) + "H"
@@ -82,13 +30,17 @@ public static class CardPack
     static readonly TierPackDef[] TierPacks =
     {
         new TierPackDef { tier = CardTier.Common, name = "COMMON CARD", unlockHours = 3f, maxCards = 2,
+            priceGems = 100, watchAdOption = true,
             odds = new[] { (Rarity.Common, 0.90f), (Rarity.Rare, 0.10f) } },
         new TierPackDef { tier = CardTier.Rare, name = "RARE CARD", unlockHours = 7f, maxCards = 2,
+            priceGems = 100,
             odds = new[] { (Rarity.Common, 0.40f), (Rarity.Rare, 0.55f), (Rarity.Epic, 0.05f) } },
         new TierPackDef { tier = CardTier.Epic, name = "EPIC CARD", unlockHours = 12f, maxCards = 3,
+            priceGems = 250,
             odds = new[] { (Rarity.Common, 0.10f), (Rarity.Rare, 0.40f),
                            (Rarity.Epic, 0.45f), (Rarity.Legendary, 0.05f) } },
         new TierPackDef { tier = CardTier.Legendary, name = "LEGENDARY CARD", unlockHours = 24f, maxCards = 4,
+            priceGems = 400, realMoney = "$2.99", guaranteedLegendary = true,
             odds = new[] { (Rarity.Rare, 0.20f), (Rarity.Epic, 0.40f), (Rarity.Legendary, 0.40f) } },
     };
 
@@ -99,11 +51,26 @@ public static class CardPack
     {
         TierPackDef def = GetTierPack(t);
         List<PlayerData> result = new List<PlayerData>();
+        bool gotLegendary = false;
         for (int i = 0; i < def.maxCards; i++)
         {
             if (i > 0 && Random.value > 0.6f) continue;
             PlayerData p = DrawOfRarity(RollWeighted(def.odds));
-            if (p != null) result.Add(p);
+            if (p != null)
+            {
+                result.Add(p);
+                if (p.rarity == Rarity.Legendary) gotLegendary = true;
+            }
+        }
+        // Legendary card promise: if the rolls came up short, force a Legendary into the pack.
+        if (def.guaranteedLegendary && !gotLegendary)
+        {
+            PlayerData p = DrawOfRarity(Rarity.Legendary);
+            if (p != null)
+            {
+                if (result.Count >= def.maxCards) result[0] = p;
+                else result.Insert(0, p);
+            }
         }
         return result;
     }
@@ -160,6 +127,51 @@ public static class CardPack
         CardTier.Rare => "Sprites/rare-card",
         _ => "Sprites/common-card",
     };
+
+    // Pack-art sprite, trimmed to its visible content. The ONE loader every pack-art Image
+    // should use. Loads the raw Texture2D (immune to the texture's sprite-slicing import mode —
+    // a Multiple-mode auto-slice once made rare-card load as a tiny fragment) and crops the
+    // sprite rect to the alpha bounding box, so source PNGs with different padding/aspect all
+    // fill a fixed UI box consistently. Cached per tier.
+    static readonly Dictionary<CardTier, Sprite> artCache = new Dictionary<CardTier, Sprite>();
+    public static Sprite TierArtSprite(CardTier t)
+    {
+        if (artCache.TryGetValue(t, out Sprite cached) && cached != null) return cached;
+        string path = TierSprite(t);
+        Texture2D tex = Resources.Load<Texture2D>(path);
+        if (tex == null)
+        {
+            Sprite direct = Resources.Load<Sprite>(path); // last resort: whatever the importer made
+            if (direct != null) artCache[t] = direct;
+            else Debug.LogWarning("CardPack: pack art not found at Resources/" + path);
+            return direct;
+        }
+
+        Rect rect = new Rect(0f, 0f, tex.width, tex.height);
+        try
+        {
+            // Tight alpha bounds (threshold cuts the faint outer glow, keeps the bag).
+            Color32[] px = tex.GetPixels32();
+            const byte cut = 40;
+            int minX = tex.width, minY = tex.height, maxX = -1, maxY = -1;
+            for (int y = 0; y < tex.height; y++)
+                for (int x = 0; x < tex.width; x++)
+                    if (px[y * tex.width + x].a > cut)
+                    {
+                        if (x < minX) minX = x;
+                        if (x > maxX) maxX = x;
+                        if (y < minY) minY = y;
+                        if (y > maxY) maxY = y;
+                    }
+            if (maxX > minX && maxY > minY)
+                rect = new Rect(minX, minY, maxX - minX + 1, maxY - minY + 1);
+        }
+        catch { /* texture not readable → keep the full frame (still correct, just untrimmed) */ }
+
+        Sprite sp = Sprite.Create(tex, rect, new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect);
+        artCache[t] = sp;
+        return sp;
+    }
 
     public static Color TierColor(CardTier t) => PlayerData.RarityTint((Rarity)(int)t);
 }

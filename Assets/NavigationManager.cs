@@ -334,7 +334,7 @@ public class NavigationManager : MonoBehaviour
             // Tier pack art + status label.
             CardPack.TierPackDef def = CardPack.GetTierPack(slot.Tier);
             Image icon = NewImage(frame.transform, "PackIcon");
-            icon.sprite = LoadSprite(def.SpritePath);
+            icon.sprite = CardPack.TierArtSprite(slot.Tier);
             icon.preserveAspect = true;
             icon.raycastTarget = false;
             if (icon.sprite == null) icon.color = CardPack.TierColor(slot.Tier);
@@ -408,7 +408,7 @@ public class NavigationManager : MonoBehaviour
         SetRect(sheet.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(660f, 520f));
 
         Image art = NewImage(sheet.transform, "PackArt");
-        art.sprite = LoadSprite(def.SpritePath);
+        art.sprite = CardPack.TierArtSprite(slot.Tier);
         art.preserveAspect = true;
         art.raycastTarget = false;
         if (art.sprite == null) art.color = CardPack.TierColor(slot.Tier);
@@ -419,21 +419,8 @@ public class NavigationManager : MonoBehaviour
         MakeText(sheet.transform, "UP TO " + def.maxCards + " PLAYERS", 18f, new Vector2(0.5f, 1f),
                  new Vector2(0f, -212f), new Vector2(500f, 26f), Color.white, TextAlignmentOptions.Center);
 
-        // Drop-rate rows: rarity dot + rarity name + percentage.
-        float rowY = -252f;
-        foreach (var (rarity, weight) in def.odds)
-        {
-            Image dot = NewImage(sheet.transform, "Dot");
-            dot.sprite = Circle();
-            dot.color = PlayerData.RarityTint(rarity);
-            dot.raycastTarget = false;
-            SetRect(dot.rectTransform, new Vector2(0.5f, 1f), new Vector2(-160f, rowY), new Vector2(20f, 20f));
-            MakeText(sheet.transform, rarity.ToString().ToUpper(), 17f, new Vector2(0.5f, 1f),
-                     new Vector2(-30f, rowY), new Vector2(220f, 24f), Color.white, TextAlignmentOptions.Left);
-            MakeText(sheet.transform, (weight * 100f).ToString("0.#") + "%", 17f, new Vector2(0.5f, 1f),
-                     new Vector2(130f, rowY), new Vector2(120f, 24f), Gold, TextAlignmentOptions.Right);
-            rowY -= 32f;
-        }
+        // Drop-rate table: the shared PackInfoPopup rows, identical to the shop's "i" popup.
+        PackInfoPopup.BuildOddsRows(sheet.transform, def, -248f);
 
         // One unlock at a time (Clash rule): the button greys out while another slot counts down.
         bool busy = mgr.AnyUnlocking();

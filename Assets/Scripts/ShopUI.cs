@@ -3,19 +3,24 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 using TMPro;
 
 // The SHOP screen — built entirely in code (no prefabs), same runtime-build style as
 // NavigationManager / TeamScreenUI. Hosted by NavigationManager's shop overlay; the back arrow
 // calls nav.CloseShopScreen().
 //
-// Layout: 80px top bar (back | SHOP + gear | event badge | gold/gems with [+]) — content area —
-// bottom horizontal scroll row of 9 tabs. Tab content is rebuilt on each switch.
+// Layout: 80px top bar (back | SHOP + gear | event badge | gold/gems with [+]) — ONE continuous
+// horizontal ScrollRect ("shelf") holding all 9 sections side by side — bottom row of 9 text
+// tabs that jump-scroll to their section (highlight follows free drags in real time).
 //
-// Honesty notes (see the task summary): DAILY DEALS / FREE PRIZES cooldowns are local
-// PlayerPrefs timers (no server), ADS PACK fakes the ad with a short spinner (TODO: real ad SDK),
-// COINS/GEMS/Legendary-$2.99 route through IAPBridge (stub — grants immediately), DRAFT TICKETS
-// and EVENT are declared placeholders for systems that don't exist yet.
+// Pack identity: the 4 CardTier packs (Common/Rare/Epic/Legendary Card) are the ONLY packs —
+// same defs, sprites and odds as the post-match reward slots (see CardPack.TierPackDef).
+//
+// Honesty notes: DAILY DEALS / ad-watch caps are local PlayerPrefs (no server), every WATCH
+// fakes the ad with a short spinner (TODO: real ad SDK), COINS/GEMS/Legendary-$2.99 route
+// through IAPBridge (stub — grants immediately), DRAFT TICKETS and EVENT are declared
+// placeholders for systems that don't exist yet.
 public class ShopUI : MonoBehaviour
 {
     static readonly Color DarkBar = new Color(0.04f, 0.06f, 0.13f, 0.86f);
@@ -24,20 +29,35 @@ public class ShopUI : MonoBehaviour
     static readonly Color Gold = new Color(1f, 0.82f, 0.2f);
     static readonly Color Cyan = new Color(0f, 0.85f, 1f);
     static readonly Color Green = new Color(0.2f, 0.72f, 0.32f);
+    static readonly Color BrightGreen = new Color(0.35f, 0.95f, 0.45f);
     static readonly Color Grey = new Color(0.55f, 0.6f, 0.68f);
+    static readonly Color Blue = new Color(0.18f, 0.5f, 1f);
+    static readonly Color GreyBtn = new Color(0.3f, 0.34f, 0.4f, 1f);
 
-    static Sprite rounded, circle;
+    static Sprite rounded, circle, playTriangle;
 
     static readonly string[] TabNames =
         { "OFFERS", "PACKS", "DAILY DEALS", "FREE PRIZES", "ADS PACK", "COINS", "GEMS", "DRAFT TICKETS", "EVENT" };
+    static readonly string[] SectionTitles =
+        { "OFFERS", "PACKS", "DAILY DEALS", "FREE PRIZES", "ADS PACK", "COIN PACKS", "GEM PACKS", "DRAFT TICKETS", "EVENT" };
+    // Tabs that carry a small "FREE" pill badge (reference-image style).
+    static readonly bool[] TabFreeBadge = { false, false, true, true, true, false, false, true, true };
+    // Fixed section widths — the shelf's total width is their sum + gaps.
+    static readonly float[] SectionWidths = { 460f, 1132f, 858f, 1068f, 844f, 1212f, 1212f, 700f, 820f };
+    const float SectionGap = 24f;
+    const float PackCardW = 250f, PackCardH = 400f; // ALL 4 pack cards share this exact size
 
     Transform root;
     NavigationManager nav;
     TextMeshProUGUI goldLabel, gemLabel;
-    RectTransform contentArea;
-    readonly List<Image> tabFaces = new List<Image>();
-    int tab;
-    GameObject popup;         // drop-rate info popup (destroyed on close)
+    ScrollRect shelf;
+    RectTransform shelfViewport, shelfContent;
+    readonly List<RectTransform> sectionRects = new List<RectTransform>();
+    readonly List<float> sectionCenters = new List<float>();
+    readonly List<TextMeshProUGUI> tabLabels = new List<TextMeshProUGUI>();
+    readonly List<Image> tabUnderlines = new List<Image>();
+    int activeTab;
+    Coroutine scrollRoutine;
     TextMeshProUGUI toastLabel;
     Coroutine toastRoutine;
 
@@ -61,9 +81,9 @@ public class ShopUI : MonoBehaviour
         }
 
         BuildTopBar();
-        BuildContentArea();
+        BuildShelf();
         BuildTabRow();
-        SelectTab(0);
+        HighlightTab(0);
     }
 
     void OnEnable() { RefreshCurrency(); } // overlay re-opened → fresh balances
@@ -121,12 +141,12 @@ public class ShopUI : MonoBehaviour
         gbtn.targetGraphic = gimg;
         gbtn.onClick.AddListener(() => Debug.Log("Shop settings coming soon"));
 
-        // Event badge stub → jumps to the EVENT tab.
-        Button ev = MakeButton(bar.transform, "EVENT  02D 10H", 15f, new Vector2(0.5f, 0.5f),
-                               new Vector2(-40f, 0f), new Vector2(190f, 46f),
-                               new Color(0.45f, 0.2f, 0.55f, 1f), () => SelectTab(8));
+        // Event badge stub → jumps to the EVENT section.
+        MakeButton(bar.transform, "EVENT  02D 10H", 15f, new Vector2(0.5f, 0.5f),
+                   new Vector2(-40f, 0f), new Vector2(190f, 46f),
+                   new Color(0.45f, 0.2f, 0.55f, 1f), () => SelectTab(8));
 
-        // Currencies (right→left): gold [+], gold, gem [+], gems. [+] opens the buy tabs.
+        // Currencies (right→left): gold [+], gold, gem [+], gems. [+] jumps to the buy sections.
         MakePlus(bar.transform, new Vector2(-30f, 0f), () => SelectTab(5));
         goldLabel = MakeText(bar.transform, "0", 18f, new Vector2(1f, 0.5f), new Vector2(-88f, 0f),
                              new Vector2(66f, 30f), Color.white, TextAlignmentOptions.Right);
@@ -162,190 +182,281 @@ public class ShopUI : MonoBehaviour
         SetRect(img.rectTransform, new Vector2(1f, 0.5f), pos, new Vector2(size, size));
     }
 
-    // ------------------------------------------------------------------ tabs
+    // ------------------------------------------------------------------ shelf (one horizontal scroll)
 
-    void BuildContentArea()
+    void BuildShelf()
     {
-        GameObject go = new GameObject("Content");
-        go.transform.SetParent(root, false);
-        contentArea = go.AddComponent<RectTransform>();
-        contentArea.anchorMin = Vector2.zero;
-        contentArea.anchorMax = Vector2.one;
-        contentArea.offsetMin = new Vector2(0f, 70f);   // above the tab row
-        contentArea.offsetMax = new Vector2(0f, -84f);  // below the top bar
+        GameObject vp = new GameObject("Shelf");
+        vp.transform.SetParent(root, false);
+        shelfViewport = vp.AddComponent<RectTransform>();
+        shelfViewport.anchorMin = Vector2.zero;
+        shelfViewport.anchorMax = Vector2.one;
+        shelfViewport.offsetMin = new Vector2(0f, 70f);   // above the tab row
+        shelfViewport.offsetMax = new Vector2(0f, -84f);  // below the top bar
+        Image vbg = vp.AddComponent<Image>();
+        vbg.color = new Color(0f, 0f, 0f, 0f); // invisible but raycastable → drags work anywhere
+        vp.AddComponent<RectMask2D>();
+
+        GameObject ct = new GameObject("ShelfContent");
+        ct.transform.SetParent(vp.transform, false);
+        shelfContent = ct.AddComponent<RectTransform>();
+        shelfContent.anchorMin = new Vector2(0f, 0f);
+        shelfContent.anchorMax = new Vector2(0f, 1f);
+        shelfContent.pivot = new Vector2(0f, 0.5f);
+        shelfContent.anchoredPosition = Vector2.zero;
+
+        sectionRects.Clear();
+        sectionCenters.Clear();
+        float x = SectionGap;
+        for (int i = 0; i < TabNames.Length; i++)
+        {
+            GameObject sec = new GameObject("Section_" + TabNames[i]);
+            sec.transform.SetParent(ct.transform, false);
+            RectTransform srt = sec.AddComponent<RectTransform>();
+            srt.anchorMin = new Vector2(0f, 0f);
+            srt.anchorMax = new Vector2(0f, 1f);
+            srt.pivot = new Vector2(0f, 0.5f);
+            srt.anchoredPosition = new Vector2(x, 0f);
+            srt.sizeDelta = new Vector2(SectionWidths[i], 0f);
+            sectionRects.Add(srt);
+            sectionCenters.Add(x + SectionWidths[i] * 0.5f);
+            BuildSectionContent(i);
+            x += SectionWidths[i] + SectionGap;
+        }
+        shelfContent.sizeDelta = new Vector2(x, 0f);
+
+        shelf = vp.AddComponent<ScrollRect>();
+        shelf.viewport = shelfViewport;
+        shelf.content = shelfContent;
+        shelf.horizontal = true;
+        shelf.vertical = false;
+        shelf.movementType = ScrollRect.MovementType.Clamped;
+        shelf.scrollSensitivity = 25f;
+        shelf.onValueChanged.AddListener(OnShelfScrolled);
+
+        // A manual drag cancels a running tab-jump animation immediately.
+        EventTrigger trig = vp.AddComponent<EventTrigger>();
+        EventTrigger.Entry entry = new EventTrigger.Entry { eventID = EventTriggerType.BeginDrag };
+        entry.callback.AddListener(_ => CancelAutoScroll());
+        trig.triggers.Add(entry);
     }
+
+    // Section shell (panel + title) then the per-section content. Called again by
+    // RebuildSection after state changes (e.g. a deals refresh).
+    void BuildSectionContent(int i)
+    {
+        RectTransform sec = sectionRects[i];
+        Image panel = NewImage("Panel", sec);
+        panel.sprite = Rounded(); panel.type = Image.Type.Sliced;
+        panel.color = Panel;
+        panel.raycastTarget = false;
+        RectTransform prt = panel.rectTransform;
+        prt.anchorMin = Vector2.zero; prt.anchorMax = Vector2.one;
+        prt.offsetMin = new Vector2(0f, 6f); prt.offsetMax = new Vector2(0f, -6f);
+
+        MakeText(sec, SectionTitles[i], 24f, new Vector2(0.5f, 1f), new Vector2(0f, -32f),
+                 new Vector2(SectionWidths[i] - 40f, 32f), Color.white, TextAlignmentOptions.Center);
+
+        switch (i)
+        {
+            case 0: BuildOffersSection(sec); break;
+            case 1: BuildPacksSection(sec); break;
+            case 2: BuildDailyDealsSection(sec); break;
+            case 3: BuildFreePrizesSection(sec); break;
+            case 4: BuildAdsSection(sec); break;
+            case 5: BuildCurrencySection(sec, true); break;
+            case 6: BuildCurrencySection(sec, false); break;
+            case 7: BuildDraftSection(sec); break;
+            case 8: BuildEventSection(sec); break;
+        }
+    }
+
+    void RebuildSection(int i)
+    {
+        RectTransform sec = sectionRects[i];
+        for (int c = sec.childCount - 1; c >= 0; c--) Destroy(sec.GetChild(c).gameObject);
+        BuildSectionContent(i);
+    }
+
+    // ------------------------------------------------------------------ tab row
 
     void BuildTabRow()
     {
-        const float tabW = 152f, tabH = 52f, gap = 6f;
-        GameObject scrollGo = new GameObject("TabScroll");
-        scrollGo.transform.SetParent(root, false);
-        RectTransform srt = scrollGo.AddComponent<RectTransform>();
-        srt.anchorMin = new Vector2(0f, 0f);
-        srt.anchorMax = new Vector2(1f, 0f);
-        srt.pivot = new Vector2(0.5f, 0f);
-        srt.anchoredPosition = Vector2.zero;
-        srt.sizeDelta = new Vector2(0f, 66f);
-        Image sbg = scrollGo.AddComponent<Image>();
-        sbg.color = new Color(0.02f, 0.03f, 0.08f, 0.9f);
-        scrollGo.AddComponent<RectMask2D>();
+        Image barBg = NewImage("TabBar", root);
+        barBg.color = new Color(0.02f, 0.03f, 0.08f, 0.9f);
+        RectTransform brt = barBg.rectTransform;
+        brt.anchorMin = new Vector2(0f, 0f);
+        brt.anchorMax = new Vector2(1f, 0f);
+        brt.pivot = new Vector2(0.5f, 0f);
+        brt.anchoredPosition = Vector2.zero;
+        brt.sizeDelta = new Vector2(0f, 66f);
 
-        GameObject contentGo = new GameObject("TabContent");
-        contentGo.transform.SetParent(scrollGo.transform, false);
-        RectTransform crt = contentGo.AddComponent<RectTransform>();
-        crt.anchorMin = new Vector2(0f, 0f);
-        crt.anchorMax = new Vector2(0f, 1f);
-        crt.pivot = new Vector2(0f, 0.5f);
-        crt.anchoredPosition = Vector2.zero;
-        crt.sizeDelta = new Vector2(TabNames.Length * (tabW + gap) + gap, 0f);
-
-        ScrollRect scroll = scrollGo.AddComponent<ScrollRect>();
-        scroll.viewport = srt;
-        scroll.content = crt;
-        scroll.horizontal = true;
-        scroll.vertical = false;
-        scroll.movementType = ScrollRect.MovementType.Clamped;
-        scroll.scrollSensitivity = 25f;
-
-        tabFaces.Clear();
-        for (int i = 0; i < TabNames.Length; i++)
+        tabLabels.Clear();
+        tabUnderlines.Clear();
+        int n = TabNames.Length;
+        for (int i = 0; i < n; i++)
         {
             int idx = i;
             GameObject go = new GameObject("Tab_" + TabNames[i]);
-            go.transform.SetParent(contentGo.transform, false);
+            go.transform.SetParent(barBg.transform, false);
             RectTransform rt = go.AddComponent<RectTransform>();
-            rt.anchorMin = new Vector2(0f, 0.5f);
-            rt.anchorMax = new Vector2(0f, 0.5f);
-            rt.pivot = new Vector2(0f, 0.5f);
-            rt.anchoredPosition = new Vector2(gap + i * (tabW + gap), 0f);
-            rt.sizeDelta = new Vector2(tabW, tabH);
-            Image face = go.AddComponent<Image>();
-            face.sprite = Rounded(); face.type = Image.Type.Sliced;
-            tabFaces.Add(face);
+            rt.anchorMin = new Vector2((float)i / n, 0f);
+            rt.anchorMax = new Vector2((float)(i + 1) / n, 1f);
+            rt.offsetMin = rt.offsetMax = Vector2.zero;
+            Image hit = go.AddComponent<Image>();
+            hit.color = new Color(0f, 0f, 0f, 0f); // invisible click area — no button box (reference style)
             Button b = go.AddComponent<Button>();
-            b.targetGraphic = face;
+            b.targetGraphic = hit;
+            b.transition = Selectable.Transition.None;
             b.onClick.AddListener(() => SelectTab(idx));
+
+            // Plain text label; wraps to two lines for long names ("DAILY DEALS" etc.).
             TextMeshProUGUI t = MakeText(go.transform, TabNames[i], 15f, new Vector2(0.5f, 0.5f),
-                                         Vector2.zero, new Vector2(tabW - 6f, tabH), Color.white,
+                                         new Vector2(0f, -3f), new Vector2(120f, 50f), Grey,
                                          TextAlignmentOptions.Center);
-            Stretch(t.rectTransform);
+            tabLabels.Add(t);
+
+            // Active underline (subtle, only visible on the selected tab).
+            Image ul = NewImage("Underline", go.transform);
+            ul.sprite = Rounded(); ul.type = Image.Type.Sliced;
+            ul.color = BrightGreen;
+            ul.raycastTarget = false;
+            SetRect(ul.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 6f), new Vector2(52f, 4f));
+            ul.enabled = false;
+            tabUnderlines.Add(ul);
+
+            // "FREE" pill floating above-right of the label.
+            if (TabFreeBadge[i])
+            {
+                Image pill = NewImage("Free", go.transform);
+                pill.sprite = Rounded(); pill.type = Image.Type.Sliced;
+                pill.color = Green;
+                pill.raycastTarget = false;
+                SetRect(pill.rectTransform, new Vector2(0.5f, 1f), new Vector2(36f, -2f), new Vector2(46f, 19f));
+                TextMeshProUGUI pt = MakeText(pill.transform, "FREE", 11f, new Vector2(0.5f, 0.5f),
+                                              Vector2.zero, new Vector2(46f, 19f), Color.white,
+                                              TextAlignmentOptions.Center);
+                Stretch(pt.rectTransform);
+            }
         }
-        SyncTabFaces();
     }
 
-    void SyncTabFaces()
+    void HighlightTab(int index)
     {
-        for (int i = 0; i < tabFaces.Count; i++)
-            tabFaces[i].color = i == tab ? new Color(0.13f, 0.3f, 0.45f, 1f)
-                                         : new Color(0.06f, 0.1f, 0.16f, 1f);
-    }
-
-    void SelectTab(int index)
-    {
-        tab = index;
-        SyncTabFaces();
-        for (int i = contentArea.childCount - 1; i >= 0; i--) Destroy(contentArea.GetChild(i).gameObject);
-        switch (tab)
+        activeTab = index;
+        for (int i = 0; i < tabLabels.Count; i++)
         {
-            case 0: BuildOffersTab(); break;
-            case 1: BuildPacksTab(); break;
-            case 2: BuildDailyDealsTab(); break;
-            case 3: BuildFreePrizesTab(); break;
-            case 4: BuildAdsTab(); break;
-            case 5: BuildCurrencyTab(true); break;
-            case 6: BuildCurrencyTab(false); break;
-            case 7: BuildDraftTab(); break;
-            case 8: BuildEventTab(); break;
+            tabLabels[i].color = i == index ? BrightGreen : Grey;
+            tabUnderlines[i].enabled = i == index;
         }
     }
 
-    // ------------------------------------------------------------------ tab: OFFERS
-
-    void BuildOffersTab()
+    // Tab tapped (or a top-bar shortcut): highlight it and glide the shelf to its section.
+    public void SelectTab(int index)
     {
-        // "Coach's Choice" featured offer (left): Gold-pack contents + 500 coins at a deal price.
-        Image feat = MakeCard(contentArea, new Vector2(-425f, 0f), new Vector2(370f, 470f), Gold);
-        MakeText(feat.transform, "COACH'S CHOICE", 24f, new Vector2(0.5f, 1f), new Vector2(0f, -34f),
+        HighlightTab(index);
+        CancelAutoScroll();
+        shelf.velocity = Vector2.zero;
+        scrollRoutine = StartCoroutine(ScrollShelfTo(SectionTargetNorm(index)));
+    }
+
+    float SectionTargetNorm(int index)
+    {
+        float vw = shelfViewport.rect.width;
+        float scrollable = shelfContent.rect.width - vw;
+        if (scrollable <= 0f) return 0f;
+        return Mathf.Clamp01((sectionCenters[index] - vw * 0.5f) / scrollable);
+    }
+
+    IEnumerator ScrollShelfTo(float target)
+    {
+        float start = shelf.horizontalNormalizedPosition;
+        const float dur = 0.4f;
+        float t = 0f;
+        while (t < dur)
+        {
+            t += Time.unscaledDeltaTime;
+            float k = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t / dur));
+            shelf.horizontalNormalizedPosition = Mathf.Lerp(start, target, k);
+            yield return null;
+        }
+        shelf.horizontalNormalizedPosition = target;
+        scrollRoutine = null;
+    }
+
+    void CancelAutoScroll()
+    {
+        if (scrollRoutine != null) { StopCoroutine(scrollRoutine); scrollRoutine = null; }
+    }
+
+    // Free drag → the tab highlight follows whichever section's centre is nearest the
+    // viewport centre (no snapping). Suppressed while a tab-jump animation drives the scroll.
+    void OnShelfScrolled(Vector2 _)
+    {
+        if (scrollRoutine != null) return;
+        float vw = shelfViewport.rect.width;
+        float scrollable = Mathf.Max(1f, shelfContent.rect.width - vw);
+        float viewCenter = Mathf.Clamp01(shelf.horizontalNormalizedPosition) * scrollable + vw * 0.5f;
+        int best = 0;
+        float bestDist = float.MaxValue;
+        for (int i = 0; i < sectionCenters.Count; i++)
+        {
+            float d = Mathf.Abs(sectionCenters[i] - viewCenter);
+            if (d < bestDist) { bestDist = d; best = i; }
+        }
+        if (best != activeTab) HighlightTab(best);
+    }
+
+    // ------------------------------------------------------------------ section: OFFERS
+
+    void BuildOffersSection(RectTransform sec)
+    {
+        // "Coach's Choice" featured offer: Epic Card contents + 500 coins at a deal price.
+        Image feat = MakeCard(sec, new Vector2(0.5f, 0.5f), new Vector2(0f, -14f), new Vector2(370f, 440f), Gold);
+        MakeText(feat.transform, "COACH'S CHOICE", 24f, new Vector2(0.5f, 1f), new Vector2(0f, -32f),
                  new Vector2(340f, 32f), Gold, TextAlignmentOptions.Center);
         Image fart = NewImage("Art", feat.transform);
-        fart.sprite = LoadAnySprite(CardPack.TierSprite(CardTier.Epic));
+        fart.sprite = CardPack.TierArtSprite(CardTier.Epic);
         fart.preserveAspect = true;
         fart.raycastTarget = false;
         if (fart.sprite == null) fart.color = CardPack.TierColor(CardTier.Epic);
-        SetRect(fart.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, 55f), new Vector2(190f, 190f));
-        MakeText(feat.transform, "GOLD PACK CARDS\n+ 500 COINS", 20f, new Vector2(0.5f, 0.5f),
+        SetRect(fart.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, 50f), new Vector2(180f, 180f));
+        MakeText(feat.transform, "EPIC CARD\n+ 500 COINS", 20f, new Vector2(0.5f, 0.5f),
                  new Vector2(0f, -85f), new Vector2(320f, 60f), Color.white, TextAlignmentOptions.Center);
-        MakeText(feat.transform, "250  (was 400)", 16f, new Vector2(0.5f, 0f), new Vector2(0f, 108f),
+        MakeText(feat.transform, "250  (was 400)", 16f, new Vector2(0.5f, 0f), new Vector2(0f, 102f),
                  new Vector2(300f, 24f), Grey, TextAlignmentOptions.Center);
-        MakeButton(feat.transform, "BUY  250 GEMS", 20f, new Vector2(0.5f, 0f), new Vector2(0f, 56f),
-                   new Vector2(280f, 62f), Green, () =>
+        MakeButton(feat.transform, "BUY  250 GEMS", 20f, new Vector2(0.5f, 0f), new Vector2(0f, 52f),
+                   new Vector2(280f, 58f), Green, () =>
         {
             if (!RosterManager.Instance.SpendDiamonds(250)) { Toast("NOT ENOUGH GEMS"); return; }
             RosterManager.Instance.AddCoins(500);
-            OpenAndReveal(ShopPackType.Gold);
+            OpenAndReveal(CardTier.Epic);
         });
-
-        // The 4 shop packs in a horizontal scroll to the right of the feature.
-        BuildPackRow(new Vector2(190f, 0f), new Vector2(830f, 480f), null);
     }
 
-    // ------------------------------------------------------------------ tab: PACKS
+    // ------------------------------------------------------------------ section: PACKS
 
-    void BuildPacksTab() => BuildPackRow(new Vector2(0f, 0f), new Vector2(1220f, 490f), null);
-
-    // Horizontal scroll of the 4 shop pack cards. `discounts` (nullable, per ShopPackType index)
-    // shows a % badge + reduced gem price — used by DAILY DEALS.
-    void BuildPackRow(Vector2 center, Vector2 size, int[] discounts)
+    void BuildPacksSection(RectTransform sec)
     {
-        const float cardW = 250f, cardH = 400f, gap = 20f;
-        GameObject scrollGo = new GameObject("PackScroll");
-        scrollGo.transform.SetParent(contentArea, false);
-        RectTransform srt = scrollGo.AddComponent<RectTransform>();
-        SetRect(srt, new Vector2(0.5f, 0.5f), center, size);
-        Image sbg = scrollGo.AddComponent<Image>();
-        sbg.color = new Color(0f, 0f, 0f, 0f);
-        scrollGo.AddComponent<RectMask2D>();
-
-        GameObject contentGo = new GameObject("PackContent");
-        contentGo.transform.SetParent(scrollGo.transform, false);
-        RectTransform crt = contentGo.AddComponent<RectTransform>();
-        crt.anchorMin = new Vector2(0f, 0f);
-        crt.anchorMax = new Vector2(0f, 1f);
-        crt.pivot = new Vector2(0f, 0.5f);
-        crt.anchoredPosition = Vector2.zero;
-        int count = 4;
-        crt.sizeDelta = new Vector2(count * (cardW + gap) + gap, 0f);
-
-        ScrollRect scroll = scrollGo.AddComponent<ScrollRect>();
-        scroll.viewport = srt;
-        scroll.content = crt;
-        scroll.horizontal = true;
-        scroll.vertical = false;
-        scroll.movementType = ScrollRect.MovementType.Clamped;
-        scroll.scrollSensitivity = 25f;
-
-        for (int i = 0; i < count; i++)
-        {
-            ShopPackType type = (ShopPackType)i;
-            int disc = discounts != null ? discounts[i] : 0;
-            if (discounts != null && disc <= 0) continue; // deals tab: only discounted packs
-            BuildShopPackCard(contentGo.transform, type,
-                new Vector2(gap + cardW * 0.5f + i * (cardW + gap), 0f), new Vector2(cardW, cardH), disc);
-        }
+        for (int t = 0; t < 4; t++)
+            BuildPackCard(sec, (CardTier)t, 30f + PackCardW * 0.5f + t * (PackCardW + 24f), -14f, 0, "packs");
     }
 
-    void BuildShopPackCard(Transform parent, ShopPackType type, Vector2 pos, Vector2 size, int discountPct)
+    // One uniform pack card — the SAME size/layout for all 4 tiers (and in DAILY DEALS).
+    // `capIdPrefix` keeps the Common card's WATCH counter independent per section.
+    void BuildPackCard(Transform parent, CardTier tier, float xCenter, float yCenter,
+                       int discountPct, string capIdPrefix)
     {
-        CardPack.ShopPackDef def = CardPack.GetShopPack(type);
-        Color tint = CardPack.TierColor(def.TierForArt);
+        CardPack.TierPackDef def = CardPack.GetTierPack(tier);
+        Color tint = CardPack.TierColor(tier);
 
         GameObject go = new GameObject("Pack_" + def.name);
         go.transform.SetParent(parent, false);
         RectTransform rt = go.AddComponent<RectTransform>();
         rt.anchorMin = rt.anchorMax = new Vector2(0f, 0.5f);
         rt.pivot = new Vector2(0.5f, 0.5f);
-        rt.anchoredPosition = pos;
-        rt.sizeDelta = size;
+        rt.anchoredPosition = new Vector2(xCenter, yCenter);
+        rt.sizeDelta = new Vector2(PackCardW, PackCardH);
         Image frame = go.AddComponent<Image>();
         frame.sprite = Rounded(); frame.type = Image.Type.Sliced;
         frame.color = tint;
@@ -357,29 +468,32 @@ public class ShopUI : MonoBehaviour
         frt.anchorMin = Vector2.zero; frt.anchorMax = Vector2.one;
         frt.offsetMin = new Vector2(3f, 3f); frt.offsetMax = new Vector2(-3f, -3f);
 
+        // Fixed 145x145 content box + preserveAspect + centred anchor on EVERY tier — art is
+        // alpha-trimmed by TierArtSprite, so mismatched source padding still renders uniform.
         Image art = NewImage("Art", go.transform);
-        art.sprite = LoadAnySprite(def.SpritePath);
+        art.sprite = CardPack.TierArtSprite(tier);
         art.preserveAspect = true;
         art.raycastTarget = false;
         if (art.sprite == null) art.color = tint;
-        SetRect(art.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -105f), new Vector2(150f, 150f));
+        SetRect(art.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -100f), new Vector2(145f, 145f));
 
-        MakeText(go.transform, def.name, 20f, new Vector2(0.5f, 1f), new Vector2(0f, -202f),
-                 new Vector2(size.x - 16f, 28f), tint, TextAlignmentOptions.Center);
-        MakeText(go.transform, "UP TO " + def.maxCards + " PLAYERS", 15f, new Vector2(0.5f, 1f),
-                 new Vector2(0f, -228f), new Vector2(size.x - 16f, 22f), Color.white, TextAlignmentOptions.Center);
+        MakeText(go.transform, def.name, 19f, new Vector2(0.5f, 1f), new Vector2(0f, -192f),
+                 new Vector2(PackCardW - 16f, 26f), tint, TextAlignmentOptions.Center);
+        MakeText(go.transform, "UP TO " + def.maxCards + " PLAYERS", 14f, new Vector2(0.5f, 1f),
+                 new Vector2(0f, -216f), new Vector2(PackCardW - 16f, 20f), Color.white,
+                 TextAlignmentOptions.Center);
 
-        // "i" info → drop-rate popup (image-2 layout).
+        // "i" info → the shared drop-rate popup (same table as the reward-slot popup).
         GameObject info = new GameObject("BtnInfo");
         info.transform.SetParent(go.transform, false);
-        SetRect(info.AddComponent<RectTransform>(), new Vector2(1f, 1f), new Vector2(-26f, -26f), new Vector2(44f, 44f));
+        SetRect(info.AddComponent<RectTransform>(), new Vector2(1f, 1f), new Vector2(-25f, -25f), new Vector2(40f, 40f));
         Image iimg = info.AddComponent<Image>();
         Sprite isp = LoadAnySprite("Sprites/i-button");
         if (isp != null) { iimg.sprite = isp; iimg.preserveAspect = true; }
         else { iimg.sprite = Circle(); iimg.color = Cyan; }
         Button ibtn = info.AddComponent<Button>();
         ibtn.targetGraphic = iimg;
-        ibtn.onClick.AddListener(() => ShowDropPopup(def));
+        ibtn.onClick.AddListener(() => PackInfoPopup.Show(root, tier));
 
         // Discount badge (DAILY DEALS).
         int gemPrice = def.priceGems;
@@ -396,190 +510,113 @@ public class ShopUI : MonoBehaviour
             Stretch(bt.rectTransform);
         }
 
-        // Buy buttons: gems always; plus WATCH (Basic) or $ (Legendary).
+        // Buy buttons: gems always; plus WATCH ▶ (Common, ad-capped) or $ (Legendary).
         int price = gemPrice;
         bool twoButtons = def.watchAdOption || def.realMoney != null;
-        float mainY = twoButtons ? 88f : 60f;
-        MakeButton(go.transform, price + " GEMS", 18f, new Vector2(0.5f, 0f), new Vector2(0f, mainY),
-                   new Vector2(size.x - 40f, 50f), Green, () =>
+        float mainY = twoButtons ? 84f : 56f;
+        MakeButton(go.transform, price + " GEMS", 17f, new Vector2(0.5f, 0f), new Vector2(0f, mainY),
+                   new Vector2(PackCardW - 40f, 46f), Green, () =>
         {
             if (!RosterManager.Instance.SpendDiamonds(price)) { Toast("NOT ENOUGH GEMS"); return; }
-            OpenAndReveal(type);
+            OpenAndReveal(tier);
         });
         if (def.watchAdOption)
-            MakeButton(go.transform, "WATCH", 17f, new Vector2(0.5f, 0f), new Vector2(0f, 34f),
-                       new Vector2(size.x - 40f, 44f), new Color(0.18f, 0.5f, 1f, 1f),
-                       () => StartCoroutine(FakeAdThen(() => OpenAndReveal(type))));
+            MakeWatchButton(go.transform, capIdPrefix + "_" + tier.ToString().ToLower(), "WATCH",
+                            new Vector2(0.5f, 0f), new Vector2(0f, 34f), new Vector2(PackCardW - 40f, 42f),
+                            () => OpenAndReveal(tier));
         if (def.realMoney != null)
-            MakeButton(go.transform, def.realMoney, 17f, new Vector2(0.5f, 0f), new Vector2(0f, 34f),
-                       new Vector2(size.x - 40f, 44f), Gold,
-                       () => IAPBridge.PurchaseProduct("pack_" + def.type.ToString().ToLower(),
-                                                       () => OpenAndReveal(type)));
+            MakeButton(go.transform, def.realMoney, 16f, new Vector2(0.5f, 0f), new Vector2(0f, 34f),
+                       new Vector2(PackCardW - 40f, 42f), Gold,
+                       () => IAPBridge.PurchaseProduct("pack_" + tier.ToString().ToLower(),
+                                                       () => OpenAndReveal(tier)));
     }
 
     // Buy succeeded → open, grant (dupes → coins), reveal.
-    void OpenAndReveal(ShopPackType type)
+    void OpenAndReveal(CardTier tier)
     {
-        List<CardPack.GrantResult> results = CardPack.GrantAll(CardPack.OpenShopPack(type));
+        List<CardPack.GrantResult> results = CardPack.GrantAll(CardPack.OpenTierPack(tier));
         RefreshCurrency();
         PackRevealUI.Show(root, results, RefreshCurrency);
     }
 
-    // Drop-rate popup: "chance of at least one card of X rarity" rows (image-2 layout).
-    void ShowDropPopup(CardPack.ShopPackDef def)
+    // ------------------------------------------------------------------ section: DAILY DEALS
+
+    void BuildDailyDealsSection(RectTransform sec)
     {
-        ClosePopup();
-        popup = new GameObject("DropPopup");
-        popup.transform.SetParent(root, false);
-        popup.transform.SetAsLastSibling();
-        Stretch(popup.AddComponent<RectTransform>());
-        Image dark = popup.AddComponent<Image>();
-        dark.color = new Color(0.02f, 0.03f, 0.08f, 0.9f);
-        Button db = popup.AddComponent<Button>();
-        db.targetGraphic = dark;
-        db.onClick.AddListener(ClosePopup);
-
-        Image sheet = MakeCard(popup.transform, Vector2.zero, new Vector2(560f, 430f),
-                               CardPack.TierColor(def.TierForArt));
-        MakeText(sheet.transform, def.name, 26f, new Vector2(0.5f, 1f), new Vector2(0f, -40f),
-                 new Vector2(500f, 34f), CardPack.TierColor(def.TierForArt), TextAlignmentOptions.Center);
-        MakeText(sheet.transform, "UP TO " + def.maxCards + " PLAYERS", 17f, new Vector2(0.5f, 1f),
-                 new Vector2(0f, -76f), new Vector2(500f, 24f), Color.white, TextAlignmentOptions.Center);
-        MakeText(sheet.transform, "CHANCE OF AT LEAST ONE CARD OF:", 15f, new Vector2(0.5f, 1f),
-                 new Vector2(0f, -112f), new Vector2(500f, 22f), Grey, TextAlignmentOptions.Center);
-
-        float y = -152f;
-        foreach (var (rarity, chance) in def.dropTable)
-        {
-            Image dot = NewImage("Dot", sheet.transform);
-            dot.sprite = Circle();
-            dot.color = PlayerData.RarityTint(rarity);
-            dot.raycastTarget = false;
-            SetRect(dot.rectTransform, new Vector2(0.5f, 1f), new Vector2(-150f, y), new Vector2(22f, 22f));
-            MakeText(sheet.transform, rarity.ToString().ToUpper(), 18f, new Vector2(0.5f, 1f),
-                     new Vector2(-20f, y), new Vector2(220f, 26f), Color.white, TextAlignmentOptions.Left);
-            MakeText(sheet.transform, chance >= 1f ? "GUARANTEED" : (chance * 100f).ToString("0.#") + "%",
-                     18f, new Vector2(0.5f, 1f), new Vector2(140f, y), new Vector2(180f, 26f), Gold,
-                     TextAlignmentOptions.Right);
-            y -= 40f;
-        }
-        MakeButton(sheet.transform, "OK", 20f, new Vector2(0.5f, 0f), new Vector2(0f, 44f),
-                   new Vector2(180f, 54f), Green, ClosePopup);
-    }
-
-    void ClosePopup() { if (popup != null) { Destroy(popup); popup = null; } }
-
-    // ------------------------------------------------------------------ tab: DAILY DEALS
-
-    void BuildDailyDealsTab()
-    {
-        // Session-simple rotation: the deal set + discounts derive from the UTC day number, and the
-        // countdown targets the next UTC midnight. Local-only (no server) — resets are per-device.
-        long day = (long)(DateTime.UtcNow - new DateTime(2026, 1, 1)).TotalDays;
-        int[] discounts = new int[4];
-        for (int i = 0; i < 4; i++) discounts[i] = 0;
-        // 3 of the 4 packs are on sale each day; which one sits out rotates daily.
-        int skip = (int)(day % 4);
+        // Local rotation (no server): the deal set derives from the UTC day number plus the
+        // ad-watched refresh count, and the countdown targets the next UTC midnight.
+        int seed = Mathf.Abs((int)(UtcDay() % 100000)) + AdWatchesUsed("deals_refresh") * 31;
+        int skip = seed % 4;
         int[] pcts = { 30, 40, 50 };
-        int pi = 0;
-        for (int i = 0; i < 4; i++)
-            if (i != skip) discounts[i] = pcts[(pi++ + (int)day) % pcts.Length];
 
         TimeSpan left = DateTime.UtcNow.Date.AddDays(1) - DateTime.UtcNow;
-        MakeText(contentArea, "DEALS REFRESH IN " + (int)left.TotalHours + "H " + left.Minutes + "M",
-                 18f, new Vector2(0.5f, 1f), new Vector2(0f, -22f), new Vector2(600f, 26f), Cyan,
-                 TextAlignmentOptions.Center);
-        BuildPackRow(new Vector2(0f, -20f), new Vector2(1220f, 440f), discounts);
-    }
+        MakeText(sec, "REFRESH IN " + (int)left.TotalHours + "H " + left.Minutes + "M", 15f,
+                 new Vector2(0f, 1f), new Vector2(130f, -32f), new Vector2(240f, 24f), Cyan,
+                 TextAlignmentOptions.Left);
+        // Ad-watched reroll, capped 3/day like every WATCH button.
+        MakeWatchButton(sec, "deals_refresh", "REFRESH", new Vector2(1f, 1f), new Vector2(-110f, -34f),
+                        new Vector2(180f, 42f), () => RebuildSection(2));
 
-    // ------------------------------------------------------------------ tab: FREE PRIZES
-
-    void BuildFreePrizesTab()
-    {
-        // Local 6h cooldowns via PlayerPrefs ticks (same pattern as the division unlocks) —
-        // no server, so clearing PlayerPrefs resets them.
-        BuildFreePrize(0, "100 COINS", new Vector2(-380f, 20f), () => RosterManager.Instance.AddCoins(100));
-        BuildFreePrize(1, "10 GEMS", new Vector2(0f, 20f), () => RosterManager.Instance.AddDiamonds(10));
-        BuildFreePrize(2, "FREE BASIC PACK", new Vector2(380f, 20f), () => OpenAndReveal(ShopPackType.Basic));
-    }
-
-    void BuildFreePrize(int index, string label, Vector2 pos, Action grant)
-    {
-        const double cooldownHours = 6;
-        string key = "shop_free_" + index;
-        Image card = MakeCard(contentArea, pos, new Vector2(340f, 300f), new Color(0.227f, 0.353f, 0.478f, 1f));
-        MakeText(card.transform, "FREE PRIZE", 17f, new Vector2(0.5f, 1f), new Vector2(0f, -34f),
-                 new Vector2(300f, 24f), Cyan, TextAlignmentOptions.Center);
-        MakeText(card.transform, label, 24f, new Vector2(0.5f, 0.5f), new Vector2(0f, 20f),
-                 new Vector2(300f, 60f), Gold, TextAlignmentOptions.Center);
-
-        long last = long.TryParse(PlayerPrefs.GetString(key, "0"), out long v) ? v : 0;
-        double remaining = cooldownHours * 3600 -
-                           (DateTime.UtcNow - new DateTime(last, DateTimeKind.Utc)).TotalSeconds;
-        if (remaining > 0)
+        int col = 0;
+        for (int t = 0; t < 4; t++)
         {
-            MakeText(card.transform, "NEXT IN " + PostMatchRewardManager.FormatRemaining(remaining), 17f,
-                     new Vector2(0.5f, 0f), new Vector2(0f, 62f), new Vector2(300f, 26f), Grey,
-                     TextAlignmentOptions.Center);
-        }
-        else
-        {
-            MakeButton(card.transform, "CLAIM", 20f, new Vector2(0.5f, 0f), new Vector2(0f, 48f),
-                       new Vector2(220f, 56f), Green, () =>
-            {
-                PlayerPrefs.SetString(key, DateTime.UtcNow.Ticks.ToString());
-                PlayerPrefs.Save();
-                grant();
-                RefreshCurrency();
-                Toast("CLAIMED: " + label);
-                SelectTab(3); // rebuild → shows the cooldown
-            });
+            if (t == skip) continue;
+            int pct = pcts[(col + seed) % pcts.Length];
+            BuildPackCard(sec, (CardTier)t, 30f + PackCardW * 0.5f + col * (PackCardW + 24f), -24f, pct, "deals");
+            col++;
         }
     }
 
-    // ------------------------------------------------------------------ tab: ADS PACK
+    // ------------------------------------------------------------------ section: FREE PRIZES
 
-    void BuildAdsTab()
+    void BuildFreePrizesSection(RectTransform sec)
+    {
+        BuildFreePrizeCard(sec, 0, "100 COINS", 30f + 160f,
+            () => { RosterManager.Instance.AddCoins(100); RefreshCurrency(); Toast("+100 COINS"); });
+        BuildFreePrizeCard(sec, 1, "10 GEMS", 30f + 160f + 344f,
+            () => { RosterManager.Instance.AddDiamonds(10); RefreshCurrency(); Toast("+10 GEMS"); });
+        BuildFreePrizeCard(sec, 2, "COMMON CARD", 30f + 160f + 688f,
+            () => OpenAndReveal(CardTier.Common));
+    }
+
+    // Watch-to-claim prize card; each claim button has its own 3/day ad cap.
+    void BuildFreePrizeCard(RectTransform sec, int index, string label, float xCenter, Action grant)
+    {
+        Image card = MakeCard(sec, new Vector2(0f, 0.5f), new Vector2(xCenter, -14f),
+                              new Vector2(320f, 300f), new Color(0.227f, 0.353f, 0.478f, 1f));
+        MakeText(card.transform, "FREE PRIZE", 16f, new Vector2(0.5f, 1f), new Vector2(0f, -32f),
+                 new Vector2(280f, 24f), Cyan, TextAlignmentOptions.Center);
+        MakeText(card.transform, label, 24f, new Vector2(0.5f, 0.5f), new Vector2(0f, 16f),
+                 new Vector2(280f, 60f), Gold, TextAlignmentOptions.Center);
+        MakeWatchButton(card.transform, "free_" + index, "FREE", new Vector2(0.5f, 0f),
+                        new Vector2(0f, 46f), new Vector2(210f, 50f), grant);
+    }
+
+    // ------------------------------------------------------------------ section: ADS PACK
+
+    void BuildAdsSection(RectTransform sec)
     {
         // TODO(ads): integrate a real rewarded-ad SDK (AdMob or similar). For now WATCH fakes a
         // short loading pause and grants immediately so the whole flow is testable in-game.
-        BuildAdCard("WATCH AD\n30 GEMS", new Vector2(-250f, 20f),
+        BuildAdCard(sec, "WATCH AD\n30 GEMS", 30f + 190f, "ads_gems",
                     () => { RosterManager.Instance.AddDiamonds(30); RefreshCurrency(); Toast("+30 GEMS"); });
-        BuildAdCard("WATCH AD\nBASIC PACK", new Vector2(250f, 20f),
-                    () => OpenAndReveal(ShopPackType.Basic));
+        BuildAdCard(sec, "WATCH AD\nCOMMON CARD", 30f + 190f + 404f, "ads_common",
+                    () => OpenAndReveal(CardTier.Common));
     }
 
-    void BuildAdCard(string label, Vector2 pos, Action grant)
+    void BuildAdCard(RectTransform sec, string label, float xCenter, string capId, Action grant)
     {
-        Image card = MakeCard(contentArea, pos, new Vector2(380f, 320f), new Color(0.18f, 0.5f, 1f, 1f));
-        MakeText(card.transform, label, 24f, new Vector2(0.5f, 0.5f), new Vector2(0f, 40f),
+        Image card = MakeCard(sec, new Vector2(0f, 0.5f), new Vector2(xCenter, -14f),
+                              new Vector2(380f, 310f), Blue);
+        MakeText(card.transform, label, 24f, new Vector2(0.5f, 0.5f), new Vector2(0f, 34f),
                  new Vector2(340f, 80f), Color.white, TextAlignmentOptions.Center);
-        Button watch = MakeButton(card.transform, "WATCH", 20f, new Vector2(0.5f, 0f), new Vector2(0f, 52f),
-                                  new Vector2(240f, 58f), Green, null);
-        TextMeshProUGUI wl = watch.GetComponentInChildren<TextMeshProUGUI>();
-        watch.onClick.AddListener(() =>
-        {
-            watch.interactable = false;
-            if (wl != null) wl.text = "LOADING...";
-            StartCoroutine(FakeAdThen(() =>
-            {
-                grant();
-                if (watch != null) watch.interactable = true;
-                if (wl != null) wl.text = "WATCH";
-            }));
-        });
+        MakeWatchButton(card.transform, capId, "WATCH", new Vector2(0.5f, 0f), new Vector2(0f, 46f),
+                        new Vector2(220f, 52f), grant);
     }
 
-    // Fake ad: ~0.8s "loading" pause, then the reward. TODO(ads): replace with the real SDK call.
-    IEnumerator FakeAdThen(Action grant)
-    {
-        yield return new WaitForSecondsRealtime(0.8f);
-        grant?.Invoke();
-    }
+    // ------------------------------------------------------------------ sections: COINS / GEMS
 
-    // ------------------------------------------------------------------ tabs: COINS / GEMS
-
-    void BuildCurrencyTab(bool coins)
+    void BuildCurrencySection(RectTransform sec, bool coins)
     {
         (string price, int amount)[] offers = coins
             ? new[] { ("$0.99", 1000), ("$2.99", 3500), ("$4.99", 7000), ("$9.99", 16000) }
@@ -587,15 +624,12 @@ public class ShopUI : MonoBehaviour
         string icon = coins ? "Sprites/gold-coin" : "Sprites/diamond-coin";
         string unit = coins ? " COINS" : " GEMS";
 
-        MakeText(contentArea, coins ? "BUY COINS" : "BUY GEMS", 26f, new Vector2(0.5f, 1f),
-                 new Vector2(0f, -24f), new Vector2(500f, 34f), Gold, TextAlignmentOptions.Center);
-
         for (int i = 0; i < offers.Length; i++)
         {
             int amount = offers[i].amount;
             string price = offers[i].price;
-            float cx = (i - (offers.Length - 1) * 0.5f) * 300f;
-            Image card = MakeCard(contentArea, new Vector2(cx, -10f), new Vector2(270f, 330f),
+            float cx = 30f + 135f + i * 294f;
+            Image card = MakeCard(sec, new Vector2(0f, 0.5f), new Vector2(cx, -14f), new Vector2(270f, 330f),
                                   new Color(0.227f, 0.353f, 0.478f, 1f));
             Image ic = NewImage("Icon", card.transform);
             ic.sprite = LoadAnySprite(icon);
@@ -617,13 +651,13 @@ public class ShopUI : MonoBehaviour
         }
     }
 
-    // ------------------------------------------------------------------ tab: DRAFT TICKETS
+    // ------------------------------------------------------------------ section: DRAFT TICKETS
 
-    void BuildDraftTab()
+    void BuildDraftSection(RectTransform sec)
     {
         // Honest placeholder: no draft game mode exists yet, so there's nothing to buy or spend
-        // tickets on. This tab just states that instead of faking a system with no destination.
-        Image card = MakeCard(contentArea, new Vector2(0f, 20f), new Vector2(640f, 320f),
+        // tickets on. This section just states that instead of faking a system with no destination.
+        Image card = MakeCard(sec, new Vector2(0.5f, 0.5f), new Vector2(0f, -14f), new Vector2(620f, 320f),
                               new Color(0.227f, 0.353f, 0.478f, 1f));
         MakeText(card.transform, "DRAFT TICKETS: 0", 28f, new Vector2(0.5f, 1f), new Vector2(0f, -50f),
                  new Vector2(560f, 36f), Cyan, TextAlignmentOptions.Center);
@@ -634,16 +668,16 @@ public class ShopUI : MonoBehaviour
                  Color.white, TextAlignmentOptions.Center);
     }
 
-    // ------------------------------------------------------------------ tab: EVENT
+    // ------------------------------------------------------------------ section: EVENT
 
-    void BuildEventTab()
+    void BuildEventSection(RectTransform sec)
     {
         // Honest stub: no live-event backend exists. Static banner + countdown to a placeholder date.
         DateTime target = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
         TimeSpan left = target - DateTime.UtcNow;
         string cd = left.TotalSeconds > 0 ? (int)left.TotalDays + "D " + left.Hours + "H" : "ENDED";
 
-        Image card = MakeCard(contentArea, new Vector2(0f, 20f), new Vector2(760f, 340f), Gold);
+        Image card = MakeCard(sec, new Vector2(0.5f, 0.5f), new Vector2(0f, -14f), new Vector2(740f, 340f), Gold);
         MakeText(card.transform, "GLOBAL CUP", 40f, new Vector2(0.5f, 1f), new Vector2(0f, -70f),
                  new Vector2(700f, 50f), Gold, TextAlignmentOptions.Center);
         MakeText(card.transform, "STARTS IN " + cd, 22f, new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
@@ -651,6 +685,88 @@ public class ShopUI : MonoBehaviour
         MakeText(card.transform, "Live events aren't built yet — this is a placeholder banner.",
                  16f, new Vector2(0.5f, 0f), new Vector2(0f, 50f), new Vector2(640f, 26f), Grey,
                  TextAlignmentOptions.Center);
+    }
+
+    // ------------------------------------------------------------------ watch-ad cap (3 per button per day)
+
+    const int AdDailyCap = 3;
+
+    // Same UTC-day-number pattern as the daily-deals rotation.
+    static long UtcDay() => (long)(DateTime.UtcNow - new DateTime(2026, 1, 1)).TotalDays;
+
+    static int AdWatchesUsed(string id)
+    {
+        if (PlayerPrefs.GetInt("adwatch_day_" + id, -1) != (int)UtcDay()) return 0; // stale day → fresh cap
+        return PlayerPrefs.GetInt("adwatch_n_" + id, 0);
+    }
+
+    static void RecordAdWatch(string id)
+    {
+        int used = AdWatchesUsed(id); // read BEFORE stamping today's day
+        PlayerPrefs.SetInt("adwatch_day_" + id, (int)UtcDay());
+        PlayerPrefs.SetInt("adwatch_n_" + id, used + 1);
+        PlayerPrefs.Save();
+    }
+
+    static string AdResetLabel()
+    {
+        TimeSpan left = DateTime.UtcNow.Date.AddDays(1) - DateTime.UtcNow;
+        if (left.TotalHours >= 1) return "RESETS IN " + (int)Math.Ceiling(left.TotalHours) + "H";
+        return "RESETS IN " + Math.Max(1, left.Minutes) + "M";
+    }
+
+    // Compact watch-ad button: text label + small inline play-triangle (no big camera block).
+    // Tracks its own PlayerPrefs counter under `id`; at 3 uses it greys out until UTC midnight.
+    Button MakeWatchButton(Transform parent, string id, string label, Vector2 anchor, Vector2 pos,
+                           Vector2 size, Action onReward)
+    {
+        bool capped = AdWatchesUsed(id) >= AdDailyCap;
+
+        GameObject go = new GameObject("BtnWatch_" + id);
+        go.transform.SetParent(parent, false);
+        SetRect(go.AddComponent<RectTransform>(), anchor, pos, size);
+        Image img = go.AddComponent<Image>();
+        img.sprite = Rounded(); img.type = Image.Type.Sliced;
+        img.color = capped ? GreyBtn : Blue;
+        Button btn = go.AddComponent<Button>();
+        btn.targetGraphic = img;
+        btn.interactable = !capped;
+
+        TextMeshProUGUI txt = MakeText(go.transform, capped ? AdResetLabel() : label, 15f,
+                                       new Vector2(0.5f, 0.5f), new Vector2(-8f, 0f),
+                                       new Vector2(size.x - 30f, size.y), Color.white,
+                                       TextAlignmentOptions.Center);
+        Image tri = NewImage("Play", go.transform);
+        tri.sprite = PlayTriangle();
+        tri.color = Color.white;
+        tri.raycastTarget = false;
+        SetRect(tri.rectTransform, new Vector2(1f, 0.5f), new Vector2(-16f, 0f), new Vector2(13f, 15f));
+        tri.gameObject.SetActive(!capped);
+
+        if (!capped) btn.onClick.AddListener(() =>
+        {
+            btn.interactable = false;
+            txt.text = "LOADING...";
+            tri.gameObject.SetActive(false);
+            StartCoroutine(FakeAdThen(() =>
+            {
+                RecordAdWatch(id);
+                if (btn != null) // section may get rebuilt by onReward — update in place first
+                {
+                    if (AdWatchesUsed(id) >= AdDailyCap) { img.color = GreyBtn; txt.text = AdResetLabel(); }
+                    else { btn.interactable = true; txt.text = label; tri.gameObject.SetActive(true); }
+                }
+                onReward?.Invoke();
+            }));
+        });
+        return btn;
+    }
+
+    // Fake ad: ~0.8s "loading" pause, then the reward. TODO(ads): replace with the real SDK call.
+    IEnumerator FakeAdThen(Action grant)
+    {
+        yield return new WaitForSecondsRealtime(0.8f);
+        grant?.Invoke();
     }
 
     // ------------------------------------------------------------------ toast
@@ -684,12 +800,12 @@ public class ShopUI : MonoBehaviour
 
     // ------------------------------------------------------------------ helpers
 
-    Image MakeCard(Transform parent, Vector2 pos, Vector2 size, Color border)
+    Image MakeCard(Transform parent, Vector2 anchor, Vector2 pos, Vector2 size, Color border)
     {
         Image frame = NewImage("Card", parent);
         frame.sprite = Rounded(); frame.type = Image.Type.Sliced;
         frame.color = border;
-        SetRect(frame.rectTransform, new Vector2(0.5f, 0.5f), pos, size);
+        SetRect(frame.rectTransform, anchor, pos, size);
         Image fill = NewImage("Fill", frame.transform);
         fill.sprite = Rounded(); fill.type = Image.Type.Sliced;
         fill.color = CardFill;
@@ -816,5 +932,29 @@ public class ShopUI : MonoBehaviour
         tex.wrapMode = TextureWrapMode.Clamp;
         circle = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
         return circle;
+    }
+
+    // Small right-pointing play triangle (text-height ▶ icon for watch buttons).
+    static Sprite PlayTriangle()
+    {
+        if (playTriangle != null) return playTriangle;
+        const int size = 64;
+        Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        Color32[] px = new Color32[size * size];
+        for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                // inside when x within [0, size) and |y - centre| <= half-height at that x
+                float progress = x / (float)(size - 1);            // 0 at left edge → 1 at tip
+                float halfH = (1f - progress) * (size * 0.5f - 1f);
+                float dy = Mathf.Abs(y - (size * 0.5f - 0.5f));
+                float a = Mathf.Clamp01(halfH - dy + 1f);
+                px[y * size + x] = new Color32(255, 255, 255, (byte)(a * 255f));
+            }
+        tex.SetPixels32(px);
+        tex.Apply();
+        tex.wrapMode = TextureWrapMode.Clamp;
+        playTriangle = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+        return playTriangle;
     }
 }

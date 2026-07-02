@@ -1,7 +1,7 @@
 using System;
 using UnityEngine;
 
-// The ONE entry point for every real-money purchase (Legendary Pack, Coins tab, Gems tab).
+// The ONE entry point for every real-money purchase (Legendary Card, Coins tab, Gems tab).
 // Per project rule: mobile payments are Apple/Google in-app billing only — this bridge is where
 // Unity IAP plugs in later. Until the Unity IAP package + store console products exist, it's a
 // stub that "succeeds" immediately so the buttons are fully wired in-game.

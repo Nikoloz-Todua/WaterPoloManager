@@ -127,7 +127,7 @@ public class PackRevealUI : MonoBehaviour
         return t;
     }
 
-    static Sprite Rounded()
+    internal static Sprite Rounded()
     {
         if (rounded != null) return rounded;
         const int size = 128, corner = 20;
@@ -148,5 +148,161 @@ public class PackRevealUI : MonoBehaviour
         rounded = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f, 0,
                                 SpriteMeshType.FullRect, new Vector4(corner + 2, corner + 2, corner + 2, corner + 2));
         return rounded;
+    }
+}
+
+// Shared "i" drop-rate popup for a card pack — ONE layout, ONE data source (the tier's per-card
+// odds table in CardPack.TierPackDef). Used by the shop pack cards (Show) and by the hub
+// reward-slot popup (BuildOddsRows), so both places render the identical table.
+public static class PackInfoPopup
+{
+    static Sprite circle; // local cache; regenerated after a domain reload
+
+    // Full-screen self-contained popup (dark backdrop tap or OK closes it).
+    public static void Show(Transform canvasParent, CardTier tier)
+    {
+        CardPack.TierPackDef def = CardPack.GetTierPack(tier);
+        Color tint = CardPack.TierColor(tier);
+
+        GameObject ov = new GameObject("PackInfoPopup");
+        ov.transform.SetParent(canvasParent, false);
+        ov.transform.SetAsLastSibling();
+        RectTransform ort = ov.AddComponent<RectTransform>();
+        ort.anchorMin = Vector2.zero; ort.anchorMax = Vector2.one;
+        ort.offsetMin = ort.offsetMax = Vector2.zero;
+        Image dark = ov.AddComponent<Image>();
+        dark.color = new Color(0.02f, 0.03f, 0.08f, 0.9f);
+        Button db = ov.AddComponent<Button>();
+        db.targetGraphic = dark;
+        db.onClick.AddListener(() => UnityEngine.Object.Destroy(ov));
+
+        Image frame = NewImage(ov.transform, "Sheet");
+        frame.sprite = PackRevealUI.Rounded(); frame.type = Image.Type.Sliced;
+        frame.color = tint;
+        SetRect(frame.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(560f, 500f));
+        Image fill = NewImage(frame.transform, "Fill");
+        fill.sprite = PackRevealUI.Rounded(); fill.type = Image.Type.Sliced;
+        fill.color = new Color(0.05f, 0.09f, 0.16f, 1f);
+        fill.raycastTarget = false;
+        RectTransform frt = fill.rectTransform;
+        frt.anchorMin = Vector2.zero; frt.anchorMax = Vector2.one;
+        frt.offsetMin = new Vector2(3f, 3f); frt.offsetMax = new Vector2(-3f, -3f);
+
+        Image art = NewImage(frame.transform, "PackArt");
+        art.sprite = CardPack.TierArtSprite(def.tier);
+        art.preserveAspect = true;
+        art.raycastTarget = false;
+        if (art.sprite == null) art.color = tint;
+        SetRect(art.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -70f), new Vector2(110f, 110f));
+
+        MakeText(frame.transform, def.name, 26f, new Vector2(0.5f, 1f), new Vector2(0f, -146f),
+                 new Vector2(500f, 34f), tint, TextAlignmentOptions.Center);
+        MakeText(frame.transform, "UP TO " + def.maxCards + " PLAYERS", 17f, new Vector2(0.5f, 1f),
+                 new Vector2(0f, -180f), new Vector2(500f, 24f), Color.white, TextAlignmentOptions.Center);
+
+        BuildOddsRows(frame.transform, def, -216f);
+
+        GameObject ok = new GameObject("BtnOK");
+        ok.transform.SetParent(frame.transform, false);
+        RectTransform okr = ok.AddComponent<RectTransform>();
+        okr.anchorMin = okr.anchorMax = new Vector2(0.5f, 0f);
+        okr.pivot = new Vector2(0.5f, 0.5f);
+        okr.anchoredPosition = new Vector2(0f, 42f);
+        okr.sizeDelta = new Vector2(180f, 52f);
+        Image okImg = ok.AddComponent<Image>();
+        okImg.sprite = PackRevealUI.Rounded(); okImg.type = Image.Type.Sliced;
+        okImg.color = new Color(0.2f, 0.72f, 0.32f);
+        Button okBtn = ok.AddComponent<Button>();
+        okBtn.targetGraphic = okImg;
+        okBtn.onClick.AddListener(() => UnityEngine.Object.Destroy(ov));
+        TextMeshProUGUI okTxt = MakeText(ok.transform, "OK", 20f, new Vector2(0.5f, 0.5f), Vector2.zero,
+                                         okr.sizeDelta, Color.white, TextAlignmentOptions.Center);
+        okTxt.rectTransform.anchorMin = Vector2.zero;
+        okTxt.rectTransform.anchorMax = Vector2.one;
+        okTxt.rectTransform.offsetMin = okTxt.rectTransform.offsetMax = Vector2.zero;
+    }
+
+    // The shared table: grey caption, one row per rarity (dot / name / %), and the
+    // guaranteed-legendary note. `y` is the caption's offset from the sheet's top centre;
+    // returns the y below the last row. Rows anchor to (0.5, 1) of `sheet`.
+    public static float BuildOddsRows(Transform sheet, CardPack.TierPackDef def, float y)
+    {
+        MakeText(sheet, "DROP RATES PER CARD", 15f, new Vector2(0.5f, 1f), new Vector2(0f, y),
+                 new Vector2(400f, 22f), new Color(0.55f, 0.6f, 0.68f), TextAlignmentOptions.Center);
+        y -= 34f;
+        foreach (var (rarity, weight) in def.odds)
+        {
+            Image dot = NewImage(sheet, "Dot");
+            dot.sprite = Circle();
+            dot.color = PlayerData.RarityTint(rarity);
+            dot.raycastTarget = false;
+            SetRect(dot.rectTransform, new Vector2(0.5f, 1f), new Vector2(-160f, y), new Vector2(20f, 20f));
+            MakeText(sheet, rarity.ToString().ToUpper(), 17f, new Vector2(0.5f, 1f),
+                     new Vector2(-30f, y), new Vector2(220f, 24f), Color.white, TextAlignmentOptions.Left);
+            MakeText(sheet, (weight * 100f).ToString("0.#") + "%", 17f, new Vector2(0.5f, 1f),
+                     new Vector2(130f, y), new Vector2(120f, 24f), new Color(1f, 0.82f, 0.2f),
+                     TextAlignmentOptions.Right);
+            y -= 32f;
+        }
+        if (def.guaranteedLegendary)
+        {
+            MakeText(sheet, "AT LEAST ONE LEGENDARY GUARANTEED", 15f, new Vector2(0.5f, 1f),
+                     new Vector2(0f, y - 4f), new Vector2(460f, 22f), new Color(1f, 0.82f, 0.2f),
+                     TextAlignmentOptions.Center);
+            y -= 34f;
+        }
+        return y;
+    }
+
+    static Image NewImage(Transform parent, string name)
+    {
+        GameObject go = new GameObject(name);
+        go.transform.SetParent(parent, false);
+        return go.AddComponent<Image>();
+    }
+
+    static TextMeshProUGUI MakeText(Transform parent, string content, float size, Vector2 anchor,
+                                    Vector2 pos, Vector2 box, Color color, TextAlignmentOptions align)
+    {
+        GameObject go = new GameObject("Text");
+        go.transform.SetParent(parent, false);
+        TextMeshProUGUI txt = go.AddComponent<TextMeshProUGUI>();
+        txt.text = content;
+        txt.fontSize = size;
+        txt.fontStyle = FontStyles.Bold;
+        txt.color = color;
+        txt.alignment = align;
+        txt.raycastTarget = false;
+        SetRect(txt.rectTransform, anchor, pos, box);
+        return txt;
+    }
+
+    static void SetRect(RectTransform rt, Vector2 anchor, Vector2 pos, Vector2 size)
+    {
+        rt.anchorMin = rt.anchorMax = anchor;
+        rt.pivot = new Vector2(0.5f, 0.5f);
+        rt.anchoredPosition = pos;
+        rt.sizeDelta = size;
+    }
+
+    static Sprite Circle()
+    {
+        if (circle != null) return circle;
+        const int size = 64;
+        Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        Color32[] px = new Color32[size * size];
+        float r = size * 0.5f - 1f;
+        Vector2 c = new Vector2(size * 0.5f - 0.5f, size * 0.5f - 0.5f);
+        for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                float d = Vector2.Distance(new Vector2(x, y), c);
+                px[y * size + x] = new Color32(255, 255, 255, (byte)(Mathf.Clamp01(r - d) * 255f));
+            }
+        tex.SetPixels32(px);
+        tex.Apply();
+        tex.wrapMode = TextureWrapMode.Clamp;
+        circle = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+        return circle;
     }
 }
