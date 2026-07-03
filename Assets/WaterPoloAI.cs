@@ -219,6 +219,18 @@ public static class WaterPoloBrain
         if (presser == a.Tf && !enemyFreeThrow) // no pressing/chasing/stealing during a free throw
         {
             if (TryStealAI(a, ctx, enemy)) return;
+            // A ball-holding keeper in its safe zone can't be pressed — hold a standoff spot just
+            // outside the protect radius instead of sprinting at it. The old chase/push-out loop
+            // jittered on the radius boundary and kept the keeper's outlet pass jammed.
+            Transform holder = ctx.Ball.transform.parent;
+            if (holder != null && ctx.IsProtectedKeeper(holder))
+            {
+                Vector2 away = a.Body.position - (Vector2)holder.position;
+                if (away.sqrMagnitude < 1e-4f) away = Vector2.down;
+                MoveTo(a, (Vector2)holder.position + away.normalized * (KeeperProtectRadius + 0.4f),
+                       a.SupportSpeed);
+                return;
+            }
             ChaseBall(a, ctx);
         }
         else if (a.Team.defenseMode == TeamSide.DefenseMode.Zone)
@@ -933,7 +945,7 @@ public static class WaterPoloBrain
     static void Shoot(IAgentBody a, MatchContext ctx)
     {
         ctx.NoteRelease(a.Tf); // remember the shooter (Centre-goal tracking)
-        DetachBall(ctx);
+        DetachBall(a, ctx);
         // Set velocity directly so the shot is mass-independent (no weak/zeroed shot).
         ctx.Ball.linearVelocity = a.LastDirection * a.ShootPower;
         a.IsHolding = false;
@@ -947,7 +959,7 @@ public static class WaterPoloBrain
         a.LastDirection = dir;
 
         ctx.NoteRelease(a.Tf);
-        DetachBall(ctx);
+        DetachBall(a, ctx);
         ctx.Ball.linearVelocity = dir * Mathf.Clamp(dist * PassFactor, MinPassSpeed, MaxPassSpeed);
         if (BallFlight.Instance != null) BallFlight.Instance.NotePass(); // plain pass → no swell/trail
         a.IsHolding = false;
@@ -957,14 +969,17 @@ public static class WaterPoloBrain
     static void Release(IAgentBody a, MatchContext ctx)
     {
         ctx.NoteRelease(a.Tf);
-        DetachBall(ctx);
+        DetachBall(a, ctx);
         a.IsHolding = false;
         ctx.SetPossession(null);
     }
 
-    // Un-parent the ball and hand it back to physics with a clean slate.
-    static void DetachBall(MatchContext ctx)
+    // Un-parent the ball and hand it back to physics with a clean slate. The self-collision
+    // window keeps the release from deflecting off the releaser's own body (the held ball sits
+    // at the hold offset — touching or inside our collider for many release angles).
+    static void DetachBall(IAgentBody a, MatchContext ctx)
     {
+        ctx.IgnoreReleaseCollision(a.Tf);
         ctx.Ball.transform.SetParent(null);
         ctx.Ball.simulated = true;
         ctx.Ball.linearVelocity = Vector2.zero;

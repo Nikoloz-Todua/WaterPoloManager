@@ -57,7 +57,15 @@ public class PackCardFX : MonoBehaviour
                 : new Vector2(box.y * aspect, box.y);  // taller than the box → full height
         }
 
-        if (GetComponent<RectMask2D>() == null) gameObject.AddComponent<RectMask2D>();
+        RectMask2D mask = GetComponent<RectMask2D>();
+        if (mask == null) mask = gameObject.AddComponent<RectMask2D>();
+        // Inset the mask a hair below the art bounds (~4% per side, 3-10px). The alpha-trim
+        // threshold and sub-pixel rounding leave slack at the edges, so a mask sized exactly to
+        // the rect still let the sweep peek past the visible art. A slightly smaller sweep is
+        // fine; guaranteed containment matters more. padding = (left, bottom, right, top).
+        float padX = Mathf.Clamp(rt.sizeDelta.x * 0.04f, 3f, 10f);
+        float padY = Mathf.Clamp(rt.sizeDelta.y * 0.04f, 3f, 10f);
+        mask.padding = new Vector4(padX, padY, padX, padY);
 
         // Shine bar: a soft white band, wider than tall, rotated to sweep diagonally.
         Vector2 size = rt.sizeDelta;

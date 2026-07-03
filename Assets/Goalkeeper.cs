@@ -41,7 +41,8 @@ public class Goalkeeper : MonoBehaviour
     [SerializeField] private float keeperGrabDistance = 1.2f;  // collect / save a loose ball within this
     [SerializeField] private float keeperSnatchDistance = 0.8f;// strip an enemy carrier this close — 100%, no roll
     [SerializeField] private float keeperHoldSeconds = 0.8f;   // bot keeper auto-distributes after this
-    [SerializeField] private float keeperPanicDistance = 2.5f; // bot keeper distributes NOW if an opponent is this close
+    [SerializeField] private float keeperPanicDistance = 2.5f; // an opponent this close = "crowded": the keeper WAITS for it to clear
+    [SerializeField] private float maxKeeperHoldSeconds = 3f;  // crowded this long → force the DEEP outlet pass anyway
     [SerializeField] private float holdOffset = 0.5f;          // held ball sits this far toward the field
 
     // ---- player control (Task 5): when the HUMAN's own keeper holds the ball it plays like a
@@ -411,11 +412,18 @@ public class Goalkeeper : MonoBehaviour
         float toCentre = transform.position.x >= 0f ? -1f : 1f;
         ball.transform.localPosition = new Vector3(toCentre * holdOffset, 0f, 0f);
 
-        // Bot keeper distributes after a short hold or when crowded. The PLAYER keeper never
-        // auto-passes (Issue 2) — only the human's shoot/pass releases it.
-        if (!playerControlled &&
-            (Time.time - holdStartTime >= keeperHoldSeconds || EnemyCrowding(ctx)))
-            PassOut();
+        // Bot keeper distribution: pass after the short hold, but NEVER straight into a crowd.
+        // The old rule ("crowded → distribute NOW") threw the outlet pass INTO the crowding
+        // opponent: deflection → slow loose ball at the goal line → auto re-collect → an endless
+        // jam. Now a crowded keeper WAITS (the clearance rule in the enemies' AI/movement is
+        // walking the crowder back out of KeeperProtectRadius); still crowded after
+        // maxKeeperHoldSeconds → force the DEEP outlet away from the pressure instead.
+        // The PLAYER keeper never auto-passes (Issue 2) — only the human's shoot/pass releases it.
+        if (!playerControlled && Time.time - holdStartTime >= keeperHoldSeconds)
+        {
+            if (!EnemyCrowding(ctx)) PassOut();
+            else if (Time.time - holdStartTime >= maxKeeperHoldSeconds) PassOut(1f, true);
+        }
     }
 
     // True while an opponent swimmer sits within keeperPanicDistance of this (bot) keeper.
@@ -563,6 +571,7 @@ public class Goalkeeper : MonoBehaviour
         // charged power — never auto-aimed at the goal.
         Vector2 dir = KeeperAimDir();
 
+        if (ctx != null) ctx.IgnoreReleaseCollision(transform); // don't deflect off our own body
         ball.transform.SetParent(null);
         ball.simulated = true;
         ball.linearVelocity = dir * Mathf.Max(currentPower, KeeperMinShootSpeed); // a tap still fires a real shot
@@ -614,7 +623,7 @@ public class Goalkeeper : MonoBehaviour
         ctx.SetPossession(team);
     }
 
-    void PassOut(float charge = 1f)
+    void PassOut(float charge = 1f, bool forceDeep = false)
     {
         MatchContext ctx = MatchContext.Instance;
         holding = false;
@@ -626,6 +635,8 @@ public class Goalkeeper : MonoBehaviour
         Vector2 from = transform.position;
 
         // TARGET SELECTION:
+        //  • forceDeep (bot keeper crowded past maxKeeperHoldSeconds): the DEEP outlet — a long
+        //    ball over/past the pressure, never a short pass into the crowder's arms.
         //  • PLAYER keeper (manual pass, Task 3): PURELY directional — pick the teammate best
         //    aligned with the human's aim (live joystick, else WASD/last facing); NO cone. Falls
         //    back to BestPassTarget only when the keeper has no available teammate at all.
@@ -633,7 +644,9 @@ public class Goalkeeper : MonoBehaviour
         Transform target = null;
         if (team != null)
         {
-            if (IsPlayerKeeper())
+            if (forceDeep)
+                target = team.DeepestMember(transform);
+            if (target == null && IsPlayerKeeper())
                 target = FindKeeperPassTarget(team, KeeperAimDir());
             if (target == null) // bot keeper, or the player keeper had no available teammate → fall back
             {
@@ -648,6 +661,7 @@ public class Goalkeeper : MonoBehaviour
         else if (team != null && team.attackGoal != null) { dir = ((Vector2)team.attackGoal.position - from).normalized; dist = 6f; }
         else { dir = Vector2.right; dist = 6f; }
 
+        if (ctx != null) ctx.IgnoreReleaseCollision(transform); // don't deflect off our own body
         ball.transform.SetParent(null);
         ball.simulated = true;
         float maxSpeed = Mathf.Clamp(dist * 2.5f, 6f, 13f);

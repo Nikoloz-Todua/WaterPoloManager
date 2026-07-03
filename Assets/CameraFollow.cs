@@ -120,8 +120,12 @@ public class CameraFollow : MonoBehaviour
             return;
         }
 
-        Vector2 playerPos = player.transform.position;
         Vector2 ballPos = ctx.BallPosition;
+        // While OUR keeper holds the ball the human is controlling the KEEPER, not the active
+        // field player — anchor the follow on the ball (pinned to the keeper's hands), or the
+        // camera stays parked on a far-away field swimmer and the keeper plays half off-screen.
+        bool keeperControl = ctx.KeeperHolding && ctx.KeeperHoldTeam == ctx.PlayerTeam;
+        Vector2 playerPos = keeperControl ? ballPos : (Vector2)player.transform.position;
 
         // ---- weighted follow point: 60/40 player/ball, leaning 70/30 when the ball is loose ----
         bool loose = ctx.BallIsLoose;
@@ -139,7 +143,6 @@ public class CameraFollow : MonoBehaviour
         float speed = Time.time < switchBoostUntil ? switchSpeed : followSpeed;
 
         // ---- dynamic zoom target (priority: keeper-control > far gap > sprint > resting) ----
-        bool keeperControl = ctx.KeeperHolding && ctx.KeeperHoldTeam == ctx.PlayerTeam;
         bool sprinting = player.SprintHeld; // holding sprint = mild zoom out
         float gap = Vector2.Distance(playerPos, ballPos);
 

@@ -212,18 +212,19 @@ public class NavigationManager : MonoBehaviour
         nameBtn.transition = Selectable.Transition.None;
         nameBtn.onClick.AddListener(OpenClubScreen);
 
-        // Settings / Inbox / Gifts — real button art (settings/message/gifts-button.png) with
-        // small captions, spaced as their own group between the profile block and the pill.
+        // Settings / Inbox / Gifts — real button art (settings/message/gifts-button.png), one
+        // group between the profile block and the pill. 42px icons (dev sized these down from
+        // an 84px experiment) at 95px pitch.
         MakeCaptionedIconButton(bar.transform, "BtnSettings", "Sprites/settings-button", "Settings",
-                                new Vector2(310f, 0f), () => ShowOverlay(settingsOverlay));
+                                new Vector2(330f, 0f), () => ShowOverlay(settingsOverlay));
         MakeCaptionedIconButton(bar.transform, "BtnMessages", "Sprites/message-button", "Inbox",
-                                new Vector2(385f, 0f), () => ShowOverlay(messagesOverlay));
+                                new Vector2(425f, 0f), () => ShowOverlay(messagesOverlay));
         MakeCaptionedIconButton(bar.transform, "BtnGifts", "Sprites/gifts-button", "Gifts",
-                                new Vector2(460f, 0f), () => ShowOverlay(giftsOverlay));
+                                new Vector2(520f, 0f), () => ShowOverlay(giftsOverlay));
 
         // FREE +100: watch an ad (stub) for 100 coins — same AdWatchCap 3/day system as the
-        // shop. Sits clear of the icon group.
-        BuildFree100Button(bar.transform, new Vector2(590f, 0f));
+        // shop. Moved right (590→660) to stay clear of the enlarged icon group.
+        BuildFree100Button(bar.transform, new Vector2(660f, 0f));
 
         // Right side, right-to-left: gold [+], gold count, gold icon, diamond [+], diamond count, diamond icon.
         MakePlusButton(bar.transform, new Vector2(1f, 0.5f), new Vector2(-32f, 0f), 30f,
@@ -252,15 +253,22 @@ public class NavigationManager : MonoBehaviour
 
     // ------------------------------------------------------------- left column
 
+    // All five column buttons use trimArt: the source PNGs carry very different transparent
+    // margins (see LoadTrimmedSprite), so equal RectTransform sizes only LOOK equal after the
+    // alpha-trim. Ranking/Team 135, Shop back at its original 140 (per dev). Both columns sit
+    // yOff 40px below screen centre — centred they read "too high" against the hub background.
     void BuildLeftColumn()
     {
-        const float x = 150f, step = 125f; // centres 125px apart
+        const float x = 150f, step = 140f, yOff = -40f;
         MakeImageButton(canvasRoot, "BtnRanking", "Sprites/ranking-button", new Vector2(0f, 0.5f),
-                        new Vector2(x, step), new Vector2(115f, 115f), () => ShowOverlay(rankingOverlay));
+                        new Vector2(x, yOff + step), new Vector2(135f, 135f), () => ShowOverlay(rankingOverlay),
+                        trimArt: true);
         MakeImageButton(canvasRoot, "BtnShop", "Sprites/shop-button", new Vector2(0f, 0.5f),
-                        new Vector2(x, 0f), new Vector2(140f, 140f), () => ShowOverlay(shopOverlay));
+                        new Vector2(x, yOff), new Vector2(140f, 140f), () => ShowOverlay(shopOverlay),
+                        trimArt: true);
         MakeImageButton(canvasRoot, "BtnTeam", "Sprites/team-button", new Vector2(0f, 0.5f),
-                        new Vector2(x, -step), new Vector2(115f, 115f), () => OpenTeamScreen("HUB"));
+                        new Vector2(x, yOff - step), new Vector2(135f, 135f), () => OpenTeamScreen("HUB"),
+                        trimArt: true);
     }
 
     // ------------------------------------------------------------ right column
@@ -270,11 +278,15 @@ public class NavigationManager : MonoBehaviour
     // so both open the same honest COMING SOON stub the other unbuilt features use.
     void BuildRightColumn()
     {
-        const float x = -150f, step = 125f;
+        const float x = -150f, step = 140f, yOff = -40f; // rows/offset match the left column
         MakeImageButton(canvasRoot, "BtnFriends", "Sprites/friends-button", new Vector2(1f, 0.5f),
-                        new Vector2(x, step), new Vector2(115f, 115f), () => ShowOverlay(friendsOverlay));
+                        new Vector2(x, yOff + step), new Vector2(135f, 135f), () => ShowOverlay(friendsOverlay),
+                        trimArt: true);
+        // Clubs gets a bigger box (150 vs 135): its trimmed art is intrinsically wide (~1.8:1),
+        // so at equal box sizes it reads smaller than the near-square art around it.
         MakeImageButton(canvasRoot, "BtnClubs", "Sprites/clubs-button", new Vector2(1f, 0.5f),
-                        new Vector2(x, 0f), new Vector2(115f, 115f), () => ShowOverlay(clubsOverlay));
+                        new Vector2(x, yOff), new Vector2(150f, 150f), () => ShowOverlay(clubsOverlay),
+                        trimArt: true);
     }
 
     // ------------------------------------------------------------ season timer
@@ -820,18 +832,25 @@ public class NavigationManager : MonoBehaviour
         return ov;
     }
 
-    // Top-bar icon button with real sprite art. The label is a tooltip, not a permanent caption:
-    // hidden by default, shown on hover (desktop) or after a ~0.4s press-and-hold (touch).
+    // Top-bar icon button with real sprite art (alpha-trimmed — the raw PNGs are ~60% margin).
+    // The label is a tooltip, not a permanent caption: hidden by default, shown on hover
+    // (desktop) or after a ~0.4s press-and-hold (touch), on a dark pill backing.
     Button MakeCaptionedIconButton(Transform parent, string name, string spritePath, string caption,
                                    Vector2 pos, UnityEngine.Events.UnityAction onClick)
     {
         Button btn = MakeImageButton(parent, name, spritePath, new Vector2(0f, 0.5f),
-                                     pos, new Vector2(42f, 42f), onClick);
-        TextMeshProUGUI tip = MakeText(btn.transform, caption, 12f, new Vector2(0.5f, 0f),
-                 new Vector2(0f, -10f), new Vector2(90f, 18f), Color.white, TextAlignmentOptions.Center);
+                                     pos, new Vector2(42f, 42f), onClick, trimArt: true);
+        Image tipBg = NewImage(btn.transform, "Tooltip");
+        tipBg.sprite = GetRoundedSprite();
+        tipBg.type = Image.Type.Sliced;
+        tipBg.color = DarkPanel;
+        tipBg.raycastTarget = false;
+        SetRect(tipBg.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, -16f), new Vector2(94f, 26f));
+        TextMeshProUGUI tip = MakeText(tipBg.transform, caption, 13f, new Vector2(0.5f, 0.5f),
+                 Vector2.zero, new Vector2(94f, 26f), Color.white, TextAlignmentOptions.Center);
         tip.raycastTarget = false;
-        tip.gameObject.SetActive(false);
-        btn.gameObject.AddComponent<IconTooltip>().tooltip = tip.gameObject;
+        tipBg.gameObject.SetActive(false);
+        btn.gameObject.AddComponent<IconTooltip>().tooltip = tipBg.gameObject;
         return btn;
     }
 
@@ -2078,7 +2097,8 @@ public class NavigationManager : MonoBehaviour
 
     // A button whose whole face is a sprite (left column, season pass, missions, play).
     Button MakeImageButton(Transform parent, string name, string spritePath, Vector2 anchor,
-                           Vector2 pos, Vector2 size, UnityEngine.Events.UnityAction onClick)
+                           Vector2 pos, Vector2 size, UnityEngine.Events.UnityAction onClick,
+                           bool trimArt = false)
     {
         GameObject go = new GameObject(name);
         go.transform.SetParent(parent, false);
@@ -2086,7 +2106,7 @@ public class NavigationManager : MonoBehaviour
         SetRect(rt, anchor, pos, size);
 
         Image img = go.AddComponent<Image>();
-        img.sprite = LoadSprite(spritePath);
+        img.sprite = trimArt ? LoadTrimmedSprite(spritePath) : LoadSprite(spritePath);
         img.preserveAspect = true;
         if (img.sprite == null) // visible rounded fallback so a missing sprite still shows a button
         {
@@ -2228,6 +2248,42 @@ public class NavigationManager : MonoBehaviour
         EventTrigger.Entry exit = new EventTrigger.Entry { eventID = EventTriggerType.PointerExit };
         exit.callback.AddListener(_ => { if (go != null) go.transform.localScale = Vector3.one; });
         trigger.triggers.Add(exit);
+    }
+
+    // Alpha-trimmed sprite loader for hub button art — same approach as CardPack.TierArtSprite.
+    // Loads the raw Texture2D (immune to sprite-slicing import modes) and crops the sprite rect
+    // to the visible alpha bounding box, because the source PNGs carry wildly different amounts
+    // of transparent padding (friends/clubs/settings art is only ~40-60% content; shop/ranking/
+    // team ~75-90%) — untrimmed, the same RectTransform size renders visibly different buttons.
+    // Requires isReadable: 1 in the .png.meta; an unreadable texture falls back untrimmed.
+    static readonly Dictionary<string, Sprite> trimmedSpriteCache = new Dictionary<string, Sprite>();
+    static Sprite LoadTrimmedSprite(string path)
+    {
+        if (trimmedSpriteCache.TryGetValue(path, out Sprite cached) && cached != null) return cached;
+        Texture2D tex = Resources.Load<Texture2D>(path);
+        if (tex == null) return LoadSprite(path); // missing entirely → the plain loader logs it
+        Rect rect = new Rect(0f, 0f, tex.width, tex.height);
+        try
+        {
+            Color32[] px = tex.GetPixels32();
+            const byte cut = 40; // same threshold as CardPack: cuts faint outer glow, keeps art
+            int minX = tex.width, minY = tex.height, maxX = -1, maxY = -1;
+            for (int y = 0; y < tex.height; y++)
+                for (int x = 0; x < tex.width; x++)
+                    if (px[y * tex.width + x].a > cut)
+                    {
+                        if (x < minX) minX = x;
+                        if (x > maxX) maxX = x;
+                        if (y < minY) minY = y;
+                        if (y > maxY) maxY = y;
+                    }
+            if (maxX > minX && maxY > minY)
+                rect = new Rect(minX, minY, maxX - minX + 1, maxY - minY + 1);
+        }
+        catch { /* texture not readable → keep the full frame (correct, just untrimmed) */ }
+        Sprite sp = Sprite.Create(tex, rect, new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect);
+        trimmedSpriteCache[path] = sp;
+        return sp;
     }
 
     // Single funnel for Resources sprites so a missing/misimported one names itself in the Console.

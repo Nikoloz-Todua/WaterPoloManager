@@ -483,6 +483,30 @@ public class PlayerMovement : MonoBehaviour
             rb.linearVelocity = keeperPushDir * moveSpeed;
             return;
         }
+        // Clearance rule: a ball-holding ENEMY keeper gets working room. The old push fired only
+        // on steal ATTEMPTS, so simply STANDING on the keeper jammed its outlet pass forever
+        // (pass → deflects off the crowder → slow ball → keeper re-collects → repeat). Now the
+        // active player is walked straight back out of the protect radius whenever the enemy
+        // keeper is protected — matching what the AI swimmers already do.
+        MatchContext kctx = MatchContext.Instance;
+        if (kctx != null && kctx.KeeperHolding && kctx.KeeperHoldTeam != kctx.PlayerTeam &&
+            kctx.Ball != null)
+        {
+            Transform holder = kctx.Ball.transform.parent;
+            if (holder != null && kctx.IsProtectedKeeper(holder))
+            {
+                // Clear slightly PAST the protect radius so we settle outside the keeper's
+                // crowding ring (same 2.5) — parking exactly on it would flicker its
+                // "crowded" check and stall the pass-out we're making room for.
+                Vector2 away = rb.position - (Vector2)holder.position;
+                if (away.magnitude < KeeperProtectRadius + 0.35f)
+                {
+                    rb.linearVelocity = (away.sqrMagnitude > 1e-4f ? away.normalized : Vector2.down)
+                                        * moveSpeed;
+                    return;
+                }
+            }
+        }
         float speed = isHolding ? holdMoveSpeed : moveSpeed;
         speed *= StaminaSpeedMult;                                          // tired = slower (stamina)
         // HOLD sprint — disabled outright at 0% stamina ("normal swim only"), else the sprint
@@ -744,6 +768,9 @@ public class PlayerMovement : MonoBehaviour
     {
         if (ball == null) return;
         isHolding = false;
+        // The dropped ball lies overlapping our feet — without the ignore window physics would
+        // pop it away with a depenetration shove instead of leaving it where it was dropped.
+        if (MatchContext.Instance != null) MatchContext.Instance.IgnoreReleaseCollision(transform);
         ball.transform.SetParent(null);
         ball.simulated = true;
         ball.linearVelocity = Vector2.zero;
@@ -765,12 +792,11 @@ public class PlayerMovement : MonoBehaviour
     {
         if (ball == null) return;
         isHolding = false;
-        // Snap the ball from the hand anchor back to the player centre BEFORE releasing, so the
-        // shot launches from the body centre and flies straight along the aim — the hand offset is
-        // purely a hold-time visual. (Keep the ball's own z so sprite sorting is untouched.)
-        Vector3 releasePos = transform.position;
-        releasePos.z = ball.transform.position.z;
-        ball.transform.position = releasePos;
+        // Release from the HAND, where the hold visually pinned it — the old snap-to-centre
+        // spawned the ball INSIDE our own collider and the depenetration deflected/weakened the
+        // shot. The self-collision window is what makes any release angle safe, including firing
+        // back across the body.
+        if (MatchContext.Instance != null) MatchContext.Instance.IgnoreReleaseCollision(transform);
         ball.transform.SetParent(null);
         ball.simulated = true;
 
@@ -839,6 +865,7 @@ public class PlayerMovement : MonoBehaviour
         if (speed < MinPassReleaseSpeed) return;
 
         isHolding = false;
+        MatchContext.Instance.IgnoreReleaseCollision(transform); // a backward pass must clear our own body
         ball.transform.SetParent(null);
         ball.simulated = true;
         ball.linearVelocity = fireDir * speed;
@@ -888,6 +915,7 @@ public class PlayerMovement : MonoBehaviour
         isHolding = false;
         if (ball != null)
         {
+            if (MatchContext.Instance != null) MatchContext.Instance.IgnoreReleaseCollision(transform);
             ball.transform.SetParent(null);
             ball.simulated = true;
         }

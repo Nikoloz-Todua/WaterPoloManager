@@ -86,7 +86,7 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 | `TouchControls.cs` | Runtime-built mobile touch UI (no prefabs), **singleton** (`Instance` + `JoystickAxis`, read by the keeper for its aim): virtual joystick bottom-left + **3 circular image buttons** bottom-right (`actionButtonSize`/`mainButtonSize` 270) that swap icon + behaviour with possession. **Attack** (we hold / loose): Sprint (top) / Shoot (bottom-right) / Pass (bottom-left). **Defense** (enemy holds): Switch (top) / Defend (bottom-right) / Block (bottom-left). Mode read each frame from `MatchContext.PossessingTeam` (==BotTeam → defense), SmoothStep fade-out→swap→fade-in (0.22s); icons from `Resources/Sprites/` (`sprint/shoot/pass/Defend/switch/block`). Attack actions feed `PlayerMovement.SetTouchInput` (merged with keyboard via `\|\|`); Switch rides `TouchSwitchDown`; Block → `TouchBlockSteal()`; Defend feeds a chase-the-carrier axis. **Player-keeper control:** while your own keeper holds the ball the 3 attack buttons + joystick route to the `Goalkeeper` (Shoot/Pass/Sprint) — the old single **PASS OUT** button is RETIRED. **Stamina HUD panel** above the joystick: `P#` (or "GK") + a green→yellow→red fill bar reading `PlayerMovement`/`Goalkeeper.StaminaPercent01` + `TeamManager.ActivePlayerIndex` (Lerp-smoothed; label pulses red below 20%). Press feedback = scale to 0.9x. Visible on mobile, or in Editor when `showInEditor`. |
 | `PoolLineFloat.cs` | Standalone gentle bob (±0.04u) + sway (±1.5°) for the 12 pool lane-line sprites; random phase/speed (0.6–0.9 Hz) per object; offsets from the Start pose so it never drifts. |
 | `MainMenuUI.cs` | MainMenu scene. Builds the whole main menu in code at runtime: canvas (1280x720), background + logo from `Assets/Resources/Sprites/`, PLAY/SETTINGS/QUIT buttons with hover scale + cyan-outline TMP labels, 1s fade-in, version footer. PLAY → **HubScene**. |
-| `NavigationManager.cs` | HubScene. The whole hub built in code. **Top bar:** left = profile cluster (circular avatar tinted club-primary with the club CREST as its glyph + country "flag" dot + club name/XP/level — avatar OR name opens the My Club screen; settings/inbox/gifts icon buttons with real art (`settings/message/gifts-button.png`; labels are hover / 0.4s press-hold **tooltips** via the nested `IconTooltip` — no permanent captions) → stub settings panel + COMING SOON overlays; **FREE +100** watch-ad pill, 3/day via `AdWatchCap`), right = live gold/diamond with [+]. **Left column:** RANKING (coming soon) / SHOP (`ShopUI` overlay) / TEAM (`TeamScreenUI`). **Right column:** FRIENDS / CLUBS (115×115, mirrors the left column's top two rows on the right edge) → COMING SOON stubs (no online backend yet). **Bottom bar:** season pass (locked) + missions + **4 live post-match reward slots** (state from `PostMatchRewardManager`; pitch 84; Ready/Unlocking slots scale 1.18x + get `PackCardFX` float/shine; a slot filled by the last match scale-ins with overshoot on hub load via `ConsumeNewRewardSlot`) + PLAY → Game Mode overlay. Also hosts: Game Mode / Standings / Pre-Match / Club-customization overlays, the reward-slot unlock popup (odds table via shared `PackInfoPopup`), and `RefreshClubProfile()` (re-reads `RosterManager.Club` into the cluster). |
+| `NavigationManager.cs` | HubScene. The whole hub built in code. **Top bar:** left = profile cluster (circular avatar tinted club-primary with the club CREST as its glyph + country "flag" dot + club name/XP/level — avatar OR name opens the My Club screen; settings/inbox/gifts icon buttons with real art (`settings/message/gifts-button.png`, 42px group at 95px pitch; labels are hover / 0.4s press-hold **tooltips** with a dark pill backing via the nested `IconTooltip` — no permanent captions) → stub settings panel + COMING SOON overlays; **FREE +100** watch-ad pill at x 660, 3/day via `AdWatchCap`), right = live gold/diamond with [+]. **Left column:** RANKING (coming soon) / SHOP (`ShopUI` overlay) / TEAM (`TeamScreenUI`) — 135/140/135px, rows at yOff −40 ± 140. **Right column:** FRIENDS 135 / CLUBS 150 (bigger box: its trimmed art is ~1.8:1 wide), same rows/offset as the left column → COMING SOON stubs (no online backend yet). ALL hub button art loads via the nested **`LoadTrimmedSprite`** (alpha-trim, needs `isReadable: 1` metas) because the source PNGs carry 10-60% transparent margins. **Bottom bar:** season pass (locked) + missions + **4 live post-match reward slots** (state from `PostMatchRewardManager`; pitch 84; Ready/Unlocking slots scale 1.18x + get `PackCardFX` float/shine; a slot filled by the last match scale-ins with overshoot on hub load via `ConsumeNewRewardSlot`) + PLAY → Game Mode overlay. Also hosts: Game Mode / Standings / Pre-Match / Club-customization overlays, the reward-slot unlock popup (odds table via shared `PackInfoPopup`), and `RefreshClubProfile()` (re-reads `RosterManager.Club` into the cluster). |
 | `PlayerData.cs` | **(Player data foundation, NEW)** ScriptableObject = one player CARD: `id`, `fullName`, `nation`, `position` (enum GK/CB/LW/RW/CF/LF/RF — enum order == starter-slot order), `overall` 0–100, a `Stats` struct (speed/shooting/passing/defense/stamina/goalKeeping 0–100), `rarity` (Common/Rare/Legendary → `RarityColor`), `portrait` (Sprite, null for now → UI draws a silhouette), `priceGold`, `isBot`. `[CreateAssetMenu]` (Create → Water Polo/Player). Static `ComputeOverall(stats,pos)` (GK leans on goalkeeping, field = outfield avg) shared by the generator + UpgradePlayer; `Clone()` so owned cards are mutated as runtime copies, never the source asset. PURELY data — never touched by the match. |
 | `PlayerDatabase.cs` | **(NEW)** Read-only player CATALOG: lazy C# singleton that `Resources.LoadAll`s every `PlayerData` under `Resources/Players/` into a dict by id (`Get`/`Has`/`AllPlayers`/`FirstOfPosition`/`Count`). No scene object. |
 | `Roster.cs` | `[Serializable]` save payload: `List<string> ownedPlayerIds`, `string[7] starterSlots` (0=GK, 1–6 field by position), `int coins`, `int diamonds`, plus **`ClubProfile club`** (clubName / logoId / primaryColorHex / secondaryColorHex / countryId — the My Club identity). IDs only → tiny JSON. |
@@ -114,6 +114,8 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 | `LeaderboardManager.cs` | **(NEW 2026-07)** League leaderboard: plain C# singleton + `RankingUI` (hub RANKING button). HONESTLY SIMULATED — 24 deterministic fake rivals per season (gamer-tag pool); only the PLAYER's points are real (+20 win / +5 loss from the EndMatch hook). 5-tier ladder IRON→DIAMOND; at season rollover (SeasonPassManager epoch) top 5 promote, rank 20+ demotes, prev result stored for "LAST WEEK". Player row always pinned at the bottom. Elite/World/Friends/Country tabs = locked COMING SOON stubs (need real accounts — NOT fake data). Own JSON (leaderboard.json). |
 | `SeasonPassManager.cs` | **(NEW 2026-07)** THE canonical season: 14-day epoch in seasonpass.json drives the hub "SEASON ENDS IN" countdown (now real + tappable → this screen), Global Cup mission scope, league rollover, and the shop EVENT badges. 16 tiers × 100 XP; XP from matches (+25 win / +10 loss, EndMatch hook) + mission claims (+10). `SeasonPassUI`: Gold Pass card (ACTIVATE = 500 gems PLACEHOLDER price, via SpendDiamonds), tier/XP progress, horizontal 16-tier track — free row always collectible, gold row padlocked until activated, COLLECT grants via the shared reward funnel. Free Pass "card" is just a note — the free row IS the free pass (no duplicate track). |
 | `ClubCustomizationUI.cs` | **(NEW 2026-07)** The "My Club" screen (code-built, hosted in NavigationManager's club overlay; opened from the hub avatar/name). Crest picker (8 PROCEDURAL shapes — real crest art still needed), primary/secondary color swatches (10 preset), country picker (12 text chips, colored-dot placeholder until flag art exists), TMP_InputField rename (max 16 chars), live preview, APPLY → `RosterManager.Club`/`SaveClub()` + `nav.RefreshClubProfile()`. Statics shared with the hub: `CrestSprite(id)`, `ParseHex`, `CountryColor`. |
+
+| `PoolTheme.cs` | **(NEW 2026-07)** Data-driven pool theming: `PoolTheme` (id, background sprite path, water tint, ambient-layer defs) + static `PoolThemes` catalog (CardPack-style registry; `Get(id)` / `ForDivision(competitionIndex)`) + `PoolThemeApplier` (self-bootstrapping like StaminaSystem: on scene load, finds "PoolWater" and applies overrides; hub scenes no-op). ONE real theme ("classic") = the current art expressed as no-overrides, all 4 divisions map to it. Future themed pools = register an entry + map the division; ambient ANIMATION plugs into the spawned "PoolThemeAmbient" group later. |
 
 **Architecture rule for any AI:** keep `TeamSide` + `MatchContext` + `WaterPoloBrain`. It is roster-size-agnostic by design. To scale teams: add player/bot objects, drop them into the team `members` arrays + TeamManager arrays; formation & AI scale automatically.
 
@@ -1272,4 +1274,88 @@ was left half-written — then finished the two follow-up fixes.)*
 **KNOWN REMAINING (this area):**
 - Friends/Clubs open honest COMING SOON stubs (real feature needs online accounts)
 - Unity must reimport the 5 sprites (open the editor once) before the fix is visible
+
+---
+
+## SESSION LOG — 2026-07-03b (button sizing root cause: PNG padding; hub buttons trimmed + enlarged; shine mask inset)
+
+**THE REAL Friends/Clubs SIZE BUG — transparent padding INSIDE the PNGs:**
+- The spriteMode fix (07-03) was necessary but not sufficient. Measured alpha bounds:
+  friends-button content = 620×464 of a 1536×1024 texture (**40%×45%**), clubs 908×500
+  (59%×49%), settings/message/gifts ~576×572 (38%×56%) — vs shop 80%×90%, ranking 73%×83%,
+  team 77%×84%. Same 115px RectTransform → friends' glyph rendered ~46px. **Identical
+  RectTransform sizes DO NOT mean identical visual sizes when source padding differs**
+- Fix: `NavigationManager.LoadTrimmedSprite(path)` (nested, cached) — raw Texture2D +
+  alpha-trim to content box, same logic/threshold(40) as `CardPack.TierArtSprite`;
+  `MakeImageButton(..., trimArt: true)` opt-in flag. All 8 button metas hand-set
+  `isReadable: 1` (required for the trim; unreadable falls back untrimmed)
+- NOTE: clubs-button's trimmed content is intrinsically wide (908×500 ≈ 1.8:1) — it fills
+  the box width but stays shorter than square art. If it must read taller, re-export the PNG
+
+**HUB BUTTON SIZES (before → after, incl. the dev's same-day corrections):**
+- Ranking 115→135, Team 115→135, Friends 115→135, Clubs 115→150 (its trimmed art is ~1.8:1
+  wide, so it needs the bigger box to read equal); Shop STAYS 140 (dev: don't touch it)
+- Both columns shifted DOWN: rows now yOff −40 ± step 140 (was centred at 0 ± 125) —
+  centred columns read "too high" against the hub background
+- Top-bar Settings/Inbox/Gifts stayed 42px (an 84px experiment was rejected — too big),
+  centres 310/385/460 → 330/425/520; FREE +100 pill moved 590→660
+- Tooltip rebuilt as dark pill (94×26, rounded, DarkPanel) + 13pt text under the icon
+
+**SHINE SWEEP CONTAINMENT (PackCardFX.cs):**
+- The RectMask2D sized exactly to the art bounds still leaked the sweep past visible art
+  edges (alpha-trim threshold + sub-pixel slack). Now `mask.padding` insets ~4% per side
+  (clamped 3-10px) — sweep guaranteed contained, slightly smaller by design
+
+---
+
+## SESSION LOG — 2026-07-03c (release self-collision fix; keeper-hold jam + camera; PoolTheme architecture)
+
+**BALL RELEASE vs OWN BODY (the wrong/weak deflection bug) — root cause CONFIRMED as spawn
+overlap, in TWO forms:**
+- `PlayerMovement.Shoot()` snapped the ball to the player CENTRE before `simulated = true` —
+  the ball collider woke up fully INSIDE the shooter's collider; physics depenetration fought
+  the assigned velocity. `ChargedPass()` released at the HAND with no protection — a pass aimed
+  back across the body (down-left while facing right) flew THROUGH the player's own collider
+- Fix: `MatchContext.IgnoreReleaseCollision(releaser)` — ignores ball↔releaser Collider2D
+  contacts for 0.3s (`Physics2D.IgnoreCollision`), then re-enables ONLY once they've separated
+  (extension capped +1.5s) so a dropped ball at the feet never gets popped away. Called from
+  EVERY release path: PlayerMovement Shoot/ChargedPass/DropBall/ReleaseBall, WaterPoloAI
+  DetachBall (bot shoot/pass/release), Goalkeeper KeeperShoot/PassOut, PenaltyManager FireAIShot
+- Shots now release from the HAND (hold position) — the snap-to-centre was the old workaround
+  for exactly this overlap and is gone
+- HOTFIX (same day): `IgnoreReleaseCollision` runs BEFORE un-parenting, so
+  `GetComponentsInChildren<Collider2D>` on the releaser also returned the still-parented BALL's
+  own collider → `Physics2D.Distance(ball, ball)` threw ArgumentException in the window
+  coroutine. The ball's collider (and anything on its rigidbody) is now filtered out of the
+  releaser list, plus defensive `c != ballCol` guards at every use
+
+**KEEPER-HOLD JAM (game stuck when a keeper caught a shot under pressure):**
+- Old loop: enemy crowding the keeper → panic `PassOut()` STRAIGHT INTO the crowder →
+  deflection → slow loose ball on the goal line → keeper auto re-collects → forever
+- Bot keeper now: after `keeperHoldSeconds` (0.8) it passes only when NOT crowded; while
+  crowded it WAITS, and past `maxKeeperHoldSeconds` (3, new Inspector field) it forces the
+  DEEP outlet (`PassOut(1f, forceDeep)` → `DeepestMember`) instead of a short pass
+- Clearance rule (both sides symmetric): a protected ball-holding keeper gets working room —
+  the AI presser holds a standoff spot at KeeperProtectRadius+0.4 (2.9u) instead of the old
+  chase/push jitter, and the HUMAN-controlled player is now walked back out of 2.85u
+  continuously (PlayerMovement.FixedUpdate) — the old shove fired only on steal ATTEMPTS, so
+  standing still on the keeper jammed it. Attack resumes normally after the pass-out
+- Keeper's teammates already open up on their own: possession flips to their team on the catch,
+  so their formation switches to the attacking spread — no extra code needed
+
+**CAMERA (keeper control):** while YOUR keeper holds the ball, CameraFollow anchored 60% on the
+active FIELD player far from goal — the keeper played half off-screen. The follow anchor is now
+the ball (pinned to the keeper's hands) whenever `KeeperHolding && KeeperHoldTeam == PlayerTeam`;
+the existing 3.8 keeper zoom is unchanged.
+
+**POOL THEME ARCHITECTURE (PoolTheme.cs, NEW — no new art):** see the A5 table row. Division →
+theme lookup wired for all 4 divisions to the ONE "classic" theme (current art as no-overrides).
+No placeholder recolors for other divisions — the water is a Shader Graph material, not a plain
+sprite, so a "cheap recolor" isn't safely cheap. Ambient crowd/bench animation deliberately
+deferred until real art exists.
+
+**KNOWN REMAINING (this area):**
+- `maxKeeperHoldSeconds` (3s) and the 2.85u human clearance are first-guess numbers — tune in play
+- The shot clock keeps ticking through a long crowded keeper hold (by design; a hold is not a
+  possession change) — a near-zero clock at the save can still expire during the wait; watch it
 - Global Cup missions are season-scoped stats, not tied to a real "Global Cup" event yet

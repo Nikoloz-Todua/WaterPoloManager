@@ -170,6 +170,7 @@ public class PenaltyManager : MonoBehaviour
         IAgentBody body = shooter.GetComponent<IAgentBody>();
         if (body != null) { body.IsHolding = false; body.LastDirection = dir; }
 
+        ctx.IgnoreReleaseCollision(shooter); // penalty shot must not clip the shooter's own body
         ctx.Ball.transform.SetParent(null);
         ctx.Ball.simulated = true;
         ctx.Ball.linearVelocity = dir * penaltyShotSpeed;

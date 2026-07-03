@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 // The single shared "truth" about the match that every AI reads.
@@ -170,6 +171,61 @@ public class MatchContext : MonoBehaviour
         if (carrier == null) return false;
         Goalkeeper gk = carrier.GetComponent<Goalkeeper>();
         return gk != null && !gk.LeftSafeZone;
+    }
+
+    // ---- release self-collision window ----
+    // At the instant a held ball is un-parented and re-simulated it sits at the hand offset —
+    // inside or touching the releaser's own collider for many release angles (worst case: a
+    // pass aimed back across the body). Left alone, the physics depenetration deflects or
+    // weakens the throw. Every release path (shot / pass / drop, human / bot / keeper) calls
+    // this to ignore ball↔releaser contacts briefly; re-enabling additionally waits until the
+    // two have actually separated, so a ball dropped at the feet never gets popped away.
+    private const float ReleaseSelfCollisionSeconds = 0.3f;  // clears a slow lob across the body
+    private const float ReleaseSelfCollisionMaxExtra = 1.5f; // still-touching extension cap
+
+    public void IgnoreReleaseCollision(Transform releaser)
+    {
+        if (releaser == null || ball == null) return;
+        Collider2D ballCol = ball.GetComponent<Collider2D>();
+        if (ballCol == null) return;
+        // Every release path calls this BEFORE un-parenting, so the held BALL is still a child
+        // of the releaser here — GetComponentsInChildren returns the ball's own collider too.
+        // It must be filtered out: comparing the ball against itself threw ArgumentException in
+        // Physics2D.Distance ("Cannot calculate the distance between the same collider").
+        Collider2D[] found = releaser.GetComponentsInChildren<Collider2D>();
+        int n = 0;
+        for (int i = 0; i < found.Length; i++)
+            if (found[i] != null && found[i] != ballCol && found[i].attachedRigidbody != ball)
+                found[n++] = found[i];
+        if (n == 0) return;
+        Collider2D[] own = new Collider2D[n];
+        System.Array.Copy(found, own, n);
+        StartCoroutine(ReleaseCollisionWindow(ballCol, own));
+    }
+
+    IEnumerator ReleaseCollisionWindow(Collider2D ballCol, Collider2D[] own)
+    {
+        foreach (Collider2D c in own)
+            if (c != null && c != ballCol) Physics2D.IgnoreCollision(ballCol, c, true);
+
+        yield return new WaitForSeconds(ReleaseSelfCollisionSeconds);
+
+        // Still overlapping (a drop at the feet, a fully-blocked throw)? Extend briefly rather
+        // than re-enabling mid-overlap — that would fire the very depenetration impulse this
+        // window exists to prevent.
+        float deadline = Time.time + ReleaseSelfCollisionMaxExtra;
+        bool touching = true;
+        while (touching && Time.time < deadline && ballCol != null)
+        {
+            touching = false;
+            foreach (Collider2D c in own)
+                if (c != null && c != ballCol && Physics2D.Distance(ballCol, c).distance < 0.05f)
+                { touching = true; break; }
+            if (touching) yield return null;
+        }
+
+        foreach (Collider2D c in own)
+            if (c != null && ballCol != null && c != ballCol) Physics2D.IgnoreCollision(ballCol, c, false);
     }
 
     // ---- counterattack window (Part 2) ----
