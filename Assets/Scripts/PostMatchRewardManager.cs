@@ -51,6 +51,18 @@ public class PostMatchRewardManager : MonoBehaviour
     private SaveData data;
     private string SavePath => Path.Combine(Application.persistentDataPath, SaveFileName);
 
+    // One-shot: the slot index AddRewardForMatch just filled, consumed by NavigationManager on
+    // the next hub load to play the reveal animation. In-memory only (the singleton survives the
+    // scene change) — deliberately NOT saved: after a relaunch there's nothing "new" to announce.
+    private int pendingRevealSlot = -1;
+
+    public int ConsumeNewRewardSlot()
+    {
+        int i = pendingRevealSlot;
+        pendingRevealSlot = -1;
+        return i;
+    }
+
     void Awake()
     {
         if (instance != null && instance != this) { Destroy(gameObject); return; }
@@ -132,6 +144,7 @@ public class PostMatchRewardManager : MonoBehaviour
             data.slots[i].state = (int)SlotState.Locked;
             data.slots[i].tier = (int)RollTier();
             data.slots[i].unlockStartTicks = 0;
+            pendingRevealSlot = i; // hub plays a scale-in on this slot next time it builds
             Save();
             return;
         }

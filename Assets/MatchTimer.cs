@@ -131,6 +131,15 @@ public class MatchTimer : MonoBehaviour
         // shown on the hub's bottom bar.
         PostMatchRewardManager.Instance.AddRewardForMatch();
 
+        // THE one shared post-match progression hook: mission stats + league points + season XP.
+        // Keep all three here — don't scatter extra calls elsewhere.
+        bool won = outcome > 0;
+        MissionManager.Instance.RecordStat("matches_played");
+        if (won) MissionManager.Instance.RecordStat("matches_won");
+        LeaderboardManager.Instance.AddLeaguePoints(won ? LeaderboardManager.PointsPerWin
+                                                        : LeaderboardManager.PointsPerLoss);
+        SeasonPassManager.Instance.AddXP(won ? 25 : 10);
+
         // Full result screen (overlay + buttons); the bare text is only a fallback
         // for a scene without a MatchResultUI component.
         if (MatchResultUI.Instance != null)

@@ -86,11 +86,11 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 | `TouchControls.cs` | Runtime-built mobile touch UI (no prefabs), **singleton** (`Instance` + `JoystickAxis`, read by the keeper for its aim): virtual joystick bottom-left + **3 circular image buttons** bottom-right (`actionButtonSize`/`mainButtonSize` 270) that swap icon + behaviour with possession. **Attack** (we hold / loose): Sprint (top) / Shoot (bottom-right) / Pass (bottom-left). **Defense** (enemy holds): Switch (top) / Defend (bottom-right) / Block (bottom-left). Mode read each frame from `MatchContext.PossessingTeam` (==BotTeam → defense), SmoothStep fade-out→swap→fade-in (0.22s); icons from `Resources/Sprites/` (`sprint/shoot/pass/Defend/switch/block`). Attack actions feed `PlayerMovement.SetTouchInput` (merged with keyboard via `\|\|`); Switch rides `TouchSwitchDown`; Block → `TouchBlockSteal()`; Defend feeds a chase-the-carrier axis. **Player-keeper control:** while your own keeper holds the ball the 3 attack buttons + joystick route to the `Goalkeeper` (Shoot/Pass/Sprint) — the old single **PASS OUT** button is RETIRED. **Stamina HUD panel** above the joystick: `P#` (or "GK") + a green→yellow→red fill bar reading `PlayerMovement`/`Goalkeeper.StaminaPercent01` + `TeamManager.ActivePlayerIndex` (Lerp-smoothed; label pulses red below 20%). Press feedback = scale to 0.9x. Visible on mobile, or in Editor when `showInEditor`. |
 | `PoolLineFloat.cs` | Standalone gentle bob (±0.04u) + sway (±1.5°) for the 12 pool lane-line sprites; random phase/speed (0.6–0.9 Hz) per object; offsets from the Start pose so it never drifts. |
 | `MainMenuUI.cs` | MainMenu scene. Builds the whole main menu in code at runtime: canvas (1280x720), background + logo from `Assets/Resources/Sprites/`, PLAY/SETTINGS/QUIT buttons with hover scale + cyan-outline TMP labels, 1s fade-in, version footer. PLAY → **HubScene**. |
-| `NavigationManager.cs` | HubScene. The whole hub-navigation shell built in code (design + navigation only, NO real data): persistent top bar (club logo placeholder, "My Club", gold + diamond displays (now LIVE from RosterManager), "SET" settings stub — the default TMP font has no ⚙ glyph) + bottom nav (CAREER/TEAM/TRANSFERS/MY CLUB/CHALLENGES, active tab cyan), 5 placeholder screens with 0.3s fade transitions. Career (Division 3 badge, fake 5-team standings, PLAY → SampleScene), **Team is now REAL** (delegates to `TeamScreenUI` — live roster, not a placeholder), Transfers (3 agent buttons, 6 fake player cards with BUY stubs), My Club (STADIUM/POOL upgrade cards + customize stubs), Challenges (3 daily cards, greyed CLAIM). The non-Team buttons still log "coming soon"; the top bar's gold/diamond read from `RosterManager`. |
+| `NavigationManager.cs` | HubScene. The whole hub built in code. **Top bar:** left = profile cluster (circular avatar tinted club-primary with the club CREST as its glyph + country "flag" dot + club name/XP/level — avatar OR name opens the My Club screen; settings/inbox/gifts icon buttons with real art (`settings/message/gifts-button.png`; labels are hover / 0.4s press-hold **tooltips** via the nested `IconTooltip` — no permanent captions) → stub settings panel + COMING SOON overlays; **FREE +100** watch-ad pill, 3/day via `AdWatchCap`), right = live gold/diamond with [+]. **Left column:** RANKING (coming soon) / SHOP (`ShopUI` overlay) / TEAM (`TeamScreenUI`). **Right column:** FRIENDS / CLUBS (115×115, mirrors the left column's top two rows on the right edge) → COMING SOON stubs (no online backend yet). **Bottom bar:** season pass (locked) + missions + **4 live post-match reward slots** (state from `PostMatchRewardManager`; pitch 84; Ready/Unlocking slots scale 1.18x + get `PackCardFX` float/shine; a slot filled by the last match scale-ins with overshoot on hub load via `ConsumeNewRewardSlot`) + PLAY → Game Mode overlay. Also hosts: Game Mode / Standings / Pre-Match / Club-customization overlays, the reward-slot unlock popup (odds table via shared `PackInfoPopup`), and `RefreshClubProfile()` (re-reads `RosterManager.Club` into the cluster). |
 | `PlayerData.cs` | **(Player data foundation, NEW)** ScriptableObject = one player CARD: `id`, `fullName`, `nation`, `position` (enum GK/CB/LW/RW/CF/LF/RF — enum order == starter-slot order), `overall` 0–100, a `Stats` struct (speed/shooting/passing/defense/stamina/goalKeeping 0–100), `rarity` (Common/Rare/Legendary → `RarityColor`), `portrait` (Sprite, null for now → UI draws a silhouette), `priceGold`, `isBot`. `[CreateAssetMenu]` (Create → Water Polo/Player). Static `ComputeOverall(stats,pos)` (GK leans on goalkeeping, field = outfield avg) shared by the generator + UpgradePlayer; `Clone()` so owned cards are mutated as runtime copies, never the source asset. PURELY data — never touched by the match. |
 | `PlayerDatabase.cs` | **(NEW)** Read-only player CATALOG: lazy C# singleton that `Resources.LoadAll`s every `PlayerData` under `Resources/Players/` into a dict by id (`Get`/`Has`/`AllPlayers`/`FirstOfPosition`/`Count`). No scene object. |
-| `Roster.cs` | **(NEW)** `[Serializable]` save payload: `List<string> ownedPlayerIds`, `string[7] starterSlots` (0=GK, 1–6 field by position), `int coins`, `int diamonds`. IDs only → tiny JSON. |
-| `RosterManager.cs` | **(NEW)** Self-bootstrapping singleton MonoBehaviour (DontDestroyOnLoad, no wiring). Loads/saves `Roster` as JSON in `Application.persistentDataPath/roster.json` (guest-mode, no Firebase); seeds a default 7 + bench + coins/diamonds on first run (self-heals if the catalog was empty then). Owned cards held as `Clone()`s so upgrades never corrupt the source asset. API: `BuyPlayer`/`SellPlayer`/`UpgradePlayer` (bump stats + recompute overall, spend/earn gold)/`SetStarter(slot,id)`/`GetOwnedPlayers`/`GetStarters`/`TeamOverall` (avg of filled starters); auto-saves after every mutation. (Upgrades are in-session only — Roster stores ids only; extend later.) |
+| `Roster.cs` | `[Serializable]` save payload: `List<string> ownedPlayerIds`, `string[7] starterSlots` (0=GK, 1–6 field by position), `int coins`, `int diamonds`, plus **`ClubProfile club`** (clubName / logoId / primaryColorHex / secondaryColorHex / countryId — the My Club identity). IDs only → tiny JSON. |
+| `RosterManager.cs` | Self-bootstrapping singleton MonoBehaviour (DontDestroyOnLoad, no wiring). Loads/saves `Roster` as JSON in `Application.persistentDataPath/roster.json` (guest-mode, no Firebase); seeds a default 7 + bench + coins/diamonds on first run (self-heals if the catalog was empty then). Owned cards held as `Clone()`s so upgrades never corrupt the source asset. API: `BuyPlayer`/`SellPlayer`/`UpgradePlayer`/`SetStarter(slot,id)`/`GetOwnedPlayers`/`GetStarters`/`TeamOverall`; **`Club` + `SaveClub()`** (the ClubProfile; generates a one-time "Guest_XXXXXX" name on first load); auto-saves after every mutation. (Upgrades are in-session only — Roster stores ids only; extend later.) |
 | `TeamScreenUI.cs` | **(NEW)** The REAL hub Team screen (B12), built in code in NavigationManager's style (no prefabs/wiring; NavigationManager attaches it + passes itself). Live 2-3-2 formation of the 7 starters, a scrollable owned-bench + buyable-market list, team OVR + gold/diamonds, and working **BUY / SELL / UPGRADE / START** buttons → `RosterManager` (each refreshes the screen + the top-bar currency). Each card: rarity-coloured border (grey/blue/gold) + name/OVR/position + silhouette (or `portrait`). |
 | `SamplePlayerGenerator.cs` | **(NEW, Editor — `Assets/Editor/`)** **Tools → Generate Sample Players**: writes 21 sample `PlayerData` assets to `Resources/Players/` (all 7 positions, mixed rarities/ratings/prices; deterministic → idempotent). Run once so the Team screen has data. |
 | `MatchResultUI.cs` | Full-time result screen, built in code, hidden until `MatchTimer` calls `Show(title, outcome)`: dark 80% overlay, FULL TIME/FORFEIT title, "YOU n — n BOT" score from ScoreManager, colored winner line (cyan/red/yellow), PLAY AGAIN + MAIN MENU buttons; 0.5s unscaled-time fade-in (timeScale is 0 at match end). Singleton. |
@@ -104,11 +104,16 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 | `LeagueSeason.cs` | Static session-persistent **tournament** state, one per competition. 16 teams in 2 groups of 8 (player = team 0, Group A); 7-round group round-robin (circle method), each player match also simulates that round in both groups; top 4 per group → single-elim knockout (QF: A1vB4/A2vB3/B1vA4/B2vA3 → SF → Final, no draws — sudden-death goal). Player eliminated → rest of bracket simulates instantly. Phase enum (GroupStage/Quarterfinal/Semifinal/Final/Completed), per-group P/W/D/L/GF/GA/Pts, `KnockoutMatch` bracket, 30-club name pool (15 opponents drawn per division). Champion → NavigationManager persists the next-division unlock (PlayerPrefs div1_won/pl_won/cc_won/wcl_won). |
 | `GameModeCardFX.cs` | Card hover/select animations, locked-card shake, staggered entry for Game Mode screen. |
 | `GameModeBackgroundFX.cs` | Ken Burns + vignette + light specks animated background for Game Mode. |
-| `CardPack.cs` | Static pack data model + open logic. `ShopPackType` (Basic/Super/Gold/Legendary shop packs: gem price, $-price/ad options, "at least one of X rarity" drop tables) and `CardTier` (post-match reward packs: unlock hours 3/7/12/24, per-card rarity odds). Draws catalog players by rarity (falls back a tier if a rarity pool is empty); `GrantAll` adds to roster, duplicates convert to coins. |
-| `PostMatchRewardManager.cs` | Post-match reward slots (Clash-style). Self-bootstrapping singleton, own JSON save (`rewardSlots.json` — persists across relaunch). 4 slots, states Empty/Locked/Unlocking(+derived Ready); full-time in `MatchTimer` rolls a tier (Common 80/Rare 16/Epic 3.5/Legendary 0.5%) into the first empty slot; one unlock at a time; UTC-tick timing keeps counting while the app is closed. |
-| `PackRevealUI.cs` | Shared "PACK OPENED!" overlay: rarity-framed cards scale in staggered, NEW / +coins per card, tap to dismiss. Used by hub reward slots and the shop. |
-| `ShopUI.cs` | Full SHOP screen (code-built, hosted in NavigationManager's shop overlay): top bar (back/gear/event badge/currencies with [+] → Coins/Gems tabs) + 9 bottom tabs — OFFERS (Coach's Choice + pack row), PACKS, DAILY DEALS (UTC-day rotation, local only), FREE PRIZES (6h PlayerPrefs cooldowns), ADS PACK (fake 0.8s ad, TODO real SDK), COINS/GEMS (via IAPBridge), DRAFT TICKETS + EVENT (honest placeholders). Drop-rate "i" popups per pack. |
+| `CardPack.cs` | Static pack data model + open logic. **ONE pack identity: `CardTier`** (Common/Rare/Epic/Legendary Card — the old `ShopPackType` Basic/Super/Gold/Legendary was DELETED 2026-07). Each tier def carries BOTH shop pricing (gems 100/100/250/400, Legendary also $2.99, Common also watch-ad) AND reward-slot unlock hours (3/7/12/24), plus ONE per-card rarity odds table used for every open and every "i" popup. Legendary is `guaranteedLegendary` (forces one in if the rolls miss). **`TierArtSprite(tier)`** = the ONE pack-art loader: loads the raw Texture2D (immune to sprite-slicing import modes) + alpha-trims to the content box so all 4 arts render uniform (see sprite-import gotcha in the 2026-07-02 session log). `GrantAll` adds to roster, duplicates convert to coins. |
+| `PostMatchRewardManager.cs` | Post-match reward slots (Clash-style). Self-bootstrapping singleton, own JSON save (`rewardSlots.json` — persists across relaunch). 4 slots, states Empty/Locked/Unlocking(+derived Ready); full-time in `MatchTimer` rolls a tier (Common 80/Rare 16/Epic 3.5/Legendary 0.5%) into the first empty slot; one unlock at a time; UTC-tick timing keeps counting while the app is closed. `ConsumeNewRewardSlot()` = one-shot in-memory flag (slot index of the newest drop) that NavigationManager consumes on hub load for the reveal animation. |
+| `PackRevealUI.cs` | Shared "PACK OPENED!" overlay: rarity-framed cards scale in staggered, NEW / +coins per card, tap to dismiss. Used by hub reward slots and the shop. Same file also holds **`PackInfoPopup`** — the ONE drop-rate "i" popup (odds table from `CardPack.TierPackDef.odds`), used by shop pack cards (`Show`) and the reward-slot popup (`BuildOddsRows`) so both render identically. |
+| `ShopUI.cs` | Full SHOP screen (code-built, hosted in NavigationManager's shop overlay). Content = **ONE continuous horizontal ScrollRect ("shelf")** with 9 fixed-width sections side by side (OFFERS / PACKS / DAILY DEALS / FREE PRIZES / ADS PACK / COIN PACKS / GEM PACKS / DRAFT TICKETS / EVENT); bottom bar = 9 plain-text tabs (active green + underline, FREE pill badges) that glide-scroll (0.4s SmoothStep) to their section, highlight follows free drags. All 4 pack cards are uniform 250x400 (`PackCardFX` float+shine on each); DAILY DEALS rotates 3-of-4 by UTC day + ad-watched REFRESH; FREE PRIZES are watch-to-claim; every WATCH button is compact ("WATCH ▶") and individually capped 3/day. Same file holds **`AdWatchCap`** — the shared PlayerPrefs 3/day watch-ad cap (also used by the hub's FREE +100). |
 | `IAPBridge.cs` | Single entry point for ALL real-money buys (`PurchaseProduct(productId, onSuccess)`). Currently a stub: logs + succeeds immediately. Swap this one method body for Unity IAP (Apple/Google billing only) later. |
+| `PackCardFX.cs` | **(NEW 2026-07)** Reusable idle-animation component: sine float (~5px, ~2s, random phase) + periodic diagonal shine sweep (one shared procedural gradient sprite, RectMask2D-clipped, raycastTarget off). `PackCardFX.Attach(rect)`. In the SHOP it's attached to the pack ART Image only (text/buttons stay still); on hub reward slots (Ready/Unlocking) it's the whole slot, intentionally. Unscaled time, no per-frame allocation. |
+| `MissionManager.cs` | **(NEW 2026-07)** Missions: plain C# singleton + `MissionsUI` (hub MISSIONS button → overlay; left tabs Newcomer/Daily/Weekly/Global Cup, right list with progress bars + CLAIM). Own JSON (missions.json). 3 real stats only — matches_played / matches_won / packs_opened — in 4 scopes: lifetime (Newcomer), UTC-day (Daily), 7-day (Weekly), season (Global Cup, follows SeasonPassManager's epoch). Stat hooks: MatchTimer.EndMatch + CardPack.OpenTierPack — no parallel tracking. Claims grant via `GrantReward` (the ONE reward funnel → RosterManager / CardPack) + 10 season XP. Red claim-ready badge on the hub missions button. |
+| `LeaderboardManager.cs` | **(NEW 2026-07)** League leaderboard: plain C# singleton + `RankingUI` (hub RANKING button). HONESTLY SIMULATED — 24 deterministic fake rivals per season (gamer-tag pool); only the PLAYER's points are real (+20 win / +5 loss from the EndMatch hook). 5-tier ladder IRON→DIAMOND; at season rollover (SeasonPassManager epoch) top 5 promote, rank 20+ demotes, prev result stored for "LAST WEEK". Player row always pinned at the bottom. Elite/World/Friends/Country tabs = locked COMING SOON stubs (need real accounts — NOT fake data). Own JSON (leaderboard.json). |
+| `SeasonPassManager.cs` | **(NEW 2026-07)** THE canonical season: 14-day epoch in seasonpass.json drives the hub "SEASON ENDS IN" countdown (now real + tappable → this screen), Global Cup mission scope, league rollover, and the shop EVENT badges. 16 tiers × 100 XP; XP from matches (+25 win / +10 loss, EndMatch hook) + mission claims (+10). `SeasonPassUI`: Gold Pass card (ACTIVATE = 500 gems PLACEHOLDER price, via SpendDiamonds), tier/XP progress, horizontal 16-tier track — free row always collectible, gold row padlocked until activated, COLLECT grants via the shared reward funnel. Free Pass "card" is just a note — the free row IS the free pass (no duplicate track). |
+| `ClubCustomizationUI.cs` | **(NEW 2026-07)** The "My Club" screen (code-built, hosted in NavigationManager's club overlay; opened from the hub avatar/name). Crest picker (8 PROCEDURAL shapes — real crest art still needed), primary/secondary color swatches (10 preset), country picker (12 text chips, colored-dot placeholder until flag art exists), TMP_InputField rename (max 16 chars), live preview, APPLY → `RosterManager.Club`/`SaveClub()` + `nav.RefreshClubProfile()`. Statics shared with the hub: `CrestSprite(id)`, `ParseHex`, `CountryColor`. |
 
 **Architecture rule for any AI:** keep `TeamSide` + `MatchContext` + `WaterPoloBrain`. It is roster-size-agnostic by design. To scale teams: add player/bot objects, drop them into the team `members` arrays + TeamManager arrays; formation & AI scale automatically.
 
@@ -681,20 +686,20 @@ Both in `Assets/Sprites/Players/Animations/`.
 - **Large buttons:** Career; Live ("Coming Soon", inactive).
 - **Smaller buttons:** TEAM, TRANSFERS, My Club, Challenges.
 
-## B7. Settings Screen 🟡 PARTIAL (only the "SET" button stub in the hub top bar — logs "coming soon")
+## B7. Settings Screen 🟡 PARTIAL (hub gear opens a minimal stub panel — title + "nothing to configure yet" + OK; real options not built)
 - Top tab stays; content area swaps; back arrow appears.
 - Options: (1) Language `< >` instant — English/Russian/Georgian (+more). (2) Bot difficulty `< >` — Medium/Hard, default Medium. (3) Account — Log In/Out/Sign Up/Delete (Apple or Google Play); progress saved & synced across devices (Firebase planned). (4) Info links — FAQs, Legal Notices, ToS, System Info (external links).
 
-## B8. Claim Rewards 🟡 PARTIAL (greyed CLAIM buttons exist on the Challenges shell; no reward logic)
+## B8. Claim Rewards ✅ MOSTLY DONE (2026-07: working CLAIM flows in Missions + Season Pass track + reward slots; all grants through RosterManager)
 - Popup: Season Pass + Activate Pass. Split horizontally: top = premium (pass) rewards, bottom = free. Rewards = coins/diamonds/items from wins/goals.
 
-## B9. Currencies 🟡 PARTIAL (top-bar gold/diamond displays with placeholder numbers; no economy behind them)
+## B9. Currencies 🟡 MOSTLY DONE (gold/diamonds LIVE from RosterManager everywhere; earned/spent via shop, packs, rewards, ads; IAP still stubbed through IAPBridge)
 > Foundation: **Player System Architecture** (end of Part A) — coins/diamonds stored in local JSON, synced to Firebase on login; payments require login, ads don't.
 - **Diamond:** icon + cyan bg + number; rare; buy high-rated random players / upgrade when gold short.
 - **Gold:** coin + number; buy normal/good players, upgrade pool, upgrade players, buy caps/swimwear.
 - Both have **+** → shop popup (real-money items/players via Apple/Google billing); purchase adds item to game.
 
-## B10. Club Logo / Team Name Popup 🟡 PARTIAL (logo placeholder circle + "My Club" name shown in the hub top bar; popup itself not built)
+## B10. Club Logo / Team Name Popup 🟡 MOSTLY DONE (2026-07: full My Club customization screen — `ClubCustomizationUI` — crest/colors/country/rename, persisted in `Roster.club`, hub cluster updates live; crests + flags are procedural placeholders until real art)
 - Manager standing, large club logo, overall team rating, changeable nationality flag, **Highlights** (saved goals), **Records** (games, W/L/D, goals for/against, biggest win/loss, win %, trophies).
 
 ## B11. Career Screen 🟡 PARTIAL (standings + pre-match built, career progression pending)
@@ -739,10 +744,10 @@ promotion/relegation and real match-result reporting → not yet built
 > Foundation: **Player System Architecture** (end of Part A) — buyable players come from Firestore (remote-patchable stats/prices), card rarity visuals, gold prices per card.
 - Daily random players (mostly low-level; tiered rare/golden chances). **Agents** cost diamonds → secret player by tier (Common 40 / Rare 150 / Golden 375 diamonds). Not enough diamonds → payment popup.
 
-## B14. My Club Screen 🟡 PARTIAL (shell built: STADIUM + POOL upgrade cards with placeholder levels/costs, CAP COLOR + SWIMWEAR stubs; no upgrade logic)
+## B14. My Club Screen 🟡 PARTIAL (identity half DONE 2026-07: crest/colors/country/name via `ClubCustomizationUI`; STADIUM/POOL upgrades + CAP COLOR/SWIMWEAR from the old shell were dropped in the hub redesign — pool VARIANTS via division progression is the planned replacement, not purchases)
 - Full-screen. (1) Upgrade Stadium/Pool → more fans → more post-match money (win > loss). (2) Customize cap & swimwear (colors/designs).
 
-## B15. Challenges Screen 🟡 PARTIAL (shell built: 3 daily challenge cards with progress/rewards + greyed CLAIM, reset countdown placeholder; no tracking)
+## B15. Challenges Screen ✅ SUPERSEDED by the Missions system (2026-07: `MissionManager`/`MissionsUI` — real tracked Newcomer/Daily/Weekly/Global Cup missions with working CLAIM; the old Challenges shell is gone with the hub redesign)
 - Popup; daily challenges ("Score 3 goals", "Win 5 games") → reward Gold + Diamonds.
 
 ## B16. MATCH GAMEPLAY (the core)
@@ -1122,4 +1127,149 @@ shot clock, etc. are untouched. Full detail under "## Animation System (Built Ju
   division progression, not purchases) — NOT YET BUILT
 - Main menu flow: MainMenu.unity still exists as launch screen (plain);
   consider skipping it and launching HubScene directly
-- Card slots are visual only — no chest/reward logic yet
+- ~~Card slots are visual only~~ → reward slots are now LIVE (see 2026-07-02 log)
+
+---
+
+## SESSION LOG — 2026-07-02 (shop rebuild + pack unification + hub profile cluster + My Club)
+
+**SHOP REBUILT (ShopUI.cs) — one continuous shelf:**
+- The 9 isolated tab panels became ONE horizontal ScrollRect: all sections laid
+  side by side, free drag scrolls through the whole shop like a shelf
+- Bottom bar: 9 plain-text tabs (active = green + underline, small FREE pills on
+  Daily Deals / Free Prizes / Ads Pack / Draft Tickets / Event); tapping glide-scrolls
+  (0.4s hand-rolled SmoothStep, no tween package) to the section; while free-dragging
+  the highlight follows whichever section's centre is nearest the viewport centre
+- All 4 pack cards are uniform 250x400 from a single `BuildPackCard`
+
+**PACK UNIFICATION — ShopPackType DELETED:**
+- One pack identity: `CardTier` (Common/Rare/Epic/Legendary Card) used by BOTH shop
+  purchases (instant open) and post-match reward slots (timed unlock). Prices live on
+  the tier defs (100/100/250/400 gems; Legendary $2.99 + guaranteed-legendary flag;
+  Common watch-ad option). ONE odds table per tier; probability numbers unchanged
+- `PackInfoPopup` (in PackRevealUI.cs): the ONE "i" drop-rate popup, identical in the
+  shop and on reward slots (NavigationManager's popup calls its `BuildOddsRows`)
+
+**WATCH-AD CAPS (`AdWatchCap`, in ShopUI.cs):**
+- Every WATCH button (shop packs, deals refresh, free prizes, ads pack, hub FREE +100)
+  has its OWN PlayerPrefs counter, 3 uses per UTC day; at cap it greys out showing
+  "RESETS IN Xh". Buttons are compact "WATCH ▶" (procedural play-triangle, no camera art)
+- Free Prizes changed from 6h cooldowns to watch-to-claim under this cap
+- Daily Deals gained an ad-watched REFRESH that rerolls which 3 packs are on sale
+
+**SPRITE IMPORT GOTCHA (the rare-card bug) — READ THIS BEFORE ADDING PNGs:**
+- User-dropped PNGs can import as Sprite Mode MULTIPLE and get auto-sliced; then
+  `Resources.Load<Sprite>` returns a tiny fragment (rare-card.png sliced into 12 → the
+  Rare pack rendered invisible; refresh made cards "disappear" whenever Rare rotated in)
+- Fix: `CardPack.TierArtSprite(tier)` loads the raw Texture2D + alpha-trims to the
+  content box → all pack art uses IT, never raw Load<Sprite>. The 4 card metas were
+  hand-set to spriteMode 1 + isReadable 1 (readable is required for the trim;
+  non-readable falls back to untrimmed). Source art sizes differ wildly
+  (common/rare 1536x1024 with huge margins, legendary 500x500 tight) — the trim is
+  what makes them render uniform
+
+**PACK/SLOT ANIMATIONS (PackCardFX.cs, NEW):**
+- Idle sine float (~5px, ~2s, random phase) + diagonal shine sweep every 3-4s
+  (one shared procedural gradient sprite, RectMask2D-clipped, raycast-transparent)
+- On every shop pack card + Coach's Choice + hub reward slots in Ready/Unlocking state
+- Active reward slots also scale 1.18x (slot pitch widened 78→84 so nothing overlaps);
+  Locked/empty slots stay static
+- New reward from a match → on next hub load that slot scale-ins with overshoot
+  (ease-out-back 0.5s; chose in-place scale-in over a fly-in — the slot row rebuilds
+  wholesale on every state change, a flying temp icon would be fragile) — one-shot flag
+  `PostMatchRewardManager.ConsumeNewRewardSlot()`
+
+**HUB PROFILE CLUSTER + MY CLUB (NavigationManager.cs + ClubCustomizationUI.cs NEW):**
+- Top-left cluster: circular avatar (club-primary tint, crest glyph, country dot
+  badge) + "Guest_XXXXXX" name (generated once, persisted in roster.json) + XP/level +
+  gear (stub settings panel) + envelope/gift (COMING SOON overlays) + FREE +100 ad pill
+  (+100 coins, AdWatchCap 3/day). Avatar or name → My Club screen
+- My Club: 8 procedural crest shapes, 10-color primary/secondary swatches, 12-country
+  text picker, rename field (TMP_InputField, max 16), APPLY persists `ClubProfile`
+  in Roster + updates the hub instantly
+- PLACEHOLDER ART STILL NEEDED: real avatar art, real crest set, real country flags
+
+**KNOWN REMAINING (this area):**
+- All "watch ad" flows fake the ad (0.8s pause) — real rewarded-ad SDK still TODO
+- IAPBridge still a stub (grants immediately)
+- Envelope/gift/settings destinations are stubs by design
+- Gameplay flow of the new pieces NOT fully play-tested (pack odds, cap resets at UTC
+  midnight, club profile across relaunch)
+
+---
+
+## SESSION LOG — 2026-07-02b (missions + ranking + season pass; FX scope fix)
+
+**FX SCOPE FIX (Task 0):** shop pack cards' float/shine now attach to the pack ART Image
+only — titles, player counts and buy buttons stay still. Hub reward slots unchanged
+(whole-slot float/shine is intentional there).
+
+**THE ONE SEASON (SeasonPassManager.cs, NEW):** 14-day season epoch stored in
+seasonpass.json — THE single season concept. Drives: hub "SEASON ENDS IN" (now a real
+countdown AND a button → Season Pass screen), Global Cup mission scope, league season
+rollover, shop EVENT badge/section countdowns. 16 tiers × 100 XP. XP: +25 win / +10 loss
+(EndMatch hook) + 10 per mission claim. Gold Pass = 500 gems (PLACEHOLDER price, via
+SpendDiamonds — swap to IAPBridge product if it becomes a cash buy). Free row always
+collectible; gold row padlocked until ACTIVATE. The reference's separate "Free Pass card"
+was folded into the free row (one track, no duplicated reward list).
+
+**MISSIONS (MissionManager.cs, NEW):** Newcomer(6, one-time) / Daily(3, UTC-day reset) /
+Weekly(3, 7-day reset) / Global Cup(3, season-scoped). ONLY 3 real stats
+(matches_played/matches_won/packs_opened) hooked at TWO existing points:
+- MatchTimer.EndMatch — THE combined post-match block (mission stats + league points
+  + season XP, one place, don't add more call sites)
+- CardPack.OpenTierPack — the one pack-open completion point (covers shop, slots,
+  mission/pass pack rewards; those pack rewards legitimately count as packs opened)
+"Goals scored" mission deliberately NOT added (no clean accessible per-match goal stat
+without new machinery). Hub missions button now opens the screen; its red badge = live
+claim-ready count (hidden at 0).
+
+**RANKING (LeaderboardManager.cs, NEW):** LEAGUE tab fully built but SIMULATED — 24
+deterministic fake rivals per season from a gamer-tag pool; ONLY the player's points are
+real (+20 win/+5 loss). IRON→BRONZE→SILVER→GOLD→DIAMOND; top 5 promote / rank 20+ demote
+at season rollover; "LAST WEEK" shows the recorded previous-season result (honest "no
+previous season yet" on the first one). Player row pinned at the panel bottom always.
+ELITE LEAGUE / WORLD / FRIENDS / COUNTRY = locked COMING SOON stubs — they require real
+online accounts; NO fake data pretending to be networked.
+
+**PLACEHOLDER ART in these screens:** medal circles, avatar color-dots, coin/gem icons
+(real gold-coin/diamond-coin sprites reused where they exist), padlock (procedural),
+all tab bars text-only. Real art wanted eventually: medals, avatars, league emblems,
+gold-pass art.
+
+**KNOWN REMAINING:**
+- Gold Pass price + XP amounts + mission targets/rewards are first-guess numbers — tune
+- Season rollover promote/demote and mission/league season resets not yet play-tested
+  across a real 14-day boundary (logic rolls multiple missed seasons in one step)
+
+---
+
+## SESSION LOG — 2026-07-03 (hub right column + icon tooltips; sprite-import fix round 2)
+
+*(Previous session hit the usage limit mid-work; this session verified its edits actually
+landed complete — `BuildOverlays()` and the whole NavigationManager compile clean, nothing
+was left half-written — then finished the two follow-up fixes.)*
+
+**RIGHT COLUMN (FIX A) — the code was never the bug:**
+- `BuildRightColumn()` already had FRIENDS/CLUBS at 115×115 mirroring the left column's
+  top two rows (anchor (1,0.5), x −150, rows +125/0). They rendered tiny (~50px) and
+  misplaced because **all 5 new button PNGs (friends/clubs/settings/message/gifts-button)
+  imported as Sprite Mode MULTIPLE** — the SAME gotcha as the 2026-07-02 rare-card bug:
+  `Resources.Load<Sprite>` returns an auto-sliced fragment, not the whole image
+- Fix: hand-set `spriteMode: 1` (Single) in all 5 `.png.meta` files. UI buttons load via
+  `Load<Sprite>` and need Single mode; only pack art goes through `CardPack.TierArtSprite`
+- RULE REINFORCED: after dropping ANY new PNG into Resources/Sprites, check its Inspector
+  Sprite Mode is **Single** before wiring it to UI
+
+**ICON TOOLTIPS (FIX B) — captions removed:**
+- Settings/Inbox/Gifts permanent caption text under the top-bar icons is gone;
+  `MakeCaptionedIconButton` now builds the label as an inactive tooltip text object
+- New nested `IconTooltip` (NavigationManager.cs, next to `AddHover`): shows on mouse
+  hover (pointerId < 0 = mouse), or after a 0.4s press-and-hold on touch; hides on
+  exit/release. Deliberately minimal — no tooltip framework
+- Icons re-centred vertically (the +9px caption offset removed)
+
+**KNOWN REMAINING (this area):**
+- Friends/Clubs open honest COMING SOON stubs (real feature needs online accounts)
+- Unity must reimport the 5 sprites (open the editor once) before the fix is visible
+- Global Cup missions are season-scoped stats, not tied to a real "Global Cup" event yet

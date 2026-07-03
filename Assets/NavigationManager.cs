@@ -56,7 +56,18 @@ public class NavigationManager : MonoBehaviour
 
     private GameObject rankingOverlay, shopOverlay, teamOverlay, gameModeOverlay;
     private GameObject standingsOverlay, preMatchOverlay; // built lazily, content rebuilt on each open
+    private GameObject clubOverlay, settingsOverlay, messagesOverlay, giftsOverlay;
+    private GameObject missionsOverlay, seasonPassOverlay;
+    private GameObject friendsOverlay, clubsOverlay; // coming-soon stubs (no online backend yet)
+    private GameObject missionsBadgeGo;              // red claim-ready counter on the missions button
+    private TextMeshProUGUI missionsBadgeLabel;
     private Coroutine slideRoutine;
+    private GameObject slideTarget;                  // overlay the running slideRoutine animates
+    private bool slideShowing;                       // its direction (see FinishSlide)
+
+    // Top-left profile cluster (avatar + flag + name), refreshed from RosterManager.Club.
+    private Image avatarCircle, avatarCrest, flagDot;
+    private TextMeshProUGUI clubNameLabel;
 
     // Competition display names, shared by the cards, standings and pre-match screens.
     private static readonly string[] CompNames =
@@ -85,11 +96,18 @@ public class NavigationManager : MonoBehaviour
         BuildRoot();
         BuildTopBar();
         BuildLeftColumn();
+        BuildRightColumn();
         BuildSeasonTimer();
         BuildBottomBar();
         BuildOverlays();
         RefreshCurrency();
+        RefreshClubProfile();
+        RefreshMissionsBadge();
         StartCoroutine(FadeInHub());
+
+        // A match just dropped a new pack into a slot → announce it with a scale-in.
+        int newSlot = PostMatchRewardManager.Instance.ConsumeNewRewardSlot();
+        if (newSlot >= 0) StartCoroutine(RevealNewRewardSlot(newSlot));
     }
 
     // ------------------------------------------------------------------ shell
@@ -131,15 +149,31 @@ public class NavigationManager : MonoBehaviour
         rt.anchoredPosition = Vector2.zero;
         rt.sizeDelta = new Vector2(0f, 80f);
 
-        // Left: grey avatar circle.
-        Image avatar = NewImage(bar.transform, "Avatar");
-        avatar.sprite = Circle();
-        avatar.color = GreyAvatar;
-        avatar.raycastTarget = false;
-        SetRect(avatar.rectTransform, new Vector2(0f, 0.5f), new Vector2(48f, 0f), new Vector2(60f, 60f));
+        // Left: profile cluster — avatar + flag badge (opens My Club), name + XP + level (also
+        // opens My Club), gear (settings stub), envelope/gift (coming soon), FREE +100 ad pill.
+        // No shop button or currency display here — those live on the right side / left column.
+        GameObject avGo = new GameObject("BtnAvatar");
+        avGo.transform.SetParent(bar.transform, false);
+        SetRect(avGo.AddComponent<RectTransform>(), new Vector2(0f, 0.5f), new Vector2(48f, 0f), new Vector2(60f, 60f));
+        avatarCircle = avGo.AddComponent<Image>();
+        avatarCircle.sprite = Circle();
+        avatarCircle.color = GreyAvatar; // recolored from the club profile in RefreshClubProfile
+        Button avBtn = avGo.AddComponent<Button>();
+        avBtn.targetGraphic = avatarCircle;
+        avBtn.onClick.AddListener(OpenClubScreen);
+        AddHover(avGo);
+        avatarCrest = NewImage(avGo.transform, "Crest"); // club crest doubles as the avatar glyph
+        avatarCrest.preserveAspect = true;
+        avatarCrest.raycastTarget = false;
+        SetRect(avatarCrest.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(34f, 34f));
+        // Country "flag" badge: a colored dot until real flag art exists (grey = no country picked).
+        flagDot = NewImage(avGo.transform, "Flag");
+        flagDot.sprite = Circle();
+        flagDot.raycastTarget = false;
+        SetRect(flagDot.rectTransform, new Vector2(1f, 0f), new Vector2(-4f, 6f), new Vector2(20f, 20f));
 
         // Club name + XP bar + bronze level badge.
-        MakeText(bar.transform, "My Club", 20f, new Vector2(0f, 0.5f), new Vector2(150f, 12f),
+        clubNameLabel = MakeText(bar.transform, "My Club", 20f, new Vector2(0f, 0.5f), new Vector2(150f, 12f),
                  new Vector2(140f, 26f), Color.white, TextAlignmentOptions.Left);
 
         Image xpBg = MakePanel(bar.transform, new Vector2(0f, 0.5f), new Vector2(150f, -14f),
@@ -152,9 +186,12 @@ public class NavigationManager : MonoBehaviour
         xpFill.raycastTarget = false;
         RectTransform fr = xpFill.rectTransform;
         fr.anchorMin = new Vector2(0f, 0f);
-        fr.anchorMax = new Vector2(0.7f, 1f); // ~70% filled
+        fr.anchorMax = new Vector2(0.7f, 1f);
         fr.offsetMin = new Vector2(1f, 1f);
         fr.offsetMax = new Vector2(-1f, -1f);
+        // No player-level XP system exists yet (RosterManager tracks none) — show an HONEST
+        // empty bar instead of the old fake 70%. Re-enable the fill when real XP lands.
+        xpFill.gameObject.SetActive(false);
 
         Image badge = NewImage(bar.transform, "LevelBadge");
         badge.sprite = Circle();
@@ -164,9 +201,29 @@ public class NavigationManager : MonoBehaviour
         MakeText(badge.transform, "1", 13f, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(22f, 22f),
                  Color.white, TextAlignmentOptions.Center);
 
-        // Settings gear (plain circle placeholder — TMP's default font lacks a gear glyph).
-        MakeGearButton(bar.transform, new Vector2(0f, 0.5f), new Vector2(272f, 0f), 48f,
-                       () => Debug.Log("Settings coming soon"));
+        // Invisible click area over the name/XP/level cluster → My Club (same as the avatar).
+        GameObject nameBtnGo = new GameObject("BtnClubName");
+        nameBtnGo.transform.SetParent(bar.transform, false);
+        SetRect(nameBtnGo.AddComponent<RectTransform>(), new Vector2(0f, 0.5f), new Vector2(160f, 0f), new Vector2(160f, 64f));
+        Image nameHit = nameBtnGo.AddComponent<Image>();
+        nameHit.color = new Color(0f, 0f, 0f, 0f);
+        Button nameBtn = nameBtnGo.AddComponent<Button>();
+        nameBtn.targetGraphic = nameHit;
+        nameBtn.transition = Selectable.Transition.None;
+        nameBtn.onClick.AddListener(OpenClubScreen);
+
+        // Settings / Inbox / Gifts — real button art (settings/message/gifts-button.png) with
+        // small captions, spaced as their own group between the profile block and the pill.
+        MakeCaptionedIconButton(bar.transform, "BtnSettings", "Sprites/settings-button", "Settings",
+                                new Vector2(310f, 0f), () => ShowOverlay(settingsOverlay));
+        MakeCaptionedIconButton(bar.transform, "BtnMessages", "Sprites/message-button", "Inbox",
+                                new Vector2(385f, 0f), () => ShowOverlay(messagesOverlay));
+        MakeCaptionedIconButton(bar.transform, "BtnGifts", "Sprites/gifts-button", "Gifts",
+                                new Vector2(460f, 0f), () => ShowOverlay(giftsOverlay));
+
+        // FREE +100: watch an ad (stub) for 100 coins — same AdWatchCap 3/day system as the
+        // shop. Sits clear of the icon group.
+        BuildFree100Button(bar.transform, new Vector2(590f, 0f));
 
         // Right side, right-to-left: gold [+], gold count, gold icon, diamond [+], diamond count, diamond icon.
         MakePlusButton(bar.transform, new Vector2(1f, 0.5f), new Vector2(-32f, 0f), 30f,
@@ -206,17 +263,37 @@ public class NavigationManager : MonoBehaviour
                         new Vector2(x, -step), new Vector2(115f, 115f), () => OpenTeamScreen("HUB"));
     }
 
+    // ------------------------------------------------------------ right column
+
+    // Friends / Clubs — mirrors the left column on the right edge. No online backend exists
+    // (accounts, unique IDs, club membership are all deferred — see the master plan roadmap),
+    // so both open the same honest COMING SOON stub the other unbuilt features use.
+    void BuildRightColumn()
+    {
+        const float x = -150f, step = 125f;
+        MakeImageButton(canvasRoot, "BtnFriends", "Sprites/friends-button", new Vector2(1f, 0.5f),
+                        new Vector2(x, step), new Vector2(115f, 115f), () => ShowOverlay(friendsOverlay));
+        MakeImageButton(canvasRoot, "BtnClubs", "Sprites/clubs-button", new Vector2(1f, 0.5f),
+                        new Vector2(x, 0f), new Vector2(115f, 115f), () => ShowOverlay(clubsOverlay));
+    }
+
     // ------------------------------------------------------------ season timer
 
     void BuildSeasonTimer()
     {
+        // Live countdown from SeasonPassManager's stored epoch (no longer decorative);
+        // tapping it opens the Season Pass screen.
         Image panel = MakePanel(canvasRoot, new Vector2(1f, 1f), new Vector2(-118f, -126f),
                                 new Vector2(200f, 80f), DarkPanel);
-        panel.raycastTarget = false;
+        panel.raycastTarget = true;
+        Button b = panel.gameObject.AddComponent<Button>();
+        b.targetGraphic = panel;
+        b.onClick.AddListener(() => ShowOverlay(seasonPassOverlay));
+        AddHover(panel.gameObject);
         MakeText(panel.transform, "SEASON ENDS IN:", 13f, new Vector2(0.5f, 1f), new Vector2(0f, -20f),
                  new Vector2(188f, 20f), new Color(1f, 1f, 1f, 0.85f), TextAlignmentOptions.Center);
-        MakeText(panel.transform, "2D 10H", 30f, new Vector2(0.5f, 0f), new Vector2(0f, 16f),
-                 new Vector2(188f, 40f), Gold, TextAlignmentOptions.Center);
+        MakeText(panel.transform, SeasonPassManager.Instance.CountdownLabel(), 30f, new Vector2(0.5f, 0f),
+                 new Vector2(0f, 16f), new Vector2(188f, 40f), Gold, TextAlignmentOptions.Center);
     }
 
     // -------------------------------------------------------------- bottom bar
@@ -251,17 +328,19 @@ public class NavigationManager : MonoBehaviour
         MakeText(ovl.transform, "UNLOCKED AT LEVEL 4", 16f, new Vector2(0.5f, 0f), new Vector2(0f, 20f),
                  new Vector2(260f, 24f), Color.white, TextAlignmentOptions.Center);
 
-        // Missions (centre-left): art + red notification badge.
+        // Missions (centre-left): opens the Missions screen; the red badge shows the live
+        // claim-ready count (hidden at 0 — see RefreshMissionsBadge).
         Button ms = MakeImageButton(barGo.transform, "BtnMissions", "Sprites/missions-button",
                                     new Vector2(0f, 0.5f), new Vector2(455f, 0f), new Vector2(90f, 90f),
-                                    () => Debug.Log("Missions coming soon"));
+                                    () => ShowOverlay(missionsOverlay));
         Image dot = NewImage(ms.transform, "Badge");
         dot.sprite = Circle();
         dot.color = Red;
         dot.raycastTarget = false;
         SetRect(dot.rectTransform, new Vector2(1f, 1f), new Vector2(-6f, -6f), new Vector2(26f, 26f));
-        MakeText(dot.transform, "1", 15f, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(26f, 26f),
-                 Color.white, TextAlignmentOptions.Center);
+        missionsBadgeGo = dot.gameObject;
+        missionsBadgeLabel = MakeText(dot.transform, "0", 15f, new Vector2(0.5f, 0.5f), Vector2.zero,
+                 new Vector2(26f, 26f), Color.white, TextAlignmentOptions.Center);
 
         // Post-match reward slots (live) between the missions button and PLAY.
         BuildRewardSlots(barGo.transform);
@@ -292,7 +371,9 @@ public class NavigationManager : MonoBehaviour
         if (rewardSlotRow == null) return;
         ClearChildren(rewardSlotRow);
         PostMatchRewardManager mgr = PostMatchRewardManager.Instance;
-        const float w = 70f, h = 90f, gap = 8f;
+        // Pitch 84 (was 78) leaves room for active slots to scale up 18% without overlapping
+        // each other or the PLAY button.
+        const float w = 70f, h = 90f, pitch = 84f;
 
         for (int i = 0; i < PostMatchRewardManager.SlotCount; i++)
         {
@@ -301,7 +382,7 @@ public class NavigationManager : MonoBehaviour
             bool ready = mgr.IsReady(i);
             rewardTimeLabels[i] = null;
             rewardShownReady[i] = ready;
-            float sx = (i - 1.5f) * (w + gap);
+            float sx = (i - 1.5f) * pitch;
 
             // outline frame + dark inset fill (same look as the old placeholders)
             Image frame = NewImage(rewardSlotRow, "RewardSlot" + (i + 1));
@@ -356,7 +437,16 @@ public class NavigationManager : MonoBehaviour
             if (ready) btn.onClick.AddListener(() => OpenReadyRewardSlot(idx));
             else if (slot.State == PostMatchRewardManager.SlotState.Locked)
                 btn.onClick.AddListener(() => OpenRewardPopup(idx));
-            AddHover(frame.gameObject);
+
+            // A genuinely active pack (Ready or counting down) pops 18% larger and gets the
+            // idle float + shine. Locked/empty slots stay static with the normal hover.
+            bool active = ready || slot.State == PostMatchRewardManager.SlotState.Unlocking;
+            if (active)
+            {
+                frame.transform.localScale = Vector3.one * 1.18f;
+                PackCardFX.Attach(frame.rectTransform, 4f);
+            }
+            else AddHover(frame.gameObject); // hover-scale would fight the enlarged scale
         }
     }
 
@@ -453,9 +543,17 @@ public class NavigationManager : MonoBehaviour
 
     void BuildOverlays()
     {
-        rankingOverlay = BuildComingSoonOverlay("RANKING");
+        messagesOverlay = BuildComingSoonOverlay("MESSAGES");
+        giftsOverlay = BuildComingSoonOverlay("GIFTS");
+        friendsOverlay = BuildComingSoonOverlay("FRIENDS");
+        clubsOverlay = BuildComingSoonOverlay("CLUBS");
+        settingsOverlay = BuildSettingsOverlay();
         shopOverlay = BuildShopOverlay();
         teamOverlay = BuildTeamOverlay();
+        clubOverlay = BuildClubOverlay();
+        rankingOverlay = BuildRankingOverlay();
+        missionsOverlay = BuildMissionsOverlay();
+        seasonPassOverlay = BuildSeasonPassOverlay();
         gameModeOverlay = BuildGameModeOverlay();
     }
 
@@ -575,6 +673,276 @@ public class NavigationManager : MonoBehaviour
             CanvasGroup cg = standingsOverlay.GetComponent<CanvasGroup>();
             if (cg != null) cg.alpha = 1f;
         }
+    }
+
+    // ------------------------------------------------------- club profile / my club
+
+    // Dark full-screen overlay hosting ClubCustomizationUI (same shell as the team overlay).
+    GameObject BuildClubOverlay()
+    {
+        GameObject ov = new GameObject("Overlay_CLUB");
+        ov.transform.SetParent(canvasRoot, false);
+        Stretch(ov.AddComponent<RectTransform>());
+        Image backdrop = ov.AddComponent<Image>();
+        backdrop.color = OverlayDark;
+        backdrop.raycastTarget = true;
+        ov.AddComponent<CanvasGroup>();
+
+        GameObject sheetGo = new GameObject("Sheet");
+        sheetGo.transform.SetParent(ov.transform, false);
+        RectTransform srt = sheetGo.AddComponent<RectTransform>();
+        srt.anchorMin = Vector2.zero;
+        srt.anchorMax = Vector2.one;
+        srt.pivot = new Vector2(0.5f, 0.5f);
+        srt.sizeDelta = Vector2.zero;
+        srt.anchoredPosition = Vector2.zero;
+
+        ClubCustomizationUI club = sheetGo.AddComponent<ClubCustomizationUI>();
+        club.Build(sheetGo.transform, this);
+
+        ov.SetActive(false);
+        return ov;
+    }
+
+    public void OpenClubScreen() => ShowOverlay(clubOverlay);
+    public void CloseClubScreen() => HideOverlay(clubOverlay);
+
+    // ------------------------------------------- missions / ranking / season pass
+
+    // Same full-canvas hosted-overlay shell as the team/shop/club screens.
+    GameObject BuildMissionsOverlay()
+    {
+        GameObject ov = BuildHostShell("Overlay_MISSIONS", out Transform sheet);
+        sheet.gameObject.AddComponent<MissionsUI>().Build(sheet, this);
+        return ov;
+    }
+
+    GameObject BuildRankingOverlay()
+    {
+        GameObject ov = BuildHostShell("Overlay_RANKING", out Transform sheet);
+        sheet.gameObject.AddComponent<RankingUI>().Build(sheet, this);
+        return ov;
+    }
+
+    GameObject BuildSeasonPassOverlay()
+    {
+        GameObject ov = BuildHostShell("Overlay_SEASONPASS", out Transform sheet);
+        sheet.gameObject.AddComponent<SeasonPassUI>().Build(sheet, this);
+        return ov;
+    }
+
+    GameObject BuildHostShell(string name, out Transform sheet)
+    {
+        GameObject ov = new GameObject(name);
+        ov.transform.SetParent(canvasRoot, false);
+        Stretch(ov.AddComponent<RectTransform>());
+        Image backdrop = ov.AddComponent<Image>();
+        backdrop.color = OverlayDark;
+        backdrop.raycastTarget = true;
+        ov.AddComponent<CanvasGroup>();
+
+        GameObject sheetGo = new GameObject("Sheet");
+        sheetGo.transform.SetParent(ov.transform, false);
+        RectTransform srt = sheetGo.AddComponent<RectTransform>();
+        srt.anchorMin = Vector2.zero;
+        srt.anchorMax = Vector2.one;
+        srt.pivot = new Vector2(0.5f, 0.5f);
+        srt.sizeDelta = Vector2.zero;
+        srt.anchoredPosition = Vector2.zero;
+        sheet = sheetGo.transform;
+
+        ov.SetActive(false);
+        return ov;
+    }
+
+    public void CloseMissionsScreen() => HideOverlay(missionsOverlay);
+    public void CloseRankingScreen() => HideOverlay(rankingOverlay);
+    public void CloseSeasonPassScreen() => HideOverlay(seasonPassOverlay);
+
+    // Recompute the missions button's claim-ready counter (hidden at 0). Called on hub build
+    // and by MissionsUI after every claim.
+    public void RefreshMissionsBadge()
+    {
+        if (missionsBadgeGo == null) return;
+        int n = MissionManager.Instance.ClaimReadyCount();
+        missionsBadgeGo.SetActive(n > 0);
+        if (missionsBadgeLabel != null) missionsBadgeLabel.text = n.ToString();
+    }
+
+    // Re-read the saved club identity into the top-left cluster. Called on hub build and by
+    // ClubCustomizationUI's APPLY so the bar updates the moment the profile changes.
+    public void RefreshClubProfile()
+    {
+        ClubProfile club = RosterManager.Instance.Club;
+        if (clubNameLabel != null) clubNameLabel.text = club.clubName;
+        if (avatarCircle != null)
+            avatarCircle.color = ClubCustomizationUI.ParseHex(club.primaryColorHex, GreyAvatar);
+        if (avatarCrest != null)
+        {
+            avatarCrest.sprite = ClubCustomizationUI.CrestSprite(club.logoId);
+            avatarCrest.color = ClubCustomizationUI.ParseHex(club.secondaryColorHex, Color.white);
+        }
+        if (flagDot != null)
+            flagDot.color = string.IsNullOrEmpty(club.countryId)
+                ? new Color(0.4f, 0.44f, 0.5f, 1f) // placeholder: no country picked yet
+                : ClubCustomizationUI.CountryColor(club.countryId);
+    }
+
+    // Minimal stub settings panel — just states itself and closes. Real options come later.
+    GameObject BuildSettingsOverlay()
+    {
+        GameObject ov = new GameObject("Overlay_SETTINGS");
+        ov.transform.SetParent(canvasRoot, false);
+        Stretch(ov.AddComponent<RectTransform>());
+        Image backdrop = ov.AddComponent<Image>();
+        backdrop.color = OverlayDark;
+        backdrop.raycastTarget = true;
+        ov.AddComponent<CanvasGroup>();
+
+        Image sheet = NewImage(ov.transform, "Sheet");
+        sheet.sprite = GetRoundedSprite();
+        sheet.type = Image.Type.Sliced;
+        sheet.color = DarkPanel;
+        SetRect(sheet.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(620f, 300f));
+
+        MakeText(sheet.transform, "SETTINGS", 24f, new Vector2(0.5f, 1f), new Vector2(0f, -52f),
+                 new Vector2(560f, 32f), Cyan, TextAlignmentOptions.Center);
+        MakeText(sheet.transform, "Sound, language and account options will live here.\nNothing to configure yet.",
+                 18f, new Vector2(0.5f, 0.5f), new Vector2(0f, 10f), new Vector2(560f, 60f),
+                 Color.white, TextAlignmentOptions.Center);
+
+        GameObject self = ov;
+        MakeActionButton(sheet.transform, "OK", new Vector2(0.5f, 0f), new Vector2(0f, 46f),
+                         new Vector2(180f, 56f), Green, () => HideOverlay(self));
+        MakeCloseButton(sheet.transform, () => HideOverlay(self));
+
+        ov.SetActive(false);
+        return ov;
+    }
+
+    // Top-bar icon button with real sprite art. The label is a tooltip, not a permanent caption:
+    // hidden by default, shown on hover (desktop) or after a ~0.4s press-and-hold (touch).
+    Button MakeCaptionedIconButton(Transform parent, string name, string spritePath, string caption,
+                                   Vector2 pos, UnityEngine.Events.UnityAction onClick)
+    {
+        Button btn = MakeImageButton(parent, name, spritePath, new Vector2(0f, 0.5f),
+                                     pos, new Vector2(42f, 42f), onClick);
+        TextMeshProUGUI tip = MakeText(btn.transform, caption, 12f, new Vector2(0.5f, 0f),
+                 new Vector2(0f, -10f), new Vector2(90f, 18f), Color.white, TextAlignmentOptions.Center);
+        tip.raycastTarget = false;
+        tip.gameObject.SetActive(false);
+        btn.gameObject.AddComponent<IconTooltip>().tooltip = tip.gameObject;
+        return btn;
+    }
+
+    // "FREE +100" pill: fake-ad (0.8s) → +100 coins, individually capped at 3/day via AdWatchCap.
+    void BuildFree100Button(Transform parent, Vector2 pos)
+    {
+        const string capId = "hub_free100";
+        bool capped = AdWatchCap.Used(capId) >= AdWatchCap.DailyCap;
+
+        GameObject go = new GameObject("BtnFree100");
+        go.transform.SetParent(parent, false);
+        SetRect(go.AddComponent<RectTransform>(), new Vector2(0f, 0.5f), pos, new Vector2(146f, 40f));
+        Image img = go.AddComponent<Image>();
+        img.sprite = GetRoundedSprite();
+        img.type = Image.Type.Sliced;
+        img.color = capped ? new Color(0.3f, 0.34f, 0.4f, 1f) : Green;
+        Button btn = go.AddComponent<Button>();
+        btn.targetGraphic = img;
+        btn.interactable = !capped;
+
+        TextMeshProUGUI txt = MakeText(go.transform, capped ? AdWatchCap.ResetLabel() : "FREE +100",
+                                       capped ? 12f : 15f, new Vector2(0.5f, 0.5f), new Vector2(-8f, 0f),
+                                       new Vector2(116f, 40f), Color.white, TextAlignmentOptions.Center);
+        Image tri = NewImage(go.transform, "Play");
+        tri.sprite = TriangleSprite();
+        tri.color = Color.white;
+        tri.raycastTarget = false;
+        SetRect(tri.rectTransform, new Vector2(1f, 0.5f), new Vector2(-15f, 0f), new Vector2(12f, 14f));
+        tri.gameObject.SetActive(!capped);
+
+        if (!capped) btn.onClick.AddListener(() =>
+        {
+            btn.interactable = false;
+            txt.text = "LOADING...";
+            tri.gameObject.SetActive(false);
+            StartCoroutine(HubFakeAd(() =>
+            {
+                AdWatchCap.Record(capId);
+                RosterManager.Instance.AddCoins(100);
+                RefreshCurrency();
+                if (btn == null) return;
+                if (AdWatchCap.Used(capId) >= AdWatchCap.DailyCap)
+                {
+                    img.color = new Color(0.3f, 0.34f, 0.4f, 1f);
+                    txt.fontSize = 12f;
+                    txt.text = AdWatchCap.ResetLabel();
+                }
+                else
+                {
+                    btn.interactable = true;
+                    txt.text = "FREE +100";
+                    tri.gameObject.SetActive(true);
+                }
+            }));
+        });
+        AddHover(go);
+    }
+
+    // Fake rewarded ad: ~0.8s pause then the grant. TODO(ads): swap for the real ad SDK.
+    IEnumerator HubFakeAd(System.Action grant)
+    {
+        yield return new WaitForSecondsRealtime(0.8f);
+        grant?.Invoke();
+    }
+
+    // Scale-in-with-overshoot on the slot that just received a pack after a match. (Chosen over
+    // a genuine fly-in-from-offscreen: the slot row is rebuilt wholesale on every state change,
+    // so animating a temporary flying icon across the screen adds fragility for little payoff.)
+    IEnumerator RevealNewRewardSlot(int slotIndex)
+    {
+        yield return null; // let the first layout pass land
+        if (rewardSlotRow == null) yield break;
+        Transform slot = rewardSlotRow.Find("RewardSlot" + (slotIndex + 1));
+        if (slot == null) yield break;
+        Vector3 target = slot.localScale; // 1.0 — a fresh drop is Locked, never enlarged
+        slot.localScale = Vector3.zero;
+        float t = 0f;
+        const float dur = 0.5f;
+        while (t < dur)
+        {
+            t += Time.unscaledDeltaTime;
+            if (slot == null) yield break;
+            slot.localScale = target * EaseOutBack(Mathf.Clamp01(t / dur));
+            yield return null;
+        }
+        if (slot != null) slot.localScale = target;
+    }
+
+    // Small right-pointing triangle (play glyph / envelope flap). Same procedural pattern as
+    // ShopUI's watch-button icon.
+    static Sprite triangleSprite;
+    static Sprite TriangleSprite()
+    {
+        if (triangleSprite != null) return triangleSprite;
+        const int size = 64;
+        Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        Color32[] px = new Color32[size * size];
+        for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                float progress = x / (float)(size - 1);
+                float halfH = (1f - progress) * (size * 0.5f - 1f);
+                float dy = Mathf.Abs(y - (size * 0.5f - 0.5f));
+                float a = Mathf.Clamp01(halfH - dy + 1f);
+                px[y * size + x] = new Color32(255, 255, 255, (byte)(a * 255f));
+            }
+        tex.SetPixels32(px);
+        tex.Apply();
+        tex.wrapMode = TextureWrapMode.Clamp;
+        triangleSprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+        return triangleSprite;
     }
 
     // ------------------------------------------------------------- game mode
@@ -1471,9 +1839,11 @@ public class NavigationManager : MonoBehaviour
     void ShowOverlay(GameObject overlay)
     {
         if (overlay == null) return;
+        FinishSlide();
         overlay.SetActive(true);
         overlay.transform.SetAsLastSibling();
-        if (slideRoutine != null) StopCoroutine(slideRoutine);
+        slideTarget = overlay;
+        slideShowing = true;
         slideRoutine = overlay == gameModeOverlay
             ? StartCoroutine(RevealGameMode(true))   // fade backdrop + stagger the cards in
             : StartCoroutine(SlideOverlay(overlay, true));
@@ -1482,10 +1852,36 @@ public class NavigationManager : MonoBehaviour
     void HideOverlay(GameObject overlay)
     {
         if (overlay == null) return;
-        if (slideRoutine != null) StopCoroutine(slideRoutine);
+        FinishSlide();
+        slideTarget = overlay;
+        slideShowing = false;
         slideRoutine = overlay == gameModeOverlay
             ? StartCoroutine(RevealGameMode(false))
             : StartCoroutine(SlideOverlay(overlay, false));
+    }
+
+    // Snap any in-flight overlay transition to its END state before starting a new one.
+    // Previously Show/Hide just stopped the shared coroutine: interrupting a CLOSE this way
+    // left that overlay active at near-zero alpha with a full-screen raycastTarget backdrop —
+    // an invisible blocker that silently ate every hub tap (the "SEASON ENDS IN does nothing"
+    // bug). Finalizing the old transition makes that impossible.
+    void FinishSlide()
+    {
+        if (slideRoutine != null) { StopCoroutine(slideRoutine); slideRoutine = null; }
+        if (slideTarget == null) return;
+        CanvasGroup cg = slideTarget.GetComponent<CanvasGroup>();
+        RectTransform sheet = slideTarget.transform.Find("Sheet") as RectTransform;
+        if (slideShowing)
+        {
+            if (cg != null) cg.alpha = 1f;
+            if (sheet != null) sheet.anchoredPosition = Vector2.zero;
+        }
+        else
+        {
+            if (cg != null) cg.alpha = 0f;
+            slideTarget.SetActive(false);
+        }
+        slideTarget = null;
     }
 
     // Game-mode open/close: fade the backdrop, then stagger the cards in (fade + scale 0.9→1.0,
@@ -1784,6 +2180,45 @@ public class NavigationManager : MonoBehaviour
         return btn;
     }
 
+    // Minimal show/hide tooltip for the top-bar icons. Desktop: visible while the mouse hovers
+    // (mouse pointerIds are negative). Touch: visible after a 0.4s press-and-hold, hidden again
+    // on release/exit. Coexists with AddHover's EventTrigger — Unity delivers pointer events to
+    // every handler component on the object.
+    class IconTooltip : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler,
+                        IPointerDownHandler, IPointerUpHandler
+    {
+        public GameObject tooltip;
+        const float HoldDelay = 0.4f;
+        float pressedAt = -1f; // unscaled time of the current touch press; -1 = not pressed
+
+        public void OnPointerEnter(PointerEventData e)
+        {
+            if (e.pointerId < 0 && tooltip != null) tooltip.SetActive(true);
+        }
+
+        public void OnPointerExit(PointerEventData e) => Hide();
+
+        public void OnPointerDown(PointerEventData e)
+        {
+            if (e.pointerId >= 0) pressedAt = Time.unscaledTime;
+        }
+
+        public void OnPointerUp(PointerEventData e) => Hide();
+
+        void Update()
+        {
+            if (pressedAt >= 0f && Time.unscaledTime - pressedAt >= HoldDelay
+                && tooltip != null && !tooltip.activeSelf)
+                tooltip.SetActive(true);
+        }
+
+        void Hide()
+        {
+            pressedAt = -1f;
+            if (tooltip != null) tooltip.SetActive(false);
+        }
+    }
+
     static void AddHover(GameObject go)
     {
         EventTrigger trigger = go.AddComponent<EventTrigger>();
@@ -1864,7 +2299,7 @@ public class NavigationManager : MonoBehaviour
     }
 
     // White, tintable padlock (rounded body + shackle ring + keyhole) for the locked season pass.
-    static Sprite MakeLockSprite()
+    public static Sprite MakeLockSprite() // public: SeasonPassUI/RankingUI reuse the padlock
     {
         if (lockSprite != null) return lockSprite;
         const int s = 64;

@@ -64,6 +64,18 @@ public class RosterManager : MonoBehaviour
         if (roster == null) roster = new Roster();
         if (roster.ownedPlayerIds == null) roster.ownedPlayerIds = new List<string>();
         if (roster.starterSlots == null || roster.starterSlots.Length != 7) roster.starterSlots = new string[7];
+        if (roster.club == null) roster.club = new ClubProfile(); // pre-club saves
+
+        // One-time guest name: generated on the first load that finds no name, then persisted —
+        // never regenerates on later launches.
+        if (string.IsNullOrEmpty(roster.club.clubName))
+        {
+            const string chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I lookalikes
+            char[] suffix = new char[6];
+            for (int i = 0; i < suffix.Length; i++) suffix[i] = chars[Random.Range(0, chars.Length)];
+            roster.club.clubName = "Guest_" + new string(suffix);
+            Save();
+        }
 
         // Self-heal: an empty roster + a non-empty catalog (e.g. the game was played once before
         // the sample players existed) re-seeds the default squad instead of staying empty forever.
@@ -120,6 +132,13 @@ public class RosterManager : MonoBehaviour
             if (original != null) ownedRuntime[id] = original.Clone();
         }
     }
+
+    // ----------------------------------------------------------------- club profile
+
+    // The live club identity. Mutate its fields then call SaveClub() — same auto-save-on-mutation
+    // contract as the rest of the manager, just with the edit done by the caller (the My Club UI).
+    public ClubProfile Club => roster.club;
+    public void SaveClub() => Save();
 
     // ----------------------------------------------------------------- queries
 

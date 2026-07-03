@@ -72,6 +72,10 @@ public static class CardPack
                 else result.Insert(0, p);
             }
         }
+
+        // The ONE pack-open completion point (shop buys, reward slots, mission/pass rewards all
+        // come through here) → mission stat.
+        MissionManager.Instance.RecordStat("packs_opened");
         return result;
     }
 

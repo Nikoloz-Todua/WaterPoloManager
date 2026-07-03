@@ -141,9 +141,9 @@ public class ShopUI : MonoBehaviour
         gbtn.targetGraphic = gimg;
         gbtn.onClick.AddListener(() => Debug.Log("Shop settings coming soon"));
 
-        // Event badge stub → jumps to the EVENT section.
-        MakeButton(bar.transform, "EVENT  02D 10H", 15f, new Vector2(0.5f, 0.5f),
-                   new Vector2(-40f, 0f), new Vector2(190f, 46f),
+        // Event badge → jumps to the EVENT section; countdown = the real season timer.
+        MakeButton(bar.transform, "EVENT  " + SeasonPassManager.Instance.CountdownLabel(), 15f,
+                   new Vector2(0.5f, 0.5f), new Vector2(-40f, 0f), new Vector2(190f, 46f),
                    new Color(0.45f, 0.2f, 0.55f, 1f), () => SelectTab(8));
 
         // Currencies (right→left): gold [+], gold, gem [+], gems. [+] jumps to the buy sections.
@@ -432,6 +432,8 @@ public class ShopUI : MonoBehaviour
             RosterManager.Instance.AddCoins(500);
             OpenAndReveal(CardTier.Epic);
         });
+
+        PackCardFX.Attach(fart.rectTransform); // art-only float/shine (text + button stay still)
     }
 
     // ------------------------------------------------------------------ section: PACKS
@@ -529,6 +531,9 @@ public class ShopUI : MonoBehaviour
                        new Vector2(PackCardW - 40f, 42f), Gold,
                        () => IAPBridge.PurchaseProduct("pack_" + tier.ToString().ToLower(),
                                                        () => OpenAndReveal(tier)));
+
+        // Float + shine on the pack ART only — title, player-count and buy buttons stay still.
+        PackCardFX.Attach(art.rectTransform);
     }
 
     // Buy succeeded → open, grant (dupes → coins), reveal.
@@ -545,7 +550,7 @@ public class ShopUI : MonoBehaviour
     {
         // Local rotation (no server): the deal set derives from the UTC day number plus the
         // ad-watched refresh count, and the countdown targets the next UTC midnight.
-        int seed = Mathf.Abs((int)(UtcDay() % 100000)) + AdWatchesUsed("deals_refresh") * 31;
+        int seed = Mathf.Abs((int)(AdWatchCap.UtcDay() % 100000)) + AdWatchCap.Used("deals_refresh") * 31;
         int skip = seed % 4;
         int[] pcts = { 30, 40, 50 };
 
@@ -672,55 +677,27 @@ public class ShopUI : MonoBehaviour
 
     void BuildEventSection(RectTransform sec)
     {
-        // Honest stub: no live-event backend exists. Static banner + countdown to a placeholder date.
-        DateTime target = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
-        TimeSpan left = target - DateTime.UtcNow;
-        string cd = left.TotalSeconds > 0 ? (int)left.TotalDays + "D " + left.Hours + "H" : "ENDED";
-
+        // Honest stub: no live-event backend exists. The countdown is the REAL season timer
+        // (SeasonPassManager) so it converges with the hub/missions/league season.
         Image card = MakeCard(sec, new Vector2(0.5f, 0.5f), new Vector2(0f, -14f), new Vector2(740f, 340f), Gold);
         MakeText(card.transform, "GLOBAL CUP", 40f, new Vector2(0.5f, 1f), new Vector2(0f, -70f),
                  new Vector2(700f, 50f), Gold, TextAlignmentOptions.Center);
-        MakeText(card.transform, "STARTS IN " + cd, 22f, new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
-                 new Vector2(600f, 30f), Color.white, TextAlignmentOptions.Center);
-        MakeText(card.transform, "Live events aren't built yet — this is a placeholder banner.",
+        MakeText(card.transform, "SEASON ENDS IN " + SeasonPassManager.Instance.CountdownLabel(), 22f,
+                 new Vector2(0.5f, 0.5f), new Vector2(0f, 0f), new Vector2(600f, 30f), Color.white,
+                 TextAlignmentOptions.Center);
+        MakeText(card.transform, "Event rewards aren't built yet — this is a placeholder banner.",
                  16f, new Vector2(0.5f, 0f), new Vector2(0f, 50f), new Vector2(640f, 26f), Grey,
                  TextAlignmentOptions.Center);
     }
 
-    // ------------------------------------------------------------------ watch-ad cap (3 per button per day)
-
-    const int AdDailyCap = 3;
-
-    // Same UTC-day-number pattern as the daily-deals rotation.
-    static long UtcDay() => (long)(DateTime.UtcNow - new DateTime(2026, 1, 1)).TotalDays;
-
-    static int AdWatchesUsed(string id)
-    {
-        if (PlayerPrefs.GetInt("adwatch_day_" + id, -1) != (int)UtcDay()) return 0; // stale day → fresh cap
-        return PlayerPrefs.GetInt("adwatch_n_" + id, 0);
-    }
-
-    static void RecordAdWatch(string id)
-    {
-        int used = AdWatchesUsed(id); // read BEFORE stamping today's day
-        PlayerPrefs.SetInt("adwatch_day_" + id, (int)UtcDay());
-        PlayerPrefs.SetInt("adwatch_n_" + id, used + 1);
-        PlayerPrefs.Save();
-    }
-
-    static string AdResetLabel()
-    {
-        TimeSpan left = DateTime.UtcNow.Date.AddDays(1) - DateTime.UtcNow;
-        if (left.TotalHours >= 1) return "RESETS IN " + (int)Math.Ceiling(left.TotalHours) + "H";
-        return "RESETS IN " + Math.Max(1, left.Minutes) + "M";
-    }
+    // ------------------------------------------------------------------ watch-ad buttons
 
     // Compact watch-ad button: text label + small inline play-triangle (no big camera block).
-    // Tracks its own PlayerPrefs counter under `id`; at 3 uses it greys out until UTC midnight.
+    // Tracks its own AdWatchCap counter under `id`; at 3 uses it greys out until UTC midnight.
     Button MakeWatchButton(Transform parent, string id, string label, Vector2 anchor, Vector2 pos,
                            Vector2 size, Action onReward)
     {
-        bool capped = AdWatchesUsed(id) >= AdDailyCap;
+        bool capped = AdWatchCap.Used(id) >= AdWatchCap.DailyCap;
 
         GameObject go = new GameObject("BtnWatch_" + id);
         go.transform.SetParent(parent, false);
@@ -732,7 +709,7 @@ public class ShopUI : MonoBehaviour
         btn.targetGraphic = img;
         btn.interactable = !capped;
 
-        TextMeshProUGUI txt = MakeText(go.transform, capped ? AdResetLabel() : label, 15f,
+        TextMeshProUGUI txt = MakeText(go.transform, capped ? AdWatchCap.ResetLabel() : label, 15f,
                                        new Vector2(0.5f, 0.5f), new Vector2(-8f, 0f),
                                        new Vector2(size.x - 30f, size.y), Color.white,
                                        TextAlignmentOptions.Center);
@@ -750,10 +727,11 @@ public class ShopUI : MonoBehaviour
             tri.gameObject.SetActive(false);
             StartCoroutine(FakeAdThen(() =>
             {
-                RecordAdWatch(id);
+                AdWatchCap.Record(id);
                 if (btn != null) // section may get rebuilt by onReward — update in place first
                 {
-                    if (AdWatchesUsed(id) >= AdDailyCap) { img.color = GreyBtn; txt.text = AdResetLabel(); }
+                    if (AdWatchCap.Used(id) >= AdWatchCap.DailyCap)
+                    { img.color = GreyBtn; txt.text = AdWatchCap.ResetLabel(); }
                     else { btn.interactable = true; txt.text = label; tri.gameObject.SetActive(true); }
                 }
                 onReward?.Invoke();
@@ -956,5 +934,36 @@ public class ShopUI : MonoBehaviour
         tex.wrapMode = TextureWrapMode.Clamp;
         playTriangle = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
         return playTriangle;
+    }
+}
+
+// The ONE watch-ad daily cap: every WATCH button in the game (shop packs, deals refresh, free
+// prizes, ads pack, hub FREE +100) tracks its own PlayerPrefs counter under a unique id, capped
+// at 3 uses per UTC day. Same UTC-day-number pattern as the daily-deals rotation.
+public static class AdWatchCap
+{
+    public const int DailyCap = 3;
+
+    public static long UtcDay() => (long)(DateTime.UtcNow - new DateTime(2026, 1, 1)).TotalDays;
+
+    public static int Used(string id)
+    {
+        if (PlayerPrefs.GetInt("adwatch_day_" + id, -1) != (int)UtcDay()) return 0; // stale day → fresh cap
+        return PlayerPrefs.GetInt("adwatch_n_" + id, 0);
+    }
+
+    public static void Record(string id)
+    {
+        int used = Used(id); // read BEFORE stamping today's day
+        PlayerPrefs.SetInt("adwatch_day_" + id, (int)UtcDay());
+        PlayerPrefs.SetInt("adwatch_n_" + id, used + 1);
+        PlayerPrefs.Save();
+    }
+
+    public static string ResetLabel()
+    {
+        TimeSpan left = DateTime.UtcNow.Date.AddDays(1) - DateTime.UtcNow;
+        if (left.TotalHours >= 1) return "RESETS IN " + (int)Math.Ceiling(left.TotalHours) + "H";
+        return "RESETS IN " + Math.Max(1, left.Minutes) + "M";
     }
 }
