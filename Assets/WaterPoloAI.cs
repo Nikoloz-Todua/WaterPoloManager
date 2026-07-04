@@ -943,6 +943,10 @@ public static class WaterPoloBrain
         DetachBall(a, ctx);
         // Set velocity directly so the shot is mass-independent (no weak/zeroed shot).
         ctx.Ball.linearVelocity = a.LastDirection * a.ShootPower;
+        // Register the shot with BallFlight: fires the release scale-snap (shots must read
+        // as shots) AND resets ShotHeight to mid — otherwise the keeper would judge this
+        // bot shot with a stale height left over from a previous human high shot.
+        if (BallFlight.Instance != null) BallFlight.Instance.NoteShot(0.5f, false);
         a.IsHolding = false;
         ctx.SetPossession(null); // starts the no-regrab cooldown
     }
@@ -955,16 +959,22 @@ public static class WaterPoloBrain
 
         ctx.NoteRelease(a.Tf);
 
-        // HIGH LOB (bot decision): a LONG ball, or a lane a defender is squatting in (the
-        // drive kick-out / kickoff routes pick targets without a lane check), goes OVER the
-        // field as the same untouchable arc the human throws with F+B — nobody on either
-        // team can pick it off until it lands at the receiver.
+        // EVERY bot pass is airborne now (same untouchable BallFlight arc the human throws):
+        //   default   = ArcKind.Pass — the small quick hop at full pass speed.
+        //   LONG ball, or a lane a defender is squatting in (the drive kick-out / kickoff
+        //   routes pick targets without a lane check) = ArcKind.Lob — the big slow ball
+        //   OVER the field. Nobody on either team can pick either off until it lands.
+        // Only a point-blank throw (LaunchHighBall refuses < 2u) stays flat.
         float speed = Mathf.Clamp(dist * PassFactor, MinPassSpeed, MaxPassSpeed);
         bool wantLob = dist >= AILobMinDistance ||
                        !a.Team.LaneClear(a.Body.position, target.position, ctx.EnemyOf(a.Team),
                                          AILobLaneRadius);
-        if (wantLob && BallFlight.Instance != null &&
-            BallFlight.Instance.LaunchHighBall(target.position, speed * AILobSpeedFactor, 0.9f, false))
+        if (BallFlight.Instance != null &&
+            BallFlight.Instance.LaunchHighBall(target.position,
+                                               wantLob ? speed * AILobSpeedFactor : speed,
+                                               wantLob ? 0.9f : 0.5f,
+                                               wantLob ? BallFlight.ArcKind.Lob
+                                                       : BallFlight.ArcKind.Pass))
         {
             ctx.Ball.transform.SetParent(null); // airborne — Launch owns the physics from here
             a.IsHolding = false;
@@ -974,7 +984,7 @@ public static class WaterPoloBrain
 
         DetachBall(a, ctx);
         ctx.Ball.linearVelocity = dir * speed;
-        if (BallFlight.Instance != null) BallFlight.Instance.NotePass(); // plain pass → no swell/trail
+        if (BallFlight.Instance != null) BallFlight.Instance.NotePass(); // point-blank flat pass → no swell/trail
         a.IsHolding = false;
         ctx.SetPossession(null); // receiver collects it after the cooldown
     }

@@ -59,16 +59,16 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 
 | File | Role |
 |---|---|
-| `PlayerMovement.cs` | Human control of the active player: move, grab (E), **charged shoot** (hold Space; time-based `shotChargeTime` 0.7s, min-speed floor so a tap never drops), aim chevron + **power bar** (world-unit `powerBarWidth` 1.2 — >2× the keeper bar, grows left→right), **directional charged pass** (hold B — fires where the facing triangle/joystick points with a tunable `passAssist`, NOT auto-homed; `FindPassAssistTarget` scores teammates by dot with `lastDirection`). **Shot height** (`shotHeight` 0..1, charges in lock-step with power: low 0–0.3 / mid / high 0.7–1; read by Goalkeeper + GoalkeeperAnimator for the dive tier). **Skip shot** (hold Q while charging Space → fast LOW bounce shot via `BallFlight`). **Lob pass** (hold F while passing → high slow arc with a water shadow; AI interception cut ~60%). Ball held via **parenting**; reports possession to MatchContext. `TakeOverHeldBall()` for clean control transfer; `TouchBlockSteal()` (Block button — half steal chance, 50% foul-on-miss). **Stamina hooks** (`StaminaSpeedMult`/`StaminaSprintMult`/`StaminaSprintBlocked`/`StaminaStealMult`/`StaminaPercent01`, neutral 1 by default). |
+| `PlayerMovement.cs` | Human control of the active player: move, grab (E), **charged shoot** (hold Space; time-based `shotChargeTime` 0.7s, min-speed floor so a tap never drops), aim chevron + **power bar** (world-unit `powerBarWidth` 1.2 — >2× the keeper bar, grows left→right), **directional charged pass** (hold B — fires where the facing triangle/joystick points with a tunable `passAssist`, NOT auto-homed; `FindPassAssistTarget` scores teammates by dot with `lastDirection`). **Shot height** (`shotHeight` 0..1, charges in lock-step with power: low 0–0.3 / mid / high 0.7–1; read by Goalkeeper + GoalkeeperAnimator for the dive tier; **charge >0.7 releases as the untouchable ASYMMETRIC shot arc** landing 1.5u before the aimed goal line — `HighShotLandPoint`, raw aim, no assist). **Shots ×1.35 code-side speed** (`ShotSpeedMult` — shots always outpace passes; serialized `maxShootPower` 12 untouched). **Skip shot** (hold Q while charging Space → fast LOW bounce shot via `BallFlight`). **Every B pass arcs** (`ArcKind.Pass` small hop to the assist target, else a charge-scaled 3.5–6.5u spot along the aim); **F+B = the big high LOB** (`ArcKind.Lob`, ×0.7 speed) — both untouchable mid-flight (nobody intercepts an airborne ball; contests happen at the landing). **Charge bar reads shot-vs-pass:** pass = cool blue→cyan; shot = green→yellow→red strobing white past 0.7 (the high-shot zone). Ball held via **parenting**; reports possession to MatchContext. `TakeOverHeldBall()` for clean control transfer; `TouchBlockSteal()` (Block button — half steal chance, 50% foul-on-miss). **Stamina hooks** (`StaminaSpeedMult`/`StaminaSprintMult`/`StaminaSprintBlocked`/`StaminaStealMult`/`StaminaPercent01`, neutral 1 by default). |
 | `TeammateAI.cs` | Thin component on each player. When NOT human-controlled, runs the shared `WaterPoloBrain`. Implements `IAgentBody`. |
 | `BotMovement.cs` | Thin component on each bot. Always runs `WaterPoloBrain`. Implements `IAgentBody`. |
 | `WaterPoloAI.cs` | **The shared brain** + `IAgentBody` interface. All AI decisions live here once: carrier (shoot/pass/**drive**/dribble), support (get open), presser (nearest chases), defender (hold shape). 🟡 New: **drives** (beaten marker + clear lane → burst to 2m, shoot/kick-out/abort) and **picks/screens** (nominated screener plants on the carrier's marker; rubbing past = short "beaten" boost). Works, needs tuning. **This is C# state-machine AI — NOT an LLM.** |
 | `TeamSide.cs` | One per team. Holds goals + roster (`members`), formation math (auto-spreads ANY number of players), passing/positioning logic, **attacking-spacing + tactics tunables (center-feed, counter, shot-quality threshold, free-throw clearance), shot-quality + pass-risk scoring, and 4 defense modes — Press/Zone/Drop/MPress — incl. man-up 4-2 umbrella + man-down zone shapes**. 🟡 New: **dynamic Centre** (fights for inside water goal-side of its guard at 2m), wider lanes + weak-side wing drift, receiver-shot-quality pass bonus, drive/screen helpers (`DrivePoint`, `GetScreenSpot`, `FindScreenerForCarrier`), and **bot adaptive defense** (`EvaluateDefenseMode`, auto-detected `isAI`: Drop when man-down / protecting a late lead / Centre conceded 2+; Press otherwise). Scales 2v2 → 6v6 with no code change. |
 | `MatchContext.cs` | Singleton "match truth": ball position, possession + last toucher (`NoteTouch` for deflections), post-release grab cooldown (`releaseGrabDelay` 0.5s), freeze flag, shot-clock grab-ban, kickoff-pass flag, **free-throw state, keeper-hold flag, counterattack window, player goal-line clamp (`playerLimitX`)**, halftime `SwapEnds()`, `GiveBallTo()` / `ForceDropHeldBall()`, `EnemyOf()`, **`IsProtectedKeeper(carrier)`** (the keeper-steal safe-zone rule — true while a keeper carries the ball inside its safe zone, Task 5). |
 | `TeamManager.cs` | On `GameManager`. Auto-switches control to the ball-holder after `autoSwitchDelay` (0.5s — so you keep control to chase your own loose ball); manual **C** / touch SWITCH (skips excluded); **Z** cycles defense (Press/Zone/Drop/MPress); never auto-activates excluded players. Exposes static **`ActivePlayer`** + **`ActivePlayerIndex`** (read by `CameraFollow` and the stamina HUD). |
-| `Goalkeeper.cs` | Kinematic keeper sliding along its physical goal line tracking ball Y (stays on its goal after the halftime swap). **Save % system:** a fast shot reaching its hands rolls `baseSaveChance` 0.65 minus penalties for HIGH (height >0.7), POWER (>9 u/s) and SKIP shots, plus a stamina penalty when tired; a slow ball is auto-collected. **Snatch:** an enemy carrier within `keeperSnatchDistance` (0.8u) is stripped with 100% success, no roll (`TrySnatchFromCarrier`; respects free throws, not vs another keeper). **Player keeper = full control:** while your own keeper holds the ball it plays like a field swimmer — free **2D movement** at `keeperMoveSpeed` (4), sprint, a charged shot fired in the **joystick/aim** direction (never auto-aimed at goal), and a **directional pass** (`FindKeeperPassTarget` scores ALL teammates by dot(aim,dir)−dist×0.05, no cone; reads the live `TouchControls.Instance` joystick, else `lastDir`). **No auto-pass** — fully manual; it SWIMS back to its line (never teleports) after you shoot/pass. **Safe zone (Task 5):** within `KeeperSafeZoneRadius` (1.5u) of the goal line the carrying keeper is unstealable; carry it OUTSIDE and `keeperLeftSafeZone` latches → enemies steal normally (exposed via `MatchContext.IsProtectedKeeper`; `OnBallStolen()` clears the hold on a successful strip). **Organic idle** (not holding, ball far): small random X drift 0.1–0.3u every 2–4s (≤0.4u off the line) + a subtle ±0.05u Y sine micro-bob. **Bot keeper** auto-distributes after `keeperHoldSeconds` (0.8s) OR immediately if crowded within `keeperPanicDistance` (2.5u) — UNCHANGED. **Stamina-aware** (tired = worse saves, no sprint at 0%). A keeper hold is NOT a possession change — the shot clock keeps ticking until the pass-out. |
-| `Goal.cs` | Trigger on each net; reports `goalSide` ("Left"/"Right") to ScoreManager. |
-| `ScoreManager.cs` | Team-based score (credits the team attacking that net → survives the halftime swap) shown on **separate `playerScoreText` + `botScoreText`** TMP fields; **ignores held-ball goals**; exposes `HomeScore`/`AwayScore` (read by the camera's goal-shake). **Goal restart (NOT a quarter start → NO sprint duel):** 4 phases — (1) ball loose at exact (0,0), play freezes, touch UI hidden + `ctx.ResetBallTouch()` (camera → overview), a `goalFreezeSeconds` (1s) celebration; (2) both teams snap into the **natural restart spread** (`TeamSide.SnapToRestartFormation(hasBall)` — conceding = attacking spread, scoring = sat-back defensive, never a rigid line), the **conceding team** is given the ball at exact centre (`ctx.GiveBallTo`) + `ctx.ResetBallTouch()` again to hold the overview through the pause; (3) a **`postGoalPauseSeconds` (3s) silent pause** (frozen, ball held at centre, no UI/countdown); (4) `Unfreeze` + `SetKickoffPass(conceding)` + `ctx.MarkBallTouched()` (camera eases back to follow) + restore UI + reset shot clock — the team in possession begins the attack naturally. |
+| `Goalkeeper.cs` | Kinematic keeper sliding along its physical goal line tracking ball Y (stays on its goal after the halftime swap). **Save % system:** a fast shot reaching its hands rolls `baseSaveChance` 0.65 minus penalties for HIGH (height >0.7), POWER (>9 u/s) and SKIP shots, plus a stamina penalty when tired; a slow ball is auto-collected. **Snatch:** an enemy carrier within `keeperSnatchDistance` (0.8u) is stripped with 100% success, no roll (`TrySnatchFromCarrier`; respects free throws, not vs another keeper). **Player keeper = full control:** while your own keeper holds the ball it plays like a field swimmer — free **2D movement** at `keeperMoveSpeed` (4), sprint, a charged shot fired in the **joystick/aim** direction (never auto-aimed at goal), and a **directional pass** (`FindKeeperPassTarget` scores ALL teammates by dot(aim,dir)−dist×0.05, no cone; reads the live `TouchControls.Instance` joystick, else `lastDir`). **No auto-pass** — fully manual; it SWIMS back to its line (never teleports) after you shoot/pass. **Safe zone (Task 5):** within `KeeperSafeZoneRadius` (1.5u) of the goal line the carrying keeper is unstealable; carry it OUTSIDE and `keeperLeftSafeZone` latches → enemies steal normally (exposed via `MatchContext.IsProtectedKeeper`; `OnBallStolen()` clears the hold on a successful strip). **Organic idle** (not holding, ball far): small random X drift 0.1–0.3u every 2–4s (≤0.4u off the line) + a subtle ±0.05u Y sine micro-bob. **Bot keeper** auto-distributes after `keeperHoldSeconds` (0.8s) OR immediately if crowded within `keeperPanicDistance` (2.5u) — UNCHANGED. **Stamina-aware** (tired = worse saves, no sprint at 0%). A keeper hold is NOT a possession change — the shot clock keeps ticking until the pass-out. **Distribution arcs (2026-07-04b):** `PassOut` throws the same untouchable BallFlight arc as every other pass (`ArcKind.Pass`; the forced DEEP outlet = the big `Lob`); point-blank falls back flat. **Freeze gate:** the keeper now fully freezes during `PlayFrozen` like every swimmer (needed so it can't fish the dead ball out of its own net during the goal hang-time). |
+| `Goal.cs` | Trigger on each net; reports `goalSide` ("Left"/"Right") + its own transform (for the net-pulse reaction) to ScoreManager. |
+| `ScoreManager.cs` | Team-based score (credits the team attacking that net → survives the halftime swap) shown on **separate `playerScoreText` + `botScoreText`** TMP fields; **ignores held-ball goals**; exposes `HomeScore`/`AwayScore` (read by the camera's goal-shake). **FRAME-ACCURACY GATE (2026-07-04b):** touching the goal trigger is NOT a goal — the ball's real velocity is projected onto the goal line and the crossing must land inside the mouth (|y| ≤ 1.5, moving INTO the net; consts mirror GoalLineOut) → skims/corner-clips/sideways drifts no longer score, badly-aimed shots miss. **NET REACTION:** on every goal the net sprite gets a damped-spring squash/bulge pulse (0.45s, scale + outward nudge, originals restored) + an expanding white impact ring at the ball. **Goal restart (NOT a quarter start → NO sprint duel):** 5 phases — (0) **HANG TIME (`goalHangSeconds` 3.5, NEW):** play freezes THE INSTANT the ball hits the net; ball stays IN the net (velocity cut ×0.15, fully stopped after 0.15s), everyone holds position, camera keeps following the action + goal shake — the reset only starts after this hold; (1) ball loose at exact (0,0), touch UI hidden + `ctx.ResetBallTouch()` (camera → overview), a `goalFreezeSeconds` (1s) celebration; (2) both teams snap into the **natural restart spread** (`TeamSide.SnapToRestartFormation(hasBall)`), the **conceding team** is given the ball at exact centre (`ctx.GiveBallTo`) + `ctx.ResetBallTouch()` again; (3) a **`postGoalPauseSeconds` (3s) silent pause**; (4) `Unfreeze` + `SetKickoffPass(conceding)` + `ctx.MarkBallTouched()` + restore UI + reset shot clock. |
 | `MatchTimer.cs` | Quarters (90s) + win/lose/draw; pauses the clock during freezes; triggers the sprint duel each quarter; halftime swap; `ForfeitMatch()`. At full time / forfeit it calls `MatchResultUI.Show()` (falls back to the bare `resultText` if no MatchResultUI in the scene). |
 | `ShotClock.cs` | 30s per-possession clock (singleton): resets on possession change / goal / defensive exclusion; turnover + grab-ban at 0; pauses when frozen, **during a free throw**, or match over; **a keeper hold does NOT reset it (keeps ticking until the keeper distributes)**. |
 | `ExclusionManager.cs` | Fouls + exclusions (singleton): failed steal = foul → **free throw** to the fouled team; 2 fouls in 10s → 5s exclusion (roster slot nulled → AI auto-adapts) **or a PENALTY if the victim was in the 2m zone**; 3rd → removal; forfeit < 4 players; HUD countdowns. 🟡 New: **virtual foul** when the victim is an inside-water Centre (Centres draw exclusions/penalties faster; toggle `centerFoulBoost` — may be too hot, watch in testing). |
@@ -98,7 +98,7 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 | `PauseMenuUI.cs` | Pause system, built in code: 70x70 pause button top-right at (-20,-45) (sprite `Resources/Sprites/pause-button`; pulled down to clear the scoreboard), click → `Time.timeScale = 0` + centered 400x350 rounded panel with PAUSED + RESUME / QUIT / TEAM MANAGEMENT. QUIT opens a confirmation sub-panel ("If you quit, this match counts as a loss.") with YES QUIT (→ MainMenu) / CANCEL. TEAM MANAGEMENT is a placeholder (no functionality yet). Ignores clicks after full time (result screen owns the freeze). Works with mouse + touch. |
 | `CameraFollow.cs` | **FIFA-style follow camera** on **Main Camera** — self-contained, no Inspector wiring (pulls `TeamManager.ActivePlayer` + `MatchContext`). **Start/post-goal overview (Task 1):** until the ball is first touched after any reset (game start, after a goal, between quarters — `MatchContext.BallTouchedSinceReset`) it holds the wide pool overview centred on (0,0) at **maxSize 5.0**, no following; the first grab eases it smoothly into the normal follow. Tracks a weighted point between the active player (60%) and the ball (40%) — 70/30 when the ball is loose — via `SmoothDamp` (speeds up to `switchSpeed` 8 for 0.5s on a player switch). **Dynamic orthographic zoom** (`Mathf.Lerp`): 4.2 base → 5.0 (player/ball far) → 4.5 (`SprintHeld`) → 3.8 (you control the keeper). HARD pool-boundary clamps on the camera centre (X ±5.5, Y ±3.2); Z locked −10. **Screen shake** (additive): goal 0.15/0.4s (polls `ScoreManager` total), powerful shot (ball >10 u/s) 0.05/0.15s. Managers missing → parks at (0,0,−10) size 5, no errors. All tunables serialized. |
 | `StaminaSystem.cs` | FIFA-style stamina on every field swimmer + keeper. **Auto-installs at runtime** (`RuntimeInitializeOnLoadMethod`) onto any `PlayerMovement`/`IAgentBody`/`Goalkeeper` lacking one → 14 objects (6 players, 6 bots, 2 keepers), zero wiring (the 2 keepers keep a hand-tuned copy). **Field drain/recovery per sec:** idle +8% (×2 after 5s rest), swim −3%, hold+move −5%, sprint −12% (−18% after 3s fatigue), excluded +15%; **second wind** at 0% (ease off sprint 2s → +15% burst). **Effects:** <40% speed ×0.8; <20% speed ×0.6 + steal ×0.8; 0% sprint disabled. **Keeper:** track −2%, hold −1%, idle +10%; tired = worse saves, no sprint at 0%. Writes only neutral hooks (deleting it leaves the game identical); HUD lives in `TouchControls`. |
-| `BallFlight.cs` | Ball VFX, **auto-added to the Ball at runtime** by `PlayerMovement` (no wiring), singleton. Speed-gated **TrailRenderer** (>5 u/s); **high-shot** scale swell (≤1.2×) + warm glow; **skip-shot** bounce 1.5u before the goal (Y jitter, squash + expanding water ripple, 35% `KeeperFooled`); **lob** breathing blue-grey water shadow; **spin** (shots 54°/s, fast loose 18°/s, lobs 9°/s — none on skip / plain pass, only >6 u/s, snaps upright on catch). All scaling uniform, recomputed from a clean base each frame (never drifts on a re-parent). Exposes `ShotHeight`, `SkipActive`/`SkipBounced`, `LobActive`/`LobTeam`, `KeeperFooled`. |
+| `BallFlight.cs` | Ball VFX + **the airborne-arc system**, **auto-added to the Ball at runtime** by `PlayerMovement` (no wiring), singleton. **ALL passes and HIGH shots fly as arcs** (`LaunchHighBall(landPos, speed, height01, ArcKind)`): the rigidbody flies a straight zero-damping constant-speed line with **colliders OFF** (players/keepers/walls/goal trigger can't touch it) while a sprite copy (`BallAirSprite`, sorted over swimmers) rides the height curve above a shrinking oval water shadow; the root sprite hides mid-flight. **Untouchable mid-air:** `MatchContext.BallGrabbable` is false while `HighBallActive` — grabs/steals/keeper saves all wait for the landing (exact at landPos; landings clamped into open water; overlapped swimmers collision-ignored until separated). **Three ArcKinds:** `Pass` (B / every bot pass — small quick SYMMETRIC hop, peak ≈ dist×0.055 clamped 0.18–0.5, swell 1.08, no spin), `Lob` (F+B / bot long-or-blocked ball — the big floaty parabola, peak ≈ dist×0.14 clamped 0.45–1.25, swell 1.2), `Shot` (charge >0.7 — **ASYMMETRIC** hand-built curve: easeOutQuad rise into a peak at 35% of the flight, easeInQuad fall that hangs near the top then drops; peak ≈ dist×0.10 clamped 0.35–0.9, swell 1.15; glows + keeps FULL speed on landing — passes land with a 25% roll). **Release SNAP (shots only, incl. bot/keeper):** raw un-eased squash 0.84 → pop 1.12 → settle over 0.12s at the instant of release. Plus: speed-gated **TrailRenderer** (>5 u/s, suppressed mid-arc); **flat point-blank high-shot** swell+glow fallback; **skip-shot** bounce 1.5u before the goal (Y jitter, squash + water ripple, 35% `KeeperFooled`); **spin** (shots 54°/s, fast loose 18°/s, arcs 9°/s — none on skip or any Pass, only >6 u/s, snaps upright on catch). All scaling uniform, recomputed from a clean base each frame. Exposes `ShotHeight`, `SkipActive`/`SkipBounced`, `HighBallActive`, `KeeperFooled`. |
 | `GoalColliderFixer.cs` | Editor tool (**Tools → Fix Goal Colliders**). Resizes GoalRight/GoalLeft Box Collider 2D to the visual goal mouth (size (4,15) → world ≈0.8×3.0u at scale 0.2). Idempotent; marks the scene dirty (Ctrl+S to save). |
 | `PlayerLabel.cs` | ⬜ **NOT YET BUILT** (planned). Future: world-space player-number labels floating above each swimmer. |
 | `LeagueSeason.cs` | Static session-persistent **tournament** state, one per competition. 16 teams in 2 groups of 8 (player = team 0, Group A); 7-round group round-robin (circle method), each player match also simulates that round in both groups; top 4 per group → single-elim knockout (QF: A1vB4/A2vB3/B1vA4/B2vA3 → SF → Final, no draws — sudden-death goal). Player eliminated → rest of bracket simulates instantly. Phase enum (GroupStage/Quarterfinal/Semifinal/Final/Completed), per-group P/W/D/L/GF/GA/Pts, `KnockoutMatch` bracket, 30-club name pool (15 opponents drawn per division). Champion → NavigationManager persists the next-division unlock (PlayerPrefs div1_won/pl_won/cc_won/wcl_won). |
@@ -252,8 +252,8 @@ Game Mode screen with 4 competition cards, lock-sign sprite, animated background
 - **WASD / arrows** — move active player.
 - **Hold LeftShift** — **sprint** (2x speed while moving). Sprinting WITH the ball = **loose hold**: you keep the ball but opponents get 2x steal range + a steal-chance bonus (`looseHoldStealBonus` 0.15 on BotMovement/TeammateAI).
 - **E** — grab / drop a loose ball.
-- **Hold Space** — charge & shoot (release to fire).
-- **Hold B** — charge & pass. **DIRECTIONAL (FIFA-style):** the ball goes where you AIM (the facing triangle / joystick / WASD), not auto-homed to a teammate. A gentle `passAssist` (default 0.3) bends it toward a teammate that's roughly along the aim; aim at the keeper or empty water and it goes there. Tunables on PlayerMovement: `passAssist`, `passAssistRange`, `passAssistMinDot`, `passAccuracy`, `passInaccuracyDegrees`.
+- **Hold Space** — charge & shoot (release to fire). Charge past 0.7 (bar strobes white) = the HIGH shot: an untouchable asymmetric arc landing 1.5u before the goal line you aimed at. Shots travel ×1.35 faster than passes and punch-snap on release.
+- **Hold B** — charge & pass. **DIRECTIONAL (FIFA-style):** the ball goes where you AIM (the facing triangle / joystick / WASD), not auto-homed to a teammate. A gentle `passAssist` (default 0.3) bends it toward a teammate that's roughly along the aim; aim at the keeper or empty water and it goes there. **Every pass now flies a small arc** (untouchable mid-flight; the receiver collects it where it lands — a mis-aimed pass still lands in empty water / with the enemy). Tunables on PlayerMovement: `passAssist`, `passAssistRange`, `passAssistMinDot`, `passAccuracy`, `passInaccuracyDegrees`.
 - **Space (when NOT holding)** — attempt steal (chance-based; must be in front of the carrier).
 - **C** — manual player switch (mostly redundant: control auto-follows the ball-carrier).
 - **Z** — cycle team defense: **Press → Zone → Drop → MPress**.
@@ -334,6 +334,10 @@ Also now 🟡 **WORKING (first pass — improve later, not 100% done):**
 7. Touch controls (virtual joystick + 3 action buttons) for mobile. 🟡 **DONE (first pass)** — 3-button attack/defense scheme + joystick + stamina HUD + keeper control; swipe-evasion / hand-button still planned.
 8. Then the whole shell: menus, onboarding, currencies, career/divisions, store (Part B §1–15).
 9. Android build/test (Build Support module + phone over USB). iOS needs a Mac later.
+
+**Deferred (documented, not built):** 1v1 keeper close-range mechanic (pressing PASS instead of
+SHOOT to trigger a low/chip shot, possibly redirected into a pass if a teammate is in the lane) —
+concept discussed but under-specified, needs a clearer design pass before building. Deferred.
 
 ### A12.1 NEXT BRICK DESIGN (in order)
 
@@ -768,9 +772,9 @@ promotion/relegation and real match-result reporting → not yet built
 - **Joystick (bottom-right)** — 360° move; directs pass/shot aim via under-player arrow.
 - **Swipes** — up = special evasion (pump fake/shoulder turn); down = different (reverse pivot); success = attacker rating vs defender rating; fail risks losing ball.
 - **Shot/pass upgrades:**
-  - ✅ **Charged shot** — hold Space = power + height (`shotHeight` 0..1); max charge = high shot, harder to block.
+  - ✅ **Charged shot** — hold Space = power + height (`shotHeight` 0..1); charge past 0.7 = the HIGH shot: an untouchable ASYMMETRIC arc (steep rise, hang, sharp drop) that lands 1.5u before the aimed goal line; shots are ×1.35 faster than passes and snap-punch on release.
   - ✅ **Skip/bounce shot** — **Q** + Space → fast LOW bounce shot (`BallFlight`; 35% keeper-fool chance).
-  - ✅ **High lob pass** — **F** + B → high arc pass with a water shadow; AI interception cut ~60%.
+  - ✅ **Arced passes** — EVERY pass (B, and every bot pass) flies a small untouchable arc; **F** + B = the big high LOB (both immune to interception mid-flight — contests happen at the landing point).
   - ⬜ **Block animation upgrade** — defending pose → one-arm raised block (still the arms-wide defend pose).
 
 ### B16.4 Camera & Visibility 🟡 PARTIAL (2D top-down + FIFA-style follow camera w/ dynamic zoom + directional chevron done; player names not yet)
@@ -1359,3 +1363,101 @@ deferred until real art exists.
 - The shot clock keeps ticking through a long crowded keeper hold (by design; a hold is not a
   possession change) — a near-zero clock at the save can still expire during the wait; watch it
 - Global Cup missions are season-scoped stats, not tied to a real "Global Cup" event yet
+
+---
+
+## SESSION LOG — 2026-07-04 (camera-keeper fix + the high-ball arc system) — retro-logged
+
+*(This session was committed as `745b560` but never logged here; added retroactively because
+the 2026-07-04b session builds directly on it.)*
+
+**CAMERA DIDN'T FOLLOW THE ADVANCING KEEPER — root cause was NOT the camera:**
+- A non-simulated Rigidbody2D's pose FREEZES: while any carrier holds the ball
+  (`simulated=false`, parented), `ball.position` stays stuck at the CATCH point — the camera's
+  keeper anchor read that stale pose, so it framed the catch spot and never moved. Proof the
+  codebase already knew rb caches persist: every grab hand-zeroes `linearVelocity`
+- Fix: `MatchContext.BallPosition` is now **transform-aware** (transform while held, rb while
+  simulated). Same stale-pose family fixed in: PlayerMovement steal ranges (TrySteal /
+  TouchBlockSteal) + the Goalkeeper's tracking reads → bots/keepers now track the LIVE carrier
+- Deliberately left stale: GoalLineOut's carrier-at-line rule (reviving it = a gameplay change)
+
+**HIGH BALL (BallFlight.LaunchHighBall):** high shots (charge >0.7) + F+B lobs + bot
+long/blocked-lane passes fly as untouchable arcs — rigidbody stays simulated on a straight
+zero-damping line with colliders OFF, sprite copy rides the parabola over a shrinking shadow,
+`BallGrabbable` false mid-flight (one gate blocks every grab/steal/save site), landing exact
+(shots keep full speed + land 1.5u before the aimed goal line; passes keep a 25% roll;
+overlapped swimmers collision-ignored until separated — mirrors ReleaseCollisionWindow).
+
+---
+
+## SESSION LOG — 2026-07-04b (all passes arc + distinct shot arc/feel; frame-accurate goals; goal hang-time + net reaction)
+
+**TASK 1 — EVERY pass is now an arc (`BallFlight.ArcKind`):**
+- `LaunchHighBall` takes an **ArcKind (Pass / Lob / Shot)** instead of a bool; each kind has its
+  own peak profile, swell and shadow size (per-kind consts in BallFlight)
+- **Pass** = the toned-down default (peak dist×0.055 clamped 0.18–0.5, swell 1.08, no spin,
+  full pass speed) — plain B, every bot pass, and the keeper's PassOut all use it
+- **Lob (F+B KEPT as a separate input):** distinguishing still makes sense — Pass is a quick
+  low hop for ball movement; Lob is the slow floaty ball OVER a press (bots pick it on long
+  ≥5.5u or blocked-lane passes; the keeper's forced deep outlet uses it too). Same system,
+  different profile — no parallel code path
+- Mid-air immunity now covers every pass: NOBODY intercepts an airborne ball; defenders contest
+  the LANDING point (lane checks still shape bot pass CHOICE). Point-blank throws (<2u) stay flat
+- WaterPoloBrain.Pass, PlayerMovement.ChargedPass and Goalkeeper.PassOut all route through the
+  same launch + flat fallback
+
+**TASK 2 — a shot is never confusable with a pass:**
+- **Distinct curve:** `ShotArc01` — easeOutQuad rise into an EARLY peak (35% of the flight),
+  easeInQuad fall (hangs near the top, then drops hard). Passes/lobs keep the symmetric 4t(1−t)
+  parabola. Two separate hand-built functions, not a shared curve
+- **Speed:** `ShotSpeedMult = 1.35` (code-side, human shots only — serialized maxShootPower 12
+  untouched): full-charge 16.2, high ≈18.6, tap floor 10.8 — always above the 9–16 pass band.
+  Bot shot speed untouched (their `ShootPower` already exceeds their 5–11 pass cap)
+- **Release snap:** 0.12s raw squash(0.84)→pop(1.12)→settle scale punch on EVERY shot release
+  (human/bot/keeper, arc or flat — triggered inside NoteShot + Shot-kind launches), never on
+  passes. Applied outside the eased scale so it stays crisp
+- **Charge bar:** pass charge = cool blue→cyan; shot charge = hot green→yellow→red, strobing
+  white past 0.7 fill (doubles as the "high shot armed" cue)
+- Bot shots now call `NoteShot(0.5)` — gives them the snap AND fixes a real bug: the keeper was
+  judging bot shots with a STALE ShotHeight left over from a previous human high shot
+
+**TASK 3 — frame-accurate goals (the "scored without aiming at the frame" bug):**
+- AUDIT: no goal-seeking assist exists in any shot path — human shots fly the raw aim vector
+  (`lastDirection`) start to finish; `HighShotLandPoint` + landing velocity stay on that exact
+  line; bot `ShotAimPoint` is the bot CHOOSING a corner (aiming, not assist). The hole was in
+  SCORING: `Goal.OnTriggerEnter2D` counted ANY loose-ball contact with the trigger box (~0.8u
+  deep + ball radius ⇒ an effective mouth ~±1.7 vs the real ±1.5, plus front-face skims)
+- FIX (ScoreManager.BallEnteredGoal): project the ball's REAL velocity onto the goal line —
+  must be moving INTO the net and the crossing y must be inside the mouth (consts mirror
+  GoalLineOut's 7 / 1.5). Skims, corner clips, sideways drifts and behind-goal pinballs no
+  longer score; a badly-aimed hard shot now misses exactly like a badly-aimed pass
+
+**TASK 4 — goal hang-time + net reaction (NO player celebration clips, per spec):**
+- **Phase 0 HANG (`goalHangSeconds` 3.5, new serialized field):** play freezes THE INSTANT the
+  ball hits the net; the ball STAYS in the net (velocity cut ×0.15 at impact, fully zeroed
+  0.15s in), everyone holds position, the camera keeps its normal follow + goal shake on the
+  net. Only then does the untouched original sequence run (overview → formations → 3s silent
+  pause → resume). Total post-goal ≈ 7.5s — tune `goalHangSeconds` / `postGoalPauseSeconds`
+  in the Inspector if it feels long
+- **Net reaction:** `Goal.cs` now passes its transform; ScoreManager plays a 0.45s damped-spring
+  squash/bulge on the net sprite (scale + outward nudge, originals cached/restored, survives
+  interruption) + an expanding white impact ring at the ball. Chose transform-pulse + ring over
+  segment physics: reads as "ball hit the net" with zero new art/objects on placeholder squares
+- **Goalkeeper freeze gate (required by the hang):** Goalkeeper.FixedUpdate now returns while
+  `PlayFrozen` — without it the keeper fished the dead ball out of its own net mid-celebration
+  (stale keeper-hold through the restart). Side effect: keepers hold position during duel
+  countdowns / penalty setup like everyone else (they used to keep tracking; cosmetic)
+- MatchTimer needed NO changes: the quarter clock already pauses while frozen, and goals can't
+  fire EndMatch directly (it's time-driven) — verified
+
+**DEFERRED (documented in A12, not built):** the 1v1 keeper close-range PASS-button chip-shot
+mechanic — under-specified, needs a design pass.
+
+**Build:** `dotnet build Assembly-CSharp.csproj` → 0 errors (21 pre-existing warnings in
+untouched files).
+**Slot re-check:** nothing NEW to wire. Verify after the script changes: **ScoreManager** object
+→ ScoreManager component still has **Ball / Player+Bot Score Text / Player+Bot Team** set and
+shows the new **Goal Hang Seconds** (3.5) field; **GoalRight/GoalLeft** → Goal component still
+has **Score Manager** set; **Player1–6** PlayerMovement **Ball + Aim Line** slots; **KeeperLeft/
+KeeperRight** Goalkeeper **Ball** slot. Also worth re-running **Tools → Fix Goal Colliders** once
+so the trigger boxes match the visual mouth (the new gate makes scoring exact even if they don't).

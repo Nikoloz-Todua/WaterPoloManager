@@ -7,7 +7,8 @@ public class Goal : MonoBehaviour
 
     void OnTriggerEnter2D(Collider2D other)
     {
+        // Pass our transform along so ScoreManager can play the net reaction on THIS goal.
         if (other.CompareTag("Ball") && scoreManager != null)
-            scoreManager.BallEnteredGoal(goalSide);
+            scoreManager.BallEnteredGoal(goalSide, transform);
     }
 }

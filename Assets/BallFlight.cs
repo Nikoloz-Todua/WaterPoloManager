@@ -6,16 +6,23 @@ using UnityEngine;
 //  - SKIP SHOT (Q+Space): a fast LOW shot bounces 1.5 units in front of the goal line
 //    — small random Y deflection, squash + water ripple at the bounce, and a 35%
 //    chance the keeper is fooled (Goalkeeper + GoalkeeperAnimator stop reacting).
-//  - HIGH BALL (the arc): a HIGH shot (charge > 0.7), the human's F+B lob pass, or a bot's
-//    long / blocked-lane pass. The ball leaves the water: the rigidbody flies a straight
-//    zero-damping line at constant speed with its colliders OFF (nothing can deflect it —
-//    not players, keepers, walls or the goal trigger) while the SPRITE is drawn offset
-//    upward along a parabola that peaks at the midpoint of the travel distance, over a
-//    water shadow that SHRINKS as the ball rises. While airborne the ball is untouchable:
-//    MatchContext.BallGrabbable is false, so no grab / steal / keeper save can take it —
-//    until it lands (flight timer completes at the landing point), where it becomes a
-//    perfectly normal grounded ball again (a landed SHOT keeps its full speed for the
-//    keeper to face; a landed PASS keeps a soft roll for the receiver).
+//  - THE ARC (every airborne ball): ALL passes and HIGH shots leave the water. The
+//    rigidbody flies a straight zero-damping line at constant speed with its colliders OFF
+//    (nothing can deflect it — not players, keepers, walls or the goal trigger) while the
+//    SPRITE is drawn offset upward over a water shadow that SHRINKS as the ball rises.
+//    Three ArcKinds, three silhouettes:
+//      • Pass (B / every bot pass) — a small, quick SYMMETRIC hop (toned-down lob):
+//        peaks at the midpoint of the travel distance, subtle swell, no spin.
+//      • Lob (F+B / a bot's long or blocked-lane ball) — the big floaty SYMMETRIC arc.
+//      • Shot (charge > 0.7) — an ASYMMETRIC dart: steep fast rise into an early peak
+//        (~35% of the flight), a slow hang near the top, then a sharp drop. Faster than
+//        any pass, glows on release, and gets the release scale-snap below.
+//    While airborne the ball is untouchable: MatchContext.BallGrabbable is false, so no
+//    grab / steal / keeper save can take it — until it lands (flight timer completes at
+//    the landing point), where it becomes a perfectly normal grounded ball again (a landed
+//    SHOT keeps its full speed for the keeper to face; a landed PASS keeps a soft roll).
+//  - RELEASE SNAP (shots only, every shot type): a ~0.12s squash-then-pop scale punch on
+//    the ball at the instant of release, so a shot reads as a shot with no HUD.
 //  - HIGH SHOT fallback (point-blank charge > 0.7, no room for an arc): ball swells and
 //    glows briefly, shrinking back as it nears the goal — the classic flat high shot.
 // Plus a speed-gated motion trail and spin only above 6 u/s (snaps upright on a catch).
@@ -25,6 +32,10 @@ public class BallFlight : MonoBehaviour
 {
     public static BallFlight Instance { get; private set; }
 
+    // The three airborne silhouettes. Pass/Lob share the symmetric parabola (different
+    // heights); Shot uses its own asymmetric curve (steep rise, hang, sharp drop).
+    public enum ArcKind { Pass, Lob, Shot }
+
     // ---- gameplay ----
     const float GoalLineX = 7f;             // matches GoalLineOut
     const float BounceBeforeGoal = 1.5f;    // skip bounce point distance from the goal line
@@ -33,11 +44,8 @@ public class BallFlight : MonoBehaviour
     const float LowHeightMax = 0.3f;        // only LOW shots can skip
     const float DeadSpeed = 1f;             // slower than this = the flight is over
 
-    // ---- high ball (the arc) ----
+    // ---- the arc (all airborne balls) ----
     const float MinHighBallDistance = 2f;   // shorter throws stay flat (no room for a real arc)
-    const float PeakHeightPerUnit = 0.14f;  // arc peak height grows with the ground distance...
-    const float MinPeakHeight = 0.45f;      // ...between these bounds (world units)
-    const float MaxPeakHeight = 1.25f;
     const float MaxFlightTime = 2.5f;       // hard safety cap on any single flight
     const float LandMaxX = 6.4f;            // landings are pulled back inside the goal lines...
     const float LandMaxY = 3.9f;            // ...and inside the top/bottom walls (open water only)
@@ -45,6 +53,21 @@ public class BallFlight : MonoBehaviour
     const int   AirSortingBoost = 30;       // the airborne sprite draws OVER the swimmers
     const float LandingProbeRadius = 0.5f;  // who did we land on? (collision-ignored until separated)
     const float LandingSeparationMax = 1.5f;// give-up cap for that separation wait
+
+    // Per-kind arc profiles: peak height per unit of ground distance (clamped), the swell at
+    // the peak, and the shadow's on-water size. Pass = a toned-down lob (small quick hop);
+    // Lob = the original big floaty ball; Shot = a lower dart with the asymmetric curve.
+    const float PassPeakPerUnit = 0.055f, PassPeakMin = 0.18f, PassPeakMax = 0.5f;
+    const float LobPeakPerUnit  = 0.14f,  LobPeakMin  = 0.45f, LobPeakMax  = 1.25f;
+    const float ShotPeakPerUnit = 0.10f,  ShotPeakMin = 0.35f, ShotPeakMax = 0.9f;
+    const float PassSwellMax = 1.08f, LobSwellMax = 1.2f, ShotSwellMax = 1.15f;
+    const float PassShadowGround = 0.55f, LobShadowGround = 0.75f, ShotShadowGround = 0.6f;
+    const float ShotArcPeakT = 0.35f;       // the shot curve peaks this far into the flight
+
+    // ---- release snap (shots only): squash → pop → settle, ~0.12s, raw (not eased) ----
+    const float SnapSeconds = 0.12f;
+    const float SnapSquashScale = 0.84f;    // instant squash on release...
+    const float SnapPopScale = 1.12f;       // ...popping past normal before settling back to 1
 
     // ---- trail ----
     const float TrailMinSpeed = 5f;         // emit only above this speed
@@ -65,9 +88,8 @@ public class BallFlight : MonoBehaviour
     const float MaxBallScale = 1.2f;      // hard cap on EVERY ball-scale effect
     const float ScaleLerpSpeed = 10f;     // how fast the visual scale eases to its target (no snaps)
 
-    // ---- high ball / high shot swell ----
-    const float HighBallMaxScale = 1.2f;      // ball at the arc peak (capped at 1.2x)
-    const float HighShotMaxScale = 1.2f;      // flat high-shot fallback swell
+    // ---- flat high-shot fallback swell ----
+    const float HighShotMaxScale = 1.2f;
     const float HighShotSwellSeconds = 0.3f;  // smooth scale-up time after release
     const float HighShotShrinkDistance = 2f;  // back to 1x inside this of the goal line
     const float GlowSeconds = 0.2f;
@@ -79,8 +101,8 @@ public class BallFlight : MonoBehaviour
     const float RippleSeconds = 0.3f;
     const float RippleMaxScale = 0.8f;
 
-    // ---- high-ball shadow (ball rises → shadow shrinks; that contrast IS the height read) ----
-    const float ShadowGroundSize = 0.75f;    // relative to the ball sprite, at launch/landing
+    // ---- arc shadow (ball rises → shadow shrinks; that contrast IS the height read) ----
+    // The on-water (launch/landing) size is per-kind — see *ShadowGround above.
     const float ShadowPeakSize = 0.4f;       // at the arc peak (ball big + shadow small = high)
     const float ShadowOvalY = 0.6f;          // squashed into a flat oval on the water
     static readonly Color ShadowTint = new Color(0.1f, 0.1f, 0.2f); // dark blue-grey
@@ -105,18 +127,21 @@ public class BallFlight : MonoBehaviour
     private float shotStartTime;
     private float glowUntil = -10f;
 
-    // high-ball flight state (straight ground line from → to at constant speed)
+    // arc flight state (straight ground line from → to at constant speed)
     private bool highBallActive;
-    private bool highBallIsShot;
+    private ArcKind highBallKind;
     private Vector2 highBallFrom;
     private Vector2 highBallTo;
     private float highBallSpeed;
     private float highBallStart;
     private float highBallFlightTime;
     private float highBallPeak;            // arc peak height (world units)
-    private float arc01;                   // THIS frame's normalized arc height: 4t(1-t)
+    private float highBallSwellMax;        // sprite swell at the peak (per-kind)
+    private float highBallShadowGround;    // shadow's on-water size (per-kind)
+    private float arc01;                   // THIS frame's normalized arc height (0..1)
     private float storedDamping;           // ball's authored linearDamping (zeroed in flight)
     private bool physicsSuppressed;
+    private float snapStart = -10f;        // release-snap start time (shots only)
 
     private bool passActive; // a plain pass: NO scale change and NO trail (gentle spin only)
 
@@ -203,13 +228,14 @@ public class BallFlight : MonoBehaviour
         trail.emitting = false;
     }
 
-    // Called by PlayerMovement.Shoot right after a FLAT release (skip / mid / point-blank high).
+    // Called on every FLAT shot release (skip / mid / point-blank high; human, bot or keeper).
     public void NoteShot(float height, bool skip)
     {
         EndFlight();
         shotHeight = height;
         shotStartTime = Time.time;
         skipActive = skip;
+        TriggerReleaseSnap(); // every shot gets the release punch; passes never do
 
         if (!skip && height > 0.7f)
         {
@@ -237,13 +263,14 @@ public class BallFlight : MonoBehaviour
         passActive = true;
     }
 
-    // Launch the ball as a HIGH BALL: an untouchable arc from its current spot to landPos.
-    // Callers invoke this with the ball still parented at the hand, then just un-parent —
-    // the flight owns the physics from here (simulated, zero damping, colliders off, straight
-    // constant-speed ground line; no release-collision window needed since nothing collides).
-    // Returns false — with NO side effects — when the throw is too short for a real arc; the
-    // caller then releases flat exactly as before.
-    public bool LaunchHighBall(Vector2 landPos, float groundSpeed, float height01, bool isShot)
+    // Launch the ball on an ARC: an untouchable airborne ball from its current spot to
+    // landPos, shaped by `kind` (Pass = small quick hop, Lob = big floaty ball, Shot = fast
+    // asymmetric dart). Callers invoke this with the ball still parented at the hand, then
+    // just un-parent — the flight owns the physics from here (simulated, zero damping,
+    // colliders off, straight constant-speed ground line; no release-collision window needed
+    // since nothing collides). Returns false — with NO side effects — when the throw is too
+    // short for a real arc; the caller then releases flat exactly as before.
+    public bool LaunchHighBall(Vector2 landPos, float groundSpeed, float height01, ArcKind kind)
     {
         if (rb == null) return false;
         Vector2 from = rb.transform.position;   // the held ball is pinned at the hand
@@ -254,26 +281,47 @@ public class BallFlight : MonoBehaviour
         EndFlight(); // clear any prior flight state/visuals first
 
         highBallActive = true;
-        highBallIsShot = isShot;
+        highBallKind = kind;
         highBallFrom = from;
         highBallTo = landPos;
         highBallSpeed = groundSpeed;
         highBallStart = Time.time;
         highBallFlightTime = Mathf.Min(dist / groundSpeed, MaxFlightTime);
-        highBallPeak = Mathf.Clamp(dist * PeakHeightPerUnit, MinPeakHeight, MaxPeakHeight);
+        switch (kind)
+        {
+            case ArcKind.Pass:
+                highBallPeak = Mathf.Clamp(dist * PassPeakPerUnit, PassPeakMin, PassPeakMax);
+                highBallSwellMax = PassSwellMax;
+                highBallShadowGround = PassShadowGround;
+                break;
+            case ArcKind.Lob:
+                highBallPeak = Mathf.Clamp(dist * LobPeakPerUnit, LobPeakMin, LobPeakMax);
+                highBallSwellMax = LobSwellMax;
+                highBallShadowGround = LobShadowGround;
+                break;
+            default: // Shot
+                highBallPeak = Mathf.Clamp(dist * ShotPeakPerUnit, ShotPeakMin, ShotPeakMax);
+                highBallSwellMax = ShotSwellMax;
+                highBallShadowGround = ShotShadowGround;
+                break;
+        }
         shotHeight = height01;       // the keeper's save penalty reads this once a shot lands
         shotStartTime = Time.time;
 
         // The ball is IN THE AIR: colliders off (players, keepers, walls and the goal trigger
         // can't touch it) and zero damping, so the body flies the ground line at CONSTANT
-        // speed — the arc peaks at the exact midpoint of the travel distance and the timer
-        // lands it exactly at landPos. Collider-off also means the release can never deflect
-        // off the thrower's own body, so no IgnoreReleaseCollision window is needed.
+        // speed — the timer lands it exactly at landPos. Collider-off also means the release
+        // can never deflect off the thrower's own body, so no IgnoreReleaseCollision window
+        // is needed.
         SuppressBallPhysics();
         rb.simulated = true;
         rb.linearVelocity = (landPos - from) / dist * groundSpeed;
 
-        if (isShot) { glowUntil = Time.time + GlowSeconds; glowDirty = true; } // release cue
+        if (kind == ArcKind.Shot)
+        {
+            glowUntil = Time.time + GlowSeconds; glowDirty = true; // release cue
+            TriggerReleaseSnap();                                  // shots snap, passes don't
+        }
 
         if (shadow != null) shadow.gameObject.SetActive(true);
         if (airSr != null)
@@ -326,14 +374,31 @@ public class BallFlight : MonoBehaviour
         ApplyVisuals();
     }
 
-    // Normalized arc height this frame: 0 on the water, 1 at the peak — a quadratic that
-    // peaks exactly halfway through the flight, which (constant ground speed) is exactly
-    // the midpoint of the travel distance. Reaches 0 again right at the landing frame.
+    // Normalized arc height this frame: 0 on the water, 1 at the peak, 0 again right at the
+    // landing frame. Pass/Lob use the symmetric parabola (peak at the midpoint of the travel
+    // distance — ground speed is constant, so time-mid == distance-mid); Shot uses its own
+    // asymmetric curve so the two silhouettes are never confusable.
     float HighBallArc01()
     {
         if (!highBallActive) return 0f;
         float t = Mathf.Clamp01((Time.time - highBallStart) / Mathf.Max(highBallFlightTime, 0.0001f));
+        if (highBallKind == ArcKind.Shot) return ShotArc01(t);
         return 4f * t * (1f - t);
+    }
+
+    // The SHOT curve (hand-built, deliberately NOT the pass parabola): an easeOutQuad rise
+    // that climbs aggressively and decelerates into an early peak (ShotArcPeakT ≈ 35% of the
+    // flight), then an easeInQuad fall — the ball hangs near the top in small, slow
+    // decrements before dropping sharply into the landing.
+    static float ShotArc01(float t)
+    {
+        if (t <= ShotArcPeakT)
+        {
+            float u = t / ShotArcPeakT;
+            return 1f - (1f - u) * (1f - u);   // steep start, eases into the peak
+        }
+        float v = (t - ShotArcPeakT) / (1f - ShotArcPeakT);
+        return 1f - v * v;                     // barely falls at first, then drops hard
     }
 
     void CheckFlight()
@@ -364,7 +429,8 @@ public class BallFlight : MonoBehaviour
     {
         Vector2 dir = highBallTo - highBallFrom;
         dir = dir.sqrMagnitude > 1e-6f ? dir.normalized : Vector2.right;
-        float exitSpeed = highBallIsShot ? highBallSpeed : highBallSpeed * LandRollFactor;
+        float exitSpeed = highBallKind == ArcKind.Shot ? highBallSpeed
+                                                       : highBallSpeed * LandRollFactor;
 
         RestoreBallPhysics();
         rb.linearVelocity = dir * exitSpeed;
@@ -449,7 +515,8 @@ public class BallFlight : MonoBehaviour
         {
             float spin;
             if (skipActive) spin = 0f;                                         // bouncing ball — no spin
-            else if (highBallActive) spin = LobSpinDegPerSec;                  // gentle arc spin
+            else if (highBallActive)                                           // arcs: lobs/shots barely
+                spin = highBallKind == ArcKind.Pass ? 0f : LobSpinDegPerSec;   // spin, plain passes never
             else if (rb.linearVelocity.magnitude > ShotSpinSpeed) spin = ShotSpinDegPerSec; // a shot
             else spin = PassSpinDegPerSec;                                     // a fast loose ball
             if (spin != 0f) transform.Rotate(0f, 0f, -spin * Time.deltaTime);
@@ -474,9 +541,10 @@ public class BallFlight : MonoBehaviour
     {
         float target = 1f;
 
-        // high ball: swell follows the arc — biggest at the peak, back to 1x at landing
+        // arc: swell follows the height — biggest at the peak, back to 1x at landing.
+        // Amplitude is per-kind (a small pass hop swells far less than a full lob).
         if (highBallActive)
-            target = Mathf.Max(target, 1f + (HighBallMaxScale - 1f) * arc01);
+            target = Mathf.Max(target, 1f + (highBallSwellMax - 1f) * arc01);
         if (highShotActive && rb != null)
             target = Mathf.Max(target, HighShotMult());
 
@@ -530,7 +598,7 @@ public class BallFlight : MonoBehaviour
         shadow.position = transform.position + ShadowOffset;
         shadow.rotation = Quaternion.identity;
 
-        float size = Mathf.Lerp(ShadowGroundSize, ShadowPeakSize, arc01);
+        float size = Mathf.Lerp(highBallShadowGround, ShadowPeakSize, arc01);
         float counter = Mathf.Max(scaleFactor, 0.01f);
         shadow.localScale = new Vector3(size / counter, size * ShadowOvalY / counter, 1f);
 
@@ -582,9 +650,25 @@ public class BallFlight : MonoBehaviour
     // bake shear into localScale that compounded on every catch — the "ball gets more and more
     // stretched after bot passes" bug. We divide out the parent's scale per-axis so the VISIBLE
     // (world) scale is always a uniform baseScale * scaleFactor.
+    // ---- release snap (shots only) ----
+    // A raw, un-eased multiplier so the punch stays crisp: squash on release, pop past
+    // normal, settle to exactly 1 — self-expires after SnapSeconds. Multiplied into the
+    // final scale OUTSIDE the eased scaleFactor (the ScaleLerpSpeed smoothing would turn
+    // a 0.12s punch into mush).
+    void TriggerReleaseSnap() { snapStart = Time.time; }
+
+    float ReleaseSnapMult()
+    {
+        float t = (Time.time - snapStart) / SnapSeconds;
+        if (t < 0f || t >= 1f) return 1f;
+        if (t < 0.3f) return Mathf.Lerp(1f, SnapSquashScale, t / 0.3f);              // squash
+        if (t < 0.7f) return Mathf.Lerp(SnapSquashScale, SnapPopScale, (t - 0.3f) / 0.4f); // pop
+        return Mathf.Lerp(SnapPopScale, 1f, (t - 0.7f) / 0.3f);                      // settle
+    }
+
     void SetBallScale()
     {
-        float world = baseScale * scaleFactor;
+        float world = baseScale * scaleFactor * ReleaseSnapMult();
         Transform p = transform.parent;
         if (p == null)
         {

@@ -222,6 +222,12 @@ public class Goalkeeper : MonoBehaviour
         if (ball == null || rb == null) return;
         MatchContext ctx = MatchContext.Instance;
 
+        // All swimmers freeze while play is frozen — the keeper too. Without this gate the
+        // keeper kept tracking/collecting through freezes; harmless before, but the goal
+        // HANG TIME leaves the dead ball sitting in its net, and it would fish it straight
+        // back out mid-celebration (stale keeper-hold state through the restart).
+        if (ctx != null && ctx.PlayFrozen) return;
+
         if (holding) { HoldTick(ctx); return; }
 
         // Restore our blocking collider once a missed-save recovery window has elapsed (Task 3).
@@ -665,11 +671,27 @@ public class Goalkeeper : MonoBehaviour
         else if (team != null && team.attackGoal != null) { dir = ((Vector2)team.attackGoal.position - from).normalized; dist = 6f; }
         else { dir = Vector2.right; dist = 6f; }
 
-        if (ctx != null) ctx.IgnoreReleaseCollision(transform); // don't deflect off our own body
-        ball.transform.SetParent(null);
-        ball.simulated = true;
         float maxSpeed = Mathf.Clamp(dist * 2.5f, 6f, 13f);
-        ball.linearVelocity = dir * Mathf.Lerp(6f, maxSpeed, Mathf.Clamp01(charge)); // charge scales the pass
+        float speed = Mathf.Lerp(6f, maxSpeed, Mathf.Clamp01(charge)); // charge scales the pass
+
+        // Keeper distribution is a PASS like any other → the same airborne arc (untouchable
+        // mid-flight). The forced DEEP outlet sails over the crowding press as the big LOB;
+        // a normal pass-out is the small quick hop. Point-blank throws fall back to flat.
+        if (BallFlight.Instance != null &&
+            BallFlight.Instance.LaunchHighBall(from + dir * dist, speed,
+                                               forceDeep ? 0.9f : 0.5f,
+                                               forceDeep ? BallFlight.ArcKind.Lob
+                                                         : BallFlight.ArcKind.Pass))
+        {
+            ball.transform.SetParent(null); // airborne — no collisions exist to ignore
+        }
+        else
+        {
+            if (ctx != null) ctx.IgnoreReleaseCollision(transform); // don't deflect off our own body
+            ball.transform.SetParent(null);
+            ball.simulated = true;
+            ball.linearVelocity = dir * speed;
+        }
         if (ctx != null) ctx.SetPossession(null);
         if (ShotClock.Instance != null) ShotClock.Instance.ResetClock(); // distribution = fresh 30
     }

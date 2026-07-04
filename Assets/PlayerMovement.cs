@@ -59,6 +59,14 @@ public class PlayerMovement : MonoBehaviour
     private const float HighShotClearDistance = 6f;  // arc length for a near-vertical high shot
     private const float HighLobRangeMin = 4f;        // F+B lob with no teammate along the aim:
     private const float HighLobRangeMax = 9f;        //   travel distance scales with the charge
+    private const float PassArcRangeMin = 3.5f;      // plain B pass with no teammate along the
+    private const float PassArcRangeMax = 6.5f;      //   aim: charge-scaled landing distance
+                                                     //   (matches the old flat pass's carry)
+
+    // Shots must read faster than passes (human pass tops out at maxPassSpeed 16 — ABOVE the
+    // serialized maxShootPower 12). Applied in code so no Inspector value needs re-tuning:
+    // full-charge shot = 12 × 1.35 = 16.2, high shot ≈ 18.6, tap floor = 8 × 1.35 = 10.8.
+    private const float ShotSpeedMult = 1.35f;
     [Tooltip("Seconds of holding to reach a FULL-power pass (lower = snappier charge bar).")]
     [SerializeField] private float passChargeTime = 0.45f;
     [SerializeField] private float lobSpeedFactor = 0.7f; // F+B lob travels at this fraction of pass speed
@@ -567,10 +575,23 @@ public class PlayerMovement : MonoBehaviour
         powerBar.SetPosition(0, new Vector3(-half, powerBarYOffset, 0f));
         powerBar.SetPosition(1, new Vector3(-half + powerBarWidth * fill, powerBarYOffset, 0f));
 
-        // green → yellow → red ramp (nicer than a flat green→red lerp)
-        Color col = fill < 0.5f
-            ? Color.Lerp(new Color(0.2f, 1f, 0.3f), new Color(1f, 0.9f, 0.2f), fill * 2f)
-            : Color.Lerp(new Color(1f, 0.9f, 0.2f), new Color(1f, 0.25f, 0.2f), (fill - 0.5f) * 2f);
+        // The bar itself tells shot from pass at a glance:
+        //   PASS  — a cool blue→cyan ramp (calm, never flashes).
+        //   SHOT  — the hot green→yellow→red ramp, and past 0.7 fill (the HIGH-shot zone,
+        //           where release becomes the arcing dart) it strobes toward white.
+        Color col;
+        if (chargeMode == Charging.Pass)
+        {
+            col = Color.Lerp(new Color(0.25f, 0.55f, 1f), new Color(0.2f, 0.95f, 1f), fill);
+        }
+        else
+        {
+            col = fill < 0.5f
+                ? Color.Lerp(new Color(0.2f, 1f, 0.3f), new Color(1f, 0.9f, 0.2f), fill * 2f)
+                : Color.Lerp(new Color(1f, 0.9f, 0.2f), new Color(1f, 0.25f, 0.2f), (fill - 0.5f) * 2f);
+            if (fill > 0.7f)
+                col = Color.Lerp(col, Color.white, Mathf.PingPong(Time.time * 6f, 1f) * 0.65f);
+        }
         powerBar.startColor = powerBar.endColor = col;
     }
 
@@ -806,15 +827,20 @@ public class PlayerMovement : MonoBehaviour
         skipCharge = false;
         if (skip) shotHeight = skipShotHeight; // a skip shot is fast and LOW by definition
 
-        float speed = Mathf.Max(currentPower, minShootSpeed); // a tap still fires a real shot, never a drop
+        // ShotSpeedMult: a shot always travels measurably faster than a pass of the same
+        // charge — that speed gap (plus the snap/arc-shape in BallFlight) is what makes a
+        // shot readable as a shot with no HUD.
+        float speed = Mathf.Max(currentPower, minShootSpeed) * ShotSpeedMult; // a tap still fires a real shot
         if (!skip && shotHeight > 0.7f) speed *= highShotSpeedBonus; // high shots fly faster
 
-        // HIGH SHOT (charge past 0.7): the ball leaves the water — an untouchable arc that
-        // drops back in 1.5u short of the goal line it's aimed at, then flies on as a normal
-        // shot the keeper can save (with its usual high-shot penalty). Point-blank / too-short
-        // arcs are refused by LaunchHighBall → the classic flat high shot below fires instead.
+        // HIGH SHOT (charge past 0.7): the ball leaves the water — an untouchable ASYMMETRIC
+        // arc (steep rise, hang, sharp drop — ArcKind.Shot) that lands 1.5u short of the goal
+        // line it's aimed at, then flies on as a normal shot the keeper can save (with its
+        // usual high-shot penalty). Point-blank / too-short arcs are refused by
+        // LaunchHighBall → the classic flat high shot below fires instead.
         if (!skip && shotHeight > 0.7f && BallFlight.Instance != null &&
-            BallFlight.Instance.LaunchHighBall(HighShotLandPoint(), speed, shotHeight, true))
+            BallFlight.Instance.LaunchHighBall(HighShotLandPoint(), speed, shotHeight,
+                                               BallFlight.ArcKind.Shot))
         {
             isHolding = false;
             ball.transform.SetParent(null); // airborne — no collisions exist to ignore
@@ -894,9 +920,10 @@ public class PlayerMovement : MonoBehaviour
 
         // Work out the throw speed BEFORE releasing so a dud (near-zero) pass can be refused — the
         // floor is minPassSpeed even for an untimed tap, so a pass always carries to a teammate.
-        // F+B = HIGH LOB: slower flight, the ball leaves the water as an untouchable arc
-        // (BallFlight) that NOBODY — either team — can pick off until it lands.
-        // Otherwise a plain pass: no scaling/trail.
+        // EVERY pass is airborne now (BallFlight arc — untouchable mid-flight by either team):
+        //   B alone  = ArcKind.Pass — a small quick hop at full pass speed (the toned-down arc).
+        //   F + B    = ArcKind.Lob  — the big slow floaty ball over the top.
+        // Only a point-blank throw (LaunchHighBall refuses < 2u) stays flat.
         float speed = Mathf.Clamp(Mathf.Lerp(minPassSpeed, maxPassSpeed, Mathf.Clamp01(charge)),
                                   minPassSpeed, maxPassSpeed);
         bool lob = Input.GetKey(KeyCode.F);
@@ -905,16 +932,19 @@ public class PlayerMovement : MonoBehaviour
         // Too weak to be a real pass → keep holding rather than dropping the ball at our feet.
         if (speed < MinPassReleaseSpeed) return;
 
-        // F+B HIGH LOB: arc to the assisted teammate (else a charge-scaled spot along the aim).
-        // LaunchHighBall refuses point-blank throws (no side effects) → normal flat pass below.
+        // Arc to the assisted teammate, else a charge-scaled spot along the aim (the pass-arc
+        // range mirrors how far the old flat pass carried before linear damping killed it).
         bool high = false;
-        if (lob && BallFlight.Instance != null)
+        if (BallFlight.Instance != null)
         {
             Vector2 land = assist != null
                 ? (Vector2)assist.position
                 : (Vector2)ball.transform.position +
-                  fireDir * Mathf.Lerp(HighLobRangeMin, HighLobRangeMax, Mathf.Clamp01(charge));
-            high = BallFlight.Instance.LaunchHighBall(land, speed, 0.9f, false);
+                  fireDir * (lob ? Mathf.Lerp(HighLobRangeMin, HighLobRangeMax, Mathf.Clamp01(charge))
+                                 : Mathf.Lerp(PassArcRangeMin, PassArcRangeMax, Mathf.Clamp01(charge)));
+            high = BallFlight.Instance.LaunchHighBall(land, speed, lob ? 0.9f : 0.5f,
+                                                      lob ? BallFlight.ArcKind.Lob
+                                                          : BallFlight.ArcKind.Pass);
         }
 
         isHolding = false;
@@ -928,7 +958,7 @@ public class PlayerMovement : MonoBehaviour
             ball.transform.SetParent(null);
             ball.simulated = true;
             ball.linearVelocity = fireDir * speed;
-            if (BallFlight.Instance != null) BallFlight.Instance.NotePass(); // plain pass → no swell, no trail "bridge"
+            if (BallFlight.Instance != null) BallFlight.Instance.NotePass(); // point-blank flat pass → no swell/trail
         }
         shotHeight = lob ? 0.9f : 0.5f; // a pass overwrites LastReleaser → keep its height honest
 
