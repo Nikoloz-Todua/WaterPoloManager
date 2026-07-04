@@ -52,6 +52,13 @@ public class PlayerMovement : MonoBehaviour
     // A pass computed slower than this is a dud (would just plop at the player's feet) → refuse to
     // release the ball at all, so a press never "drops" the ball instead of throwing it.
     private const float MinPassReleaseSpeed = 4f;
+
+    // ---- HIGH BALL (the arcing, untouchable release — BallFlight.LaunchHighBall) ----
+    private const float HighShotGoalLineX = 7f;      // matches GoalLineOut / BallFlight.GoalLineX
+    private const float HighShotLandShort = 1.5f;    // a high shot lands this far before the line
+    private const float HighShotClearDistance = 6f;  // arc length for a near-vertical high shot
+    private const float HighLobRangeMin = 4f;        // F+B lob with no teammate along the aim:
+    private const float HighLobRangeMax = 9f;        //   travel distance scales with the charge
     [Tooltip("Seconds of holding to reach a FULL-power pass (lower = snappier charge bar).")]
     [SerializeField] private float passChargeTime = 0.45f;
     [SerializeField] private float lobSpeedFactor = 0.7f; // F+B lob travels at this fraction of pass speed
@@ -175,7 +182,7 @@ public class PlayerMovement : MonoBehaviour
         rb = GetComponent<Rigidbody2D>();
         playerAnimator = GetComponent<PlayerAnimator>();
 
-        // flight effects (skip bounce, lob shadow) live on the Ball — first Awake adds them
+        // flight effects (skip bounce, high-ball arc + shadow) live on the Ball — first Awake adds them
         if (ball != null && ball.GetComponent<BallFlight>() == null)
             ball.gameObject.AddComponent<BallFlight>();
 
@@ -619,7 +626,9 @@ public class PlayerMovement : MonoBehaviour
             return;
         }
 
-        if (Vector2.Distance(transform.position, ball.position) > stealDistance) return;
+        // ctx.BallPosition, not ball.position: a held ball's rigidbody pose is frozen at the
+        // catch point — the live (transform) position is where the carrier actually has it.
+        if (Vector2.Distance(transform.position, ctx.BallPosition) > stealDistance) return;
 
         // In range = a real attempt: play the snatch animation NOW, before the facing
         // gate or the dice roll, so EVERY attempt is visible (success or not).
@@ -698,8 +707,9 @@ public class PlayerMovement : MonoBehaviour
 
         // Block reaches slightly further than the keyboard steal (matches the 1.5u defend
         // proximity in PlayerAnimator): the enemy carrier must be within 1.5 units.
+        // ctx.BallPosition = live position (a held ball's rigidbody pose is frozen).
         const float BlockStealRange = 1.5f;
-        if (Vector2.Distance(transform.position, ball.position) > BlockStealRange) return;
+        if (Vector2.Distance(transform.position, ctx.BallPosition) > BlockStealRange) return;
 
         // In range = a real attempt → play the snatch animation now (success or not).
         if (playerAnimator != null) playerAnimator.TriggerSteal();
@@ -791,14 +801,6 @@ public class PlayerMovement : MonoBehaviour
     void Shoot()
     {
         if (ball == null) return;
-        isHolding = false;
-        // Release from the HAND, where the hold visually pinned it — the old snap-to-centre
-        // spawned the ball INSIDE our own collider and the depenetration deflected/weakened the
-        // shot. The self-collision window is what makes any release angle safe, including firing
-        // back across the body.
-        if (MatchContext.Instance != null) MatchContext.Instance.IgnoreReleaseCollision(transform);
-        ball.transform.SetParent(null);
-        ball.simulated = true;
 
         bool skip = skipCharge;
         skipCharge = false;
@@ -806,16 +808,54 @@ public class PlayerMovement : MonoBehaviour
 
         float speed = Mathf.Max(currentPower, minShootSpeed); // a tap still fires a real shot, never a drop
         if (!skip && shotHeight > 0.7f) speed *= highShotSpeedBonus; // high shots fly faster
-        ball.linearVelocity = lastDirection * speed;
 
-        if (BallFlight.Instance != null)
-            BallFlight.Instance.NoteShot(shotHeight, skip); // arms the bounce for a skip
+        // HIGH SHOT (charge past 0.7): the ball leaves the water — an untouchable arc that
+        // drops back in 1.5u short of the goal line it's aimed at, then flies on as a normal
+        // shot the keeper can save (with its usual high-shot penalty). Point-blank / too-short
+        // arcs are refused by LaunchHighBall → the classic flat high shot below fires instead.
+        if (!skip && shotHeight > 0.7f && BallFlight.Instance != null &&
+            BallFlight.Instance.LaunchHighBall(HighShotLandPoint(), speed, shotHeight, true))
+        {
+            isHolding = false;
+            ball.transform.SetParent(null); // airborne — no collisions exist to ignore
+        }
+        else
+        {
+            isHolding = false;
+            // Release from the HAND, where the hold visually pinned it — the old snap-to-centre
+            // spawned the ball INSIDE our own collider and the depenetration deflected/weakened the
+            // shot. The self-collision window is what makes any release angle safe, including firing
+            // back across the body.
+            if (MatchContext.Instance != null) MatchContext.Instance.IgnoreReleaseCollision(transform);
+            ball.transform.SetParent(null);
+            ball.simulated = true;
+            ball.linearVelocity = lastDirection * speed;
+
+            if (BallFlight.Instance != null)
+                BallFlight.Instance.NoteShot(shotHeight, skip); // arms the bounce for a skip
+        }
 
         if (MatchContext.Instance != null)
         {
             MatchContext.Instance.NoteRelease(transform); // remember the shooter (Centre-goal tracking)
             MatchContext.Instance.SetPossession(null);
         }
+    }
+
+    // Where a HIGH shot comes back down: 1.5u short of the goal line the aim crosses, so the
+    // keeper contests a normal (landed) ball at its doorstep — the same spacing the skip shot's
+    // bounce point uses. Near-vertical aims (no goal line ahead) arc a fixed clearance instead.
+    Vector2 HighShotLandPoint()
+    {
+        Vector2 from = ball != null ? (Vector2)ball.transform.position : (Vector2)transform.position;
+        Vector2 dir = lastDirection.sqrMagnitude > 1e-4f ? lastDirection.normalized : Vector2.up;
+        if (Mathf.Abs(dir.x) > 0.05f)
+        {
+            float lineX = Mathf.Sign(dir.x) * (HighShotGoalLineX - HighShotLandShort);
+            float t = (lineX - from.x) / dir.x;
+            if (t > 0f) return from + dir * t;
+        }
+        return from + dir * HighShotClearDistance;
     }
 
     // DIRECTIONAL pass (FIFA-style): the ball goes where the player AIMS — lastDirection,
@@ -854,8 +894,9 @@ public class PlayerMovement : MonoBehaviour
 
         // Work out the throw speed BEFORE releasing so a dud (near-zero) pass can be refused — the
         // floor is minPassSpeed even for an untimed tap, so a pass always carries to a teammate.
-        // F+B = HIGH LOB: slower flight, ball arcs overhead with a water shadow (BallFlight), AI
-        // interception gated to a reduced roll. Otherwise a plain pass: no scaling/trail.
+        // F+B = HIGH LOB: slower flight, the ball leaves the water as an untouchable arc
+        // (BallFlight) that NOBODY — either team — can pick off until it lands.
+        // Otherwise a plain pass: no scaling/trail.
         float speed = Mathf.Clamp(Mathf.Lerp(minPassSpeed, maxPassSpeed, Mathf.Clamp01(charge)),
                                   minPassSpeed, maxPassSpeed);
         bool lob = Input.GetKey(KeyCode.F);
@@ -864,22 +905,32 @@ public class PlayerMovement : MonoBehaviour
         // Too weak to be a real pass → keep holding rather than dropping the ball at our feet.
         if (speed < MinPassReleaseSpeed) return;
 
-        isHolding = false;
-        MatchContext.Instance.IgnoreReleaseCollision(transform); // a backward pass must clear our own body
-        ball.transform.SetParent(null);
-        ball.simulated = true;
-        ball.linearVelocity = fireDir * speed;
-        shotHeight = lob ? 0.9f : 0.5f; // a pass overwrites LastReleaser → keep its height honest
-
-        if (BallFlight.Instance != null)
+        // F+B HIGH LOB: arc to the assisted teammate (else a charge-scaled spot along the aim).
+        // LaunchHighBall refuses point-blank throws (no side effects) → normal flat pass below.
+        bool high = false;
+        if (lob && BallFlight.Instance != null)
         {
-            if (lob)
-            {
-                float dist = assist != null ? Vector2.Distance(transform.position, assist.position) : 5f;
-                BallFlight.Instance.NoteLob(myTeam, dist, speed);
-            }
-            else BallFlight.Instance.NotePass(); // plain pass → no swell, no trail "bridge"
+            Vector2 land = assist != null
+                ? (Vector2)assist.position
+                : (Vector2)ball.transform.position +
+                  fireDir * Mathf.Lerp(HighLobRangeMin, HighLobRangeMax, Mathf.Clamp01(charge));
+            high = BallFlight.Instance.LaunchHighBall(land, speed, 0.9f, false);
         }
+
+        isHolding = false;
+        if (high)
+        {
+            ball.transform.SetParent(null); // airborne — no collisions exist to ignore
+        }
+        else
+        {
+            MatchContext.Instance.IgnoreReleaseCollision(transform); // a backward pass must clear our own body
+            ball.transform.SetParent(null);
+            ball.simulated = true;
+            ball.linearVelocity = fireDir * speed;
+            if (BallFlight.Instance != null) BallFlight.Instance.NotePass(); // plain pass → no swell, no trail "bridge"
+        }
+        shotHeight = lob ? 0.9f : 0.5f; // a pass overwrites LastReleaser → keep its height honest
 
         MatchContext.Instance.NoteRelease(transform);
         MatchContext.Instance.SetPossession(null);

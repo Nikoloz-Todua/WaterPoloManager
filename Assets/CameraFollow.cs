@@ -120,6 +120,9 @@ public class CameraFollow : MonoBehaviour
             return;
         }
 
+        // BallPosition is LIVE even while the ball is held: MatchContext reads the transform
+        // for a carried (non-simulated) ball — the rigidbody pose freezes at the catch point,
+        // which used to park this anchor at the goal while the keeper carried the ball away.
         Vector2 ballPos = ctx.BallPosition;
         // While OUR keeper holds the ball the human is controlling the KEEPER, not the active
         // field player — anchor the follow on the ball (pinned to the keeper's hands), or the

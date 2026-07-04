@@ -77,7 +77,14 @@ public class MatchContext : MonoBehaviour
     // re-arm the flag by hand. Pure camera cue — does not touch possession (Task 3).
     public void MarkBallTouched() { BallTouchedSinceReset = true; }
 
-    public Vector2 BallPosition => ball != null ? ball.position : Vector2.zero;
+    // Where the ball ACTUALLY is. While the ball is held it is parented and NOT simulated —
+    // and a non-simulated Rigidbody2D's pose FREEZES at its last physics position instead of
+    // tracking the transform. Reading rb.position then anchors every follower (the camera's
+    // keeper-carry anchor, AI defensive shapes, steal reach) to the stale CATCH point — the
+    // "camera stops following the advancing keeper" bug. The transform is authoritative while
+    // held; the rigidbody is authoritative while simulated (loose/flying).
+    public Vector2 BallPosition => ball == null ? Vector2.zero
+        : ball.simulated ? ball.position : (Vector2)ball.transform.position;
     public Rigidbody2D Ball => ball;
     public TeamSide PlayerTeam => playerTeam;
     public TeamSide BotTeam => botTeam;
@@ -218,8 +225,11 @@ public class MatchContext : MonoBehaviour
         while (touching && Time.time < deadline && ballCol != null)
         {
             touching = false;
+            // enabled checks: a high-ball launch (BallFlight) disables the ball's colliders
+            // mid-flight — Physics2D.Distance throws ArgumentException on a disabled collider.
             foreach (Collider2D c in own)
-                if (c != null && c != ballCol && Physics2D.Distance(ballCol, c).distance < 0.05f)
+                if (c != null && c != ballCol && c.enabled && ballCol.enabled &&
+                    Physics2D.Distance(ballCol, c).distance < 0.05f)
                 { touching = true; break; }
             if (touching) yield return null;
         }
@@ -247,13 +257,16 @@ public class MatchContext : MonoBehaviour
     // out of their own loose ball. The window is purely elapsed-time and always expires.
     private const float MaxReleaseGrabDelay = 1f;
 
-    // Loose AND past the post-release cooldown → safe for ANYONE (including the releaser) to collect.
-    // This is what stops a shooter/teammate from instantly snatching back a shot or pass. It is
-    // time-based: at most MaxReleaseGrabDelay seconds after release it expires, after which the same
-    // player can pick their own loose ball back up normally.
+    // Loose AND past the post-release cooldown AND not flying overhead → safe for ANYONE
+    // (including the releaser) to collect. The cooldown is what stops a shooter/teammate from
+    // instantly snatching back a shot or pass; it is time-based, so at most MaxReleaseGrabDelay
+    // seconds after release it expires and the same player can pick their own loose ball back up.
+    // A HIGH BALL (arcing overhead, BallFlight) is untouchable for its whole flight — grabs,
+    // steals, keeper saves and the goal-line loose rule all read this and wait for it to land.
     public bool BallGrabbable =>
         PossessingTeam == null &&
-        (Time.time - lastReleaseTime) >= Mathf.Min(releaseGrabDelay, MaxReleaseGrabDelay);
+        (Time.time - lastReleaseTime) >= Mathf.Min(releaseGrabDelay, MaxReleaseGrabDelay) &&
+        (BallFlight.Instance == null || !BallFlight.Instance.HighBallActive);
 
     // given a team, returns the other team
     public TeamSide EnemyOf(TeamSide team)

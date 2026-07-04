@@ -6,10 +6,18 @@ using UnityEngine;
 //  - SKIP SHOT (Q+Space): a fast LOW shot bounces 1.5 units in front of the goal line
 //    — small random Y deflection, squash + water ripple at the bounce, and a 35%
 //    chance the keeper is fooled (Goalkeeper + GoalkeeperAnimator stop reacting).
-//  - HIGH SHOT (charge > 0.7): ball swells and glows briefly, shrinking back as it
-//    nears the goal.
-//  - HIGH LOB (F+B): the ball arcs up over a breathing water-surface shadow; enemy AI
-//    interception is gated to a reduced roll in WaterPoloBrain.
+//  - HIGH BALL (the arc): a HIGH shot (charge > 0.7), the human's F+B lob pass, or a bot's
+//    long / blocked-lane pass. The ball leaves the water: the rigidbody flies a straight
+//    zero-damping line at constant speed with its colliders OFF (nothing can deflect it —
+//    not players, keepers, walls or the goal trigger) while the SPRITE is drawn offset
+//    upward along a parabola that peaks at the midpoint of the travel distance, over a
+//    water shadow that SHRINKS as the ball rises. While airborne the ball is untouchable:
+//    MatchContext.BallGrabbable is false, so no grab / steal / keeper save can take it —
+//    until it lands (flight timer completes at the landing point), where it becomes a
+//    perfectly normal grounded ball again (a landed SHOT keeps its full speed for the
+//    keeper to face; a landed PASS keeps a soft roll for the receiver).
+//  - HIGH SHOT fallback (point-blank charge > 0.7, no room for an arc): ball swells and
+//    glows briefly, shrinking back as it nears the goal — the classic flat high shot.
 // Plus a speed-gated motion trail and spin only above 6 u/s (snaps upright on a catch).
 // All scaling is uniform and recomputed from a clean base each frame, so it never drifts or
 // stretches even when the ball is re-parented onto a non-uniformly-scaled swimmer.
@@ -17,13 +25,26 @@ public class BallFlight : MonoBehaviour
 {
     public static BallFlight Instance { get; private set; }
 
-    // ---- gameplay (unchanged) ----
+    // ---- gameplay ----
     const float GoalLineX = 7f;             // matches GoalLineOut
     const float BounceBeforeGoal = 1.5f;    // skip bounce point distance from the goal line
     const float BounceYJitter = 0.3f;       // ± random Y reflection at the bounce
     const float FoolKeeperChance = 0.35f;   // skip shots fool the keeper this often
     const float LowHeightMax = 0.3f;        // only LOW shots can skip
     const float DeadSpeed = 1f;             // slower than this = the flight is over
+
+    // ---- high ball (the arc) ----
+    const float MinHighBallDistance = 2f;   // shorter throws stay flat (no room for a real arc)
+    const float PeakHeightPerUnit = 0.14f;  // arc peak height grows with the ground distance...
+    const float MinPeakHeight = 0.45f;      // ...between these bounds (world units)
+    const float MaxPeakHeight = 1.25f;
+    const float MaxFlightTime = 2.5f;       // hard safety cap on any single flight
+    const float LandMaxX = 6.4f;            // landings are pulled back inside the goal lines...
+    const float LandMaxY = 3.9f;            // ...and inside the top/bottom walls (open water only)
+    const float LandRollFactor = 0.25f;     // a landed PASS keeps this speed fraction (shots keep 100%)
+    const int   AirSortingBoost = 30;       // the airborne sprite draws OVER the swimmers
+    const float LandingProbeRadius = 0.5f;  // who did we land on? (collision-ignored until separated)
+    const float LandingSeparationMax = 1.5f;// give-up cap for that separation wait
 
     // ---- trail ----
     const float TrailMinSpeed = 5f;         // emit only above this speed
@@ -38,14 +59,15 @@ public class BallFlight : MonoBehaviour
     const float ShotSpinSpeed = 8f;       // flight faster than this counts as a SHOT
     const float ShotSpinDegPerSec = 54f;  // shots spin (was 180; -70%)
     const float PassSpinDegPerSec = 18f;  // a fast loose ball (was 60; -70%)
-    const float LobSpinDegPerSec = 9f;    // lob passes barely spin (was 30; -70%)
+    const float LobSpinDegPerSec = 9f;    // the arcing high ball barely spins (was 30; -70%)
 
     // ---- scale (Task 2: UNIFORM only — X always == Y — capped at 1.2x, Lerp-smoothed) ----
     const float MaxBallScale = 1.2f;      // hard cap on EVERY ball-scale effect
     const float ScaleLerpSpeed = 10f;     // how fast the visual scale eases to its target (no snaps)
 
-    // ---- high shot ----
-    const float HighShotMaxScale = 1.2f;      // capped at 1.2x (was 1.4)
+    // ---- high ball / high shot swell ----
+    const float HighBallMaxScale = 1.2f;      // ball at the arc peak (capped at 1.2x)
+    const float HighShotMaxScale = 1.2f;      // flat high-shot fallback swell
     const float HighShotSwellSeconds = 0.3f;  // smooth scale-up time after release
     const float HighShotShrinkDistance = 2f;  // back to 1x inside this of the goal line
     const float GlowSeconds = 0.2f;
@@ -57,10 +79,10 @@ public class BallFlight : MonoBehaviour
     const float RippleSeconds = 0.3f;
     const float RippleMaxScale = 0.8f;
 
-    // ---- lob ----
-    const float LobMaxScale = 1.2f;          // ball at the arc peak (capped at 1.2x; was 1.3)
-    const float ShadowMinSize = 0.45f;       // relative to the ball sprite, at launch/landing
-    const float ShadowMaxSize = 0.9f;        // at the arc peak
+    // ---- high-ball shadow (ball rises → shadow shrinks; that contrast IS the height read) ----
+    const float ShadowGroundSize = 0.75f;    // relative to the ball sprite, at launch/landing
+    const float ShadowPeakSize = 0.4f;       // at the arc peak (ball big + shadow small = high)
+    const float ShadowOvalY = 0.6f;          // squashed into a flat oval on the water
     static readonly Color ShadowTint = new Color(0.1f, 0.1f, 0.2f); // dark blue-grey
     static readonly Vector3 ShadowOffset = new Vector3(0.06f, -0.18f, 0f);
 
@@ -68,7 +90,9 @@ public class BallFlight : MonoBehaviour
     private SpriteRenderer sr;
     private Transform shadow;
     private SpriteRenderer shadowSr;
+    private SpriteRenderer airSr;          // the airborne ball sprite (the root sprite hides mid-flight)
     private TrailRenderer trail;
+    private Collider2D[] ballCols;         // the ball's own colliders (dropped while airborne)
     private Color baseColor = Color.white; // the ball's real tint (it's yellow, not white)
     private bool glowDirty;                // a glow tint needs restoring when it expires
 
@@ -77,31 +101,41 @@ public class BallFlight : MonoBehaviour
     private bool bounced;
     private float squashUntil = -10f;
 
-    private bool highShotActive;
+    private bool highShotActive;           // flat point-blank fallback only — the arc replaces it
     private float shotStartTime;
     private float glowUntil = -10f;
 
-    private bool lobActive;
-    private TeamSide lobTeam;
-    private float lobStartTime;
-    private float lobFlightTime;
+    // high-ball flight state (straight ground line from → to at constant speed)
+    private bool highBallActive;
+    private bool highBallIsShot;
+    private Vector2 highBallFrom;
+    private Vector2 highBallTo;
+    private float highBallSpeed;
+    private float highBallStart;
+    private float highBallFlightTime;
+    private float highBallPeak;            // arc peak height (world units)
+    private float arc01;                   // THIS frame's normalized arc height: 4t(1-t)
+    private float storedDamping;           // ball's authored linearDamping (zeroed in flight)
+    private bool physicsSuppressed;
 
     private bool passActive; // a plain pass: NO scale change and NO trail (gentle spin only)
 
     private float baseScale = 1f;    // the ball's authored (uniform) localScale, captured in Awake
     private float scaleFactor = 1f;  // current uniform scale factor (1 = normal); eased every frame
 
-    public bool LobActive => lobActive;
-    public TeamSide LobTeam => lobTeam;
     public bool KeeperFooled { get; private set; }
 
-    // Height (0..1) of the current shot's flight (set on NoteShot; low < 0.3, high > 0.7).
-    // Read by Goalkeeper to weight its save chance against high shots.
+    // Height (0..1) of the current shot's flight (low < 0.3, high > 0.7). Read by Goalkeeper
+    // to weight its save chance against high shots — a landed high ball keeps its value.
     public float ShotHeight => shotHeight;
 
     // Skip-shot flight state (read by WaterPoloBrain so AI can't intercept a skip mid-air).
     public bool SkipActive => skipActive;
     public bool SkipBounced => bounced;
+
+    // True while a high ball is overhead. MatchContext.BallGrabbable reads this: an airborne
+    // ball can NOT be grabbed, stolen, saved or picked off by ANYONE until it lands.
+    public bool HighBallActive => highBallActive;
 
     void Awake()
     {
@@ -110,13 +144,15 @@ public class BallFlight : MonoBehaviour
         sr = GetComponent<SpriteRenderer>();
         if (sr != null) baseColor = sr.color;
         baseScale = transform.localScale.x; // ball is authored uniform (0.1) — scale never drifts now
+        ballCols = GetComponents<Collider2D>();
         BuildShadow();
+        BuildAirSprite();
         BuildTrail();
     }
 
     // Soft shadow pinned to the water surface under the ball — the ball's own circle
-    // sprite tinted dark blue-grey, one sorting order below it. Shown only during a lob;
-    // size/alpha breathe with the arc (ApplyVisuals).
+    // sprite tinted dark blue-grey, one sorting order below it. Shown only during a
+    // high-ball flight; size/alpha breathe with the arc (UpdateShadow).
     void BuildShadow()
     {
         GameObject go = new GameObject("BallShadow");
@@ -131,6 +167,25 @@ public class BallFlight : MonoBehaviour
         shadowSr.color = new Color(ShadowTint.r, ShadowTint.g, ShadowTint.b, 0.5f);
         shadow = go.transform;
         go.SetActive(false);
+    }
+
+    // The sprite shown while the ball is AIRBORNE: a copy of the ball's own sprite, drawn
+    // offset upward along the arc and sorted above the swimmers. The root sprite (pinned to
+    // the physics body at water level) hides while this is on, so there's only ever one ball
+    // visible. Parented to the ball so it inherits the flight spin and the swell for free.
+    void BuildAirSprite()
+    {
+        GameObject go = new GameObject("BallAirSprite");
+        go.transform.SetParent(transform, false);
+        go.transform.localPosition = Vector3.zero;
+        airSr = go.AddComponent<SpriteRenderer>();
+        if (sr != null)
+        {
+            airSr.sprite = sr.sprite;
+            airSr.color = sr.color;
+            airSr.sortingOrder = sr.sortingOrder + AirSortingBoost;
+        }
+        airSr.enabled = false;
     }
 
     // Motion trail for any fast flight: white-yellow fading to nothing over 0.15s.
@@ -148,7 +203,7 @@ public class BallFlight : MonoBehaviour
         trail.emitting = false;
     }
 
-    // Called by PlayerMovement.Shoot right after the ball is released.
+    // Called by PlayerMovement.Shoot right after a FLAT release (skip / mid / point-blank high).
     public void NoteShot(float height, bool skip)
     {
         EndFlight();
@@ -158,7 +213,7 @@ public class BallFlight : MonoBehaviour
 
         if (!skip && height > 0.7f)
         {
-            // high shot: swell + a brief warm glow
+            // point-blank high shot (the arc was refused): swell + a brief warm glow
             highShotActive = true;
             glowUntil = Time.time + GlowSeconds;
             glowDirty = true;
@@ -174,7 +229,7 @@ public class BallFlight : MonoBehaviour
     }
 
     // Called by PlayerMovement/WaterPoloBrain on a NORMAL pass: a plain throw with no
-    // height/skip/lob effects. Suppresses the swell AND the motion trail (the "bridge"
+    // height/skip effects. Suppresses the swell AND the motion trail (the "bridge"
     // streak) for the whole flight; spin drops to the gentle pass rate.
     public void NotePass()
     {
@@ -182,35 +237,187 @@ public class BallFlight : MonoBehaviour
         passActive = true;
     }
 
-    // Called by PlayerMovement on an F+B lob pass.
-    public void NoteLob(TeamSide team, float dist, float speed)
+    // Launch the ball as a HIGH BALL: an untouchable arc from its current spot to landPos.
+    // Callers invoke this with the ball still parented at the hand, then just un-parent —
+    // the flight owns the physics from here (simulated, zero damping, colliders off, straight
+    // constant-speed ground line; no release-collision window needed since nothing collides).
+    // Returns false — with NO side effects — when the throw is too short for a real arc; the
+    // caller then releases flat exactly as before.
+    public bool LaunchHighBall(Vector2 landPos, float groundSpeed, float height01, bool isShot)
     {
-        EndFlight();
-        lobActive = true;
-        lobTeam = team;
-        lobStartTime = Time.time;
-        // linear damping slows the ball hard, so pad the straight-line time estimate
-        lobFlightTime = Mathf.Clamp(dist / Mathf.Max(speed * 0.5f, 1f), 0.3f, 2f);
+        if (rb == null) return false;
+        Vector2 from = rb.transform.position;   // the held ball is pinned at the hand
+        landPos = ClampLanding(from, landPos);
+        float dist = Vector2.Distance(from, landPos);
+        if (dist < MinHighBallDistance || groundSpeed < 1f) return false;
+
+        EndFlight(); // clear any prior flight state/visuals first
+
+        highBallActive = true;
+        highBallIsShot = isShot;
+        highBallFrom = from;
+        highBallTo = landPos;
+        highBallSpeed = groundSpeed;
+        highBallStart = Time.time;
+        highBallFlightTime = Mathf.Min(dist / groundSpeed, MaxFlightTime);
+        highBallPeak = Mathf.Clamp(dist * PeakHeightPerUnit, MinPeakHeight, MaxPeakHeight);
+        shotHeight = height01;       // the keeper's save penalty reads this once a shot lands
+        shotStartTime = Time.time;
+
+        // The ball is IN THE AIR: colliders off (players, keepers, walls and the goal trigger
+        // can't touch it) and zero damping, so the body flies the ground line at CONSTANT
+        // speed — the arc peaks at the exact midpoint of the travel distance and the timer
+        // lands it exactly at landPos. Collider-off also means the release can never deflect
+        // off the thrower's own body, so no IgnoreReleaseCollision window is needed.
+        SuppressBallPhysics();
+        rb.simulated = true;
+        rb.linearVelocity = (landPos - from) / dist * groundSpeed;
+
+        if (isShot) { glowUntil = Time.time + GlowSeconds; glowDirty = true; } // release cue
+
         if (shadow != null) shadow.gameObject.SetActive(true);
+        if (airSr != null)
+        {
+            if (sr != null) { airSr.sprite = sr.sprite; airSr.color = sr.color; sr.enabled = false; }
+            airSr.enabled = true;
+        }
+        return true;
+    }
+
+    // Landings always end up in open water: pull the landing point back ALONG the throw line
+    // until it's inside the goal lines and the top/bottom walls — the airborne ball ignores
+    // all physics, so nothing else keeps it in the pool.
+    static Vector2 ClampLanding(Vector2 from, Vector2 land)
+    {
+        Vector2 d = land - from;
+        float t = 1f;
+        if (Mathf.Abs(land.x) > LandMaxX && Mathf.Abs(d.x) > 1e-4f)
+            t = Mathf.Min(t, (Mathf.Sign(d.x) * LandMaxX - from.x) / d.x);
+        if (Mathf.Abs(land.y) > LandMaxY && Mathf.Abs(d.y) > 1e-4f)
+            t = Mathf.Min(t, (Mathf.Sign(d.y) * LandMaxY - from.y) / d.y);
+        return from + d * Mathf.Clamp01(t);
+    }
+
+    void SuppressBallPhysics()
+    {
+        if (physicsSuppressed || rb == null) return;
+        physicsSuppressed = true;
+        storedDamping = rb.linearDamping;
+        rb.linearDamping = 0f;
+        if (ballCols != null)
+            foreach (Collider2D c in ballCols) if (c != null) c.enabled = false;
+    }
+
+    void RestoreBallPhysics()
+    {
+        if (!physicsSuppressed || rb == null) return;
+        physicsSuppressed = false;
+        rb.linearDamping = storedDamping;
+        if (ballCols != null)
+            foreach (Collider2D c in ballCols) if (c != null) c.enabled = true;
     }
 
     void Update()
     {
-        if (skipActive || lobActive || highShotActive || passActive) CheckFlight();
+        if (skipActive || highBallActive || highShotActive || passActive) CheckFlight();
+        arc01 = HighBallArc01();
         UpdateSpin();
         UpdateTrail();
         ApplyVisuals();
+    }
+
+    // Normalized arc height this frame: 0 on the water, 1 at the peak — a quadratic that
+    // peaks exactly halfway through the flight, which (constant ground speed) is exactly
+    // the midpoint of the travel distance. Reaches 0 again right at the landing frame.
+    float HighBallArc01()
+    {
+        if (!highBallActive) return 0f;
+        float t = Mathf.Clamp01((Time.time - highBallStart) / Mathf.Max(highBallFlightTime, 0.0001f));
+        return 4f * t * (1f - t);
     }
 
     void CheckFlight()
     {
         MatchContext ctx = MatchContext.Instance;
         bool caught = transform.parent != null || (ctx != null && !ctx.BallIsLoose);
-        bool dead = rb == null || rb.linearVelocity.magnitude < DeadSpeed;
-        bool lobLanded = lobActive && Time.time - lobStartTime >= lobFlightTime;
 
-        if (caught || dead || lobLanded) { EndFlight(); return; }
+        if (highBallActive)
+        {
+            // An external system claimed the ball mid-air (kickoff hand-out, duel setup,
+            // out-of-bounds award): stand down and hand physics back exactly as it was.
+            if (caught || rb == null || !rb.simulated) { EndFlight(); return; }
+            if (Time.time - highBallStart >= highBallFlightTime) LandHighBall();
+            return; // constant-speed flight — the dead-speed rule below never applies mid-air
+        }
+
+        bool dead = rb == null || rb.linearVelocity.magnitude < DeadSpeed;
+        if (caught || dead) { EndFlight(); return; }
         if (skipActive && !bounced && shotHeight < LowHeightMax) TryBounce();
+    }
+
+    // Touchdown: back to a perfectly normal grounded ball at the landing point. A SHOT keeps
+    // its full speed (the keeper faces a real shot over the last stretch to the line); a PASS
+    // keeps a soft roll for the receiver. Anyone we happened to land on top of is collision-
+    // ignored until actually separated, so re-enabling the collider can't depenetration-pop
+    // the ball away (same idea as MatchContext.ReleaseCollisionWindow).
+    void LandHighBall()
+    {
+        Vector2 dir = highBallTo - highBallFrom;
+        dir = dir.sqrMagnitude > 1e-6f ? dir.normalized : Vector2.right;
+        float exitSpeed = highBallIsShot ? highBallSpeed : highBallSpeed * LandRollFactor;
+
+        RestoreBallPhysics();
+        rb.linearVelocity = dir * exitSpeed;
+        StartCoroutine(LandingSeparationWindow());
+        EndFlight();
+    }
+
+    // Any swimmer overlapping the landing point is ignored until the ball and they have
+    // genuinely separated. Statics (walls, goal posts) are never ignored — the ball must be
+    // solid to the pool the instant it's back in the water.
+    IEnumerator LandingSeparationWindow()
+    {
+        Collider2D ballCol = FirstEnabledBallCol();
+        if (ballCol == null || rb == null) yield break;
+
+        Collider2D[] hits = Physics2D.OverlapCircleAll(rb.position, LandingProbeRadius);
+        int n = 0;
+        for (int i = 0; i < hits.Length; i++)
+            if (hits[i] != null && !hits[i].isTrigger &&
+                hits[i].attachedRigidbody != null && hits[i].attachedRigidbody != rb)
+                hits[n++] = hits[i];
+        if (n == 0) yield break;
+
+        for (int i = 0; i < n; i++) Physics2D.IgnoreCollision(ballCol, hits[i], true);
+
+        float deadline = Time.time + LandingSeparationMax;
+        bool touching = true;
+        while (touching && Time.time < deadline)
+        {
+            touching = false;
+            for (int i = 0; i < n; i++)
+                if (SafeTouching(ballCol, hits[i])) { touching = true; break; }
+            if (touching) yield return null;
+        }
+
+        for (int i = 0; i < n; i++)
+            if (hits[i] != null && ballCol != null) Physics2D.IgnoreCollision(ballCol, hits[i], false);
+    }
+
+    Collider2D FirstEnabledBallCol()
+    {
+        if (ballCols == null) return null;
+        foreach (Collider2D c in ballCols) if (c != null && c.enabled) return c;
+        return null;
+    }
+
+    // Physics2D.Distance throws on disabled colliders / non-simulated bodies — guard all of it.
+    static bool SafeTouching(Collider2D a, Collider2D b)
+    {
+        if (a == null || b == null || a == b || !a.enabled || !b.enabled) return false;
+        if (a.attachedRigidbody != null && !a.attachedRigidbody.simulated) return false;
+        if (b.attachedRigidbody != null && !b.attachedRigidbody.simulated) return false;
+        return Physics2D.Distance(a, b).distance < 0.05f;
     }
 
     void TryBounce()
@@ -229,8 +436,9 @@ public class BallFlight : MonoBehaviour
         SpawnRipple();
     }
 
-    // Spin rate depends on the flight type: shots spin fast, normal passes slowly, lobs barely,
-    // skip shots not at all (a bouncing ball spinning looks wrong). Snaps upright on catch.
+    // Spin rate depends on the flight type: shots spin fast, normal passes slowly, the arcing
+    // high ball barely, skip shots not at all (a bouncing ball spinning looks wrong). Snaps
+    // upright on catch.
     void UpdateSpin()
     {
         // Spin ONLY above 6 u/s and NEVER on a normal pass (Task 3). Below the threshold —
@@ -241,7 +449,7 @@ public class BallFlight : MonoBehaviour
         {
             float spin;
             if (skipActive) spin = 0f;                                         // bouncing ball — no spin
-            else if (lobActive) spin = LobSpinDegPerSec;                       // gentle lob spin
+            else if (highBallActive) spin = LobSpinDegPerSec;                  // gentle arc spin
             else if (rb.linearVelocity.magnitude > ShotSpinSpeed) spin = ShotSpinDegPerSec; // a shot
             else spin = PassSpinDegPerSec;                                     // a fast loose ball
             if (spin != 0f) transform.Rotate(0f, 0f, -spin * Time.deltaTime);
@@ -253,8 +461,10 @@ public class BallFlight : MonoBehaviour
     void UpdateTrail()
     {
         if (trail == null) return;
+        // No trail while a high ball is overhead — the trail renders at WATER level and would
+        // draw a streak underneath the airborne sprite. It resumes the moment the ball lands.
         bool fast = rb != null && rb.simulated && transform.parent == null && !passActive &&
-                    rb.linearVelocity.magnitude > TrailMinSpeed; // plain passes leave no trail "bridge"
+                    !highBallActive && rb.linearVelocity.magnitude > TrailMinSpeed;
         if (trail.emitting == fast) return;
         trail.emitting = fast;
         if (!fast) trail.Clear(); // vanish instantly on a catch / stop
@@ -263,14 +473,10 @@ public class BallFlight : MonoBehaviour
     void ApplyVisuals()
     {
         float target = 1f;
-        float arcT = 0f, arcPeak = 0f;
 
-        if (lobActive)
-        {
-            arcT = Mathf.Clamp01((Time.time - lobStartTime) / lobFlightTime);
-            arcPeak = Mathf.Sin(arcT * Mathf.PI); // 0 → 1 at the peak → 0
-            target = Mathf.Max(target, 1f + (LobMaxScale - 1f) * arcPeak);
-        }
+        // high ball: swell follows the arc — biggest at the peak, back to 1x at landing
+        if (highBallActive)
+            target = Mathf.Max(target, 1f + (HighBallMaxScale - 1f) * arc01);
         if (highShotActive && rb != null)
             target = Mathf.Max(target, HighShotMult());
 
@@ -284,7 +490,8 @@ public class BallFlight : MonoBehaviour
         scaleFactor = Mathf.Lerp(scaleFactor, target, k);
         SetBallScale();
 
-        UpdateShadow(arcT, arcPeak);
+        UpdateShadow();
+        UpdateAirSprite();
 
         // high-shot glow: warm tint fading back to the ball's own colour
         if (sr != null && glowDirty)
@@ -295,8 +502,8 @@ public class BallFlight : MonoBehaviour
         }
     }
 
-    // High shot: swells to 1.2x over 0.3s, then eases back to 1x inside the last
-    // 2 units before the goal line it's flying at.
+    // Flat high-shot fallback: swells to 1.2x over 0.3s, then eases back to 1x inside the
+    // last 2 units before the goal line it's flying at.
     float HighShotMult()
     {
         float up = Mathf.SmoothStep(0f, 1f,
@@ -311,23 +518,34 @@ public class BallFlight : MonoBehaviour
         return 1f + (HighShotMaxScale - 1f) * up * down;
     }
 
-    // Shadow breathes with the lob arc: small at launch, biggest + darkest at the peak,
-    // small and faint on the descent. Pinned to the surface (ignores the ball's spin)
-    // and counter-scaled so the ball's own swell doesn't inflate it.
-    void UpdateShadow(float arcT, float arcPeak)
+    // Drop-shadow pinned to the WATER under the airborne ball (the physics body's position —
+    // the sprite is the thing that's offset upward, not the body): a dark oval that SHRINKS
+    // and fades as the ball rises, and grows back for the landing. Ignores the ball's spin
+    // and is counter-scaled so the ball's own swell doesn't inflate it.
+    void UpdateShadow()
     {
         if (shadow == null || !shadow.gameObject.activeSelf) return;
-        if (!lobActive) return;
+        if (!highBallActive) return;
 
         shadow.position = transform.position + ShadowOffset;
         shadow.rotation = Quaternion.identity;
 
-        float size = Mathf.Lerp(ShadowMinSize, ShadowMaxSize, arcPeak);
-        shadow.localScale = Vector3.one * (size / Mathf.Max(scaleFactor, 0.01f));
+        float size = Mathf.Lerp(ShadowGroundSize, ShadowPeakSize, arc01);
+        float counter = Mathf.Max(scaleFactor, 0.01f);
+        shadow.localScale = new Vector3(size / counter, size * ShadowOvalY / counter, 1f);
 
-        float alpha = arcT < 0.5f ? Mathf.Lerp(0.5f, 0.7f, arcT * 2f)        // rise: 0.5 → 0.7
-                                  : Mathf.Lerp(0.7f, 0.3f, (arcT - 0.5f) * 2f); // fall: 0.7 → 0.3
-        shadowSr.color = new Color(ShadowTint.r, ShadowTint.g, ShadowTint.b, alpha);
+        shadowSr.color = new Color(ShadowTint.r, ShadowTint.g, ShadowTint.b,
+                                   Mathf.Lerp(0.55f, 0.3f, arc01));
+    }
+
+    // The airborne sprite rides the arc: the physics body (and the hidden root sprite) stay
+    // on the flat water line; this copy is drawn offset upward by the parabola height, so the
+    // ball visibly climbs, sails over everyone and comes back down at the landing point.
+    void UpdateAirSprite()
+    {
+        if (airSr == null || !airSr.enabled || !highBallActive) return;
+        airSr.transform.position = transform.position + new Vector3(0f, highBallPeak * arc01, 0f);
+        if (sr != null) { airSr.sprite = sr.sprite; airSr.color = sr.color; } // mirror tint/glow
     }
 
     // Expanding, fading water ring at the skip-shot bounce point. Lives in world space
@@ -384,13 +602,16 @@ public class BallFlight : MonoBehaviour
         skipActive = false;
         bounced = false;
         highShotActive = false;
-        lobActive = false;
-        lobTeam = null;
+        highBallActive = false;
         passActive = false;
         KeeperFooled = false;
         squashUntil = -10f;
         glowUntil = -10f;
+        arc01 = 0f;
+        RestoreBallPhysics(); // idempotent — a normal flight end has nothing to restore
         if (sr != null && glowDirty) { sr.color = baseColor; glowDirty = false; }
+        if (sr != null) sr.enabled = true;         // the water-level ball is the visible one again
+        if (airSr != null) airSr.enabled = false;
         // Scale is NOT snapped here — ApplyVisuals eases it back to 1x every frame (target = 1
         // once the flight flags clear), so a catch or flight-end never pops the ball (Task 2).
         if (shadow != null) shadow.gameObject.SetActive(false);

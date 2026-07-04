@@ -245,7 +245,11 @@ public class Goalkeeper : MonoBehaviour
         bool fooled = incoming && BallFlight.Instance != null && BallFlight.Instance.KeeperFooled;
 
         Vector2 pos = rb.position;
-        bool ballFar = Mathf.Abs(ball.position.x - startX) > trackingRange;
+        // LIVE ball position: a held ball's rigidbody pose freezes at the catch point (physics
+        // stops tracking the transform), so read through MatchContext — transform-aware for
+        // held balls — or the keeper tracks a stale spot while an enemy carrier advances.
+        Vector2 ballPos = ctx != null ? ctx.BallPosition : ball.position;
+        bool ballFar = Mathf.Abs(ballPos.x - startX) > trackingRange;
 
         // X: swim back onto the goal line. A player keeper that roamed out with the ball returns
         // SMOOTHLY here — the old per-frame hard clamp TELEPORTED it back the instant it released
@@ -281,7 +285,7 @@ public class Goalkeeper : MonoBehaviour
                 // clamp the tracking target to BOTH the serialized min/max AND the hard maxYOffset
                 float lo = Mathf.Max(minY, -maxYOffset);
                 float hi = Mathf.Min(maxY,  maxYOffset);
-                float targetY = Mathf.Clamp(ball.position.y, lo, hi);
+                float targetY = Mathf.Clamp(ballPos.y, lo, hi);
                 pos.y = Mathf.MoveTowards(pos.y, targetY + yBob, trackSpeed * Time.fixedDeltaTime);
             }
             else
@@ -308,7 +312,7 @@ public class Goalkeeper : MonoBehaviour
         // instantly re-grab a ball it just released or one it's banned from.
         if (ctx != null && team != null && Time.time >= missedSaveUntil &&
             ctx.BallGrabbable && ctx.CanGrab(team) &&
-            Vector2.Distance(rb.position, ball.position) <= keeperGrabDistance)
+            Vector2.Distance(rb.position, ballPos) <= keeperGrabDistance)
         {
             TrySaveOrCollect(ctx, team);
         }

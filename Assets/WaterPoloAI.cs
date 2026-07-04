@@ -74,7 +74,11 @@ public static class WaterPoloBrain
     const float SprintDistance = 2f;       // MoveTo sprints when its target is further than this
     const float StealCooldown = 0.6f;   // min time between steal attempts
     const float StealFacingDot = 0.3f;  // stealer must be within ~70° of the carrier's front
-    const float LobInterceptFactor = 0.4f; // enemy lob in flight: steal chance reduced by 60%
+
+    // ---- bot HIGH LOB decision (an untouchable arcing pass — BallFlight.LaunchHighBall) ----
+    const float AILobMinDistance = 5.5f;  // passes at least this long go OVER the field...
+    const float AILobLaneRadius = 0.55f;  // ...or ones with a defender squatting in the lane
+    const float AILobSpeedFactor = 0.75f; // a lob flies slower than the flat pass it replaces
     const float IdleDriftFraction = 0.2f; // idle float speed as a fraction of move speed
     const float IdleRadius = 0.35f;       // how far the idle bob point sits from the spot
     const float IdleFreq = 1.2f;          // idle bob speed (rad/s)
@@ -131,8 +135,8 @@ public static class WaterPoloBrain
         }
 
         // Collect a genuinely loose ball within reach (cooldown stops snatch-backs;
-        // CanGrab enforces the shot-clock turnover ban on the violating team). An enemy
-        // HIGH LOB in flight is hard to pick off — reduced-chance roll inside.
+        // CanGrab enforces the shot-clock turnover ban on the violating team). A HIGH
+        // ball overhead is untouchable outright — BallGrabbable is false mid-flight.
         if (ctx.BallGrabbable && ctx.CanGrab(a.Team) &&
             Vector2.Distance(a.Body.position, ctx.BallPosition) <= a.GrabDistance &&
             !HumanTeammateCloserToBall(a, ctx) &&
@@ -793,10 +797,6 @@ public static class WaterPoloBrain
 
     // ---- ball handling ----
 
-    // Grab the loose ball — unless it's an ENEMY lob mid-flight (F+B high pass),
-    // which takes a reduced steal roll (StealChance × LobInterceptFactor, with the
-    // normal steal cooldown between tries). The lobbing team's own receivers collect
-    // it normally. Returns true if the ball was collected; false = it sails on.
     // Anti-vulture: a player-team AI won't snatch a loose ball that the HUMAN-controlled
     // teammate is at least as close to — so a player who just dropped/lost the ball gets
     // first crack at their own loose ball instead of an AI mate instantly hoovering it up.
@@ -811,6 +811,8 @@ public static class WaterPoloBrain
         return human <= mine;
     }
 
+    // Grab the loose ball. A HIGH ball never reaches here (BallGrabbable is false for its
+    // whole flight — nobody on either team can pick an airborne arc off).
     static bool TryCollectLoose(IAgentBody a, MatchContext ctx)
     {
         BallFlight flight = BallFlight.Instance;
@@ -820,15 +822,8 @@ public static class WaterPoloBrain
         // Only AFTER it bounces is it a normal, collectable loose ball.
         if (flight != null && flight.SkipActive && !flight.SkipBounced) return false;
 
-        bool enemyLob = flight != null && flight.LobActive &&
-                        flight.LobTeam != null && flight.LobTeam != a.Team;
-        if (!enemyLob) { Grab(a, ctx); return true; }
-
-        if (Time.time < a.NextStealTime) return false; // just missed it → no instant re-try
-        a.NextStealTime = Time.time + StealCooldown;
-        NotifyStealAttempt(a.Tf); // visible snatch at the high ball, hit or miss
-        if (Random.value <= a.StealChance * LobInterceptFactor) { Grab(a, ctx); return true; }
-        return false; // the ball sails over the outstretched arm
+        Grab(a, ctx);
+        return true;
     }
 
     static void Grab(IAgentBody a, MatchContext ctx)
@@ -959,8 +954,26 @@ public static class WaterPoloBrain
         a.LastDirection = dir;
 
         ctx.NoteRelease(a.Tf);
+
+        // HIGH LOB (bot decision): a LONG ball, or a lane a defender is squatting in (the
+        // drive kick-out / kickoff routes pick targets without a lane check), goes OVER the
+        // field as the same untouchable arc the human throws with F+B — nobody on either
+        // team can pick it off until it lands at the receiver.
+        float speed = Mathf.Clamp(dist * PassFactor, MinPassSpeed, MaxPassSpeed);
+        bool wantLob = dist >= AILobMinDistance ||
+                       !a.Team.LaneClear(a.Body.position, target.position, ctx.EnemyOf(a.Team),
+                                         AILobLaneRadius);
+        if (wantLob && BallFlight.Instance != null &&
+            BallFlight.Instance.LaunchHighBall(target.position, speed * AILobSpeedFactor, 0.9f, false))
+        {
+            ctx.Ball.transform.SetParent(null); // airborne — Launch owns the physics from here
+            a.IsHolding = false;
+            ctx.SetPossession(null);
+            return;
+        }
+
         DetachBall(a, ctx);
-        ctx.Ball.linearVelocity = dir * Mathf.Clamp(dist * PassFactor, MinPassSpeed, MaxPassSpeed);
+        ctx.Ball.linearVelocity = dir * speed;
         if (BallFlight.Instance != null) BallFlight.Instance.NotePass(); // plain pass → no swell/trail
         a.IsHolding = false;
         ctx.SetPossession(null); // receiver collects it after the cooldown
