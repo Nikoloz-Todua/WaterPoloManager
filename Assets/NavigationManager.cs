@@ -59,6 +59,17 @@ public class NavigationManager : MonoBehaviour
     private GameObject clubOverlay, settingsOverlay, messagesOverlay, giftsOverlay;
     private GameObject missionsOverlay, seasonPassOverlay;
     private GameObject friendsOverlay, clubsOverlay; // coming-soon stubs (no online backend yet)
+    private GameObject poolSelectOverlay;            // pool A / pool B choice before a match loads
+
+    // Pool selection (pre-match). Two scenes, both in Build Settings — Pool A = SampleScene,
+    // Pool B = SampleScene_PoolB. Same choice offered for every match for now (per-division pool
+    // assignment can come later). The choice is session-local + persisted in PlayerPrefs.
+    private static readonly string[] PoolScenes = { "SampleScene", "SampleScene_PoolB" };
+    private static readonly string[] PoolLabels = { "POOL A", "POOL B" };
+    private static readonly Color[] PoolAccents = { Blue, Red };
+    private const string PoolPrefKey = "selected_pool";
+    private int selectedPool;                        // 0 = Pool A, 1 = Pool B (index into PoolScenes)
+    private Image[] poolCardFrames;                  // the two option frames, recoloured on select
     private GameObject missionsBadgeGo;              // red claim-ready counter on the missions button
     private TextMeshProUGUI missionsBadgeLabel;
     private Coroutine slideRoutine;
@@ -1282,6 +1293,117 @@ public class NavigationManager : MonoBehaviour
         return ov;
     }
 
+    // =============================================================== pool selection
+
+    // Opened by the pre-match PLAY button. Lets the player pick Pool A or Pool B, then loads the
+    // matching scene on confirm. Same lazy-overlay + rebuild-on-open pattern as OpenPreMatch.
+    void OpenPoolSelect()
+    {
+        if (LeagueSeason.Current == null || LeagueSeason.Current.IsComplete) return;
+        if (poolSelectOverlay == null) poolSelectOverlay = BuildScreenOverlay("Overlay_POOLSELECT");
+        RectTransform sheet = poolSelectOverlay.transform.Find("Sheet") as RectTransform;
+        ClearChildren(sheet);
+        selectedPool = Mathf.Clamp(PlayerPrefs.GetInt(PoolPrefKey, 0), 0, PoolScenes.Length - 1);
+        BuildPoolSelectContent(sheet);
+        ShowOverlay(poolSelectOverlay);
+    }
+
+    void BuildPoolSelectContent(Transform sheet)
+    {
+        AddScreenBackground(sheet, 0.55f); // dimmed, same as pre-match
+        MakeTopBar(sheet, "SELECT POOL", () => HideOverlay(poolSelectOverlay)); // back → pre-match stays open behind
+
+        MakeText(sheet, "CHOOSE YOUR POOL", 22f, new Vector2(0.5f, 0.5f), new Vector2(0f, 214f),
+                 new Vector2(600f, 40f), Gold, TextAlignmentOptions.Center);
+
+        // two option cards, left + right
+        const float cardW = 420f, cardH = 300f, cardX = 250f, cardY = 22f;
+        poolCardFrames = new Image[PoolScenes.Length];
+        Vector2[] centers = { new Vector2(-cardX, cardY), new Vector2(cardX, cardY) };
+        for (int i = 0; i < PoolScenes.Length; i++)
+            BuildPoolOption(sheet, centers[i], new Vector2(cardW, cardH), i);
+
+        MakeActionButton(sheet, "START MATCH", new Vector2(0.5f, 0f), new Vector2(0f, 72f),
+                         new Vector2(320f, 74f), Green, ConfirmPoolAndStart);
+
+        RefreshPoolHighlight();
+    }
+
+    // One selectable pool card: a clickable accent frame, the pool-screen thumbnail (a plain tinted
+    // rectangle if that art is missing), a big A/B letter so the two read as distinct even while
+    // Pool B is still an art-duplicate, and the label underneath.
+    void BuildPoolOption(Transform sheet, Vector2 center, Vector2 size, int idx)
+    {
+        Color accent = PoolAccents[idx % PoolAccents.Length];
+
+        GameObject go = new GameObject("PoolOption" + idx);
+        go.transform.SetParent(sheet, false);
+        RectTransform rt = go.AddComponent<RectTransform>();
+        SetRect(rt, new Vector2(0.5f, 0.5f), center, size + new Vector2(10f, 10f));
+
+        Image frame = go.AddComponent<Image>();
+        frame.sprite = GetRoundedSprite();
+        frame.type = Image.Type.Sliced;
+        frame.color = accent;
+        Button btn = go.AddComponent<Button>();
+        btn.targetGraphic = frame;
+        btn.onClick.AddListener(() => { selectedPool = idx; RefreshPoolHighlight(); });
+        AddHover(go);
+        poolCardFrames[idx] = frame;
+
+        // thumbnail — reuse the pre-match pool render if the art exists, else a plain tinted rect
+        Image thumb = NewImage(go.transform, "Thumb");
+        thumb.sprite = PoolScreenSprite();
+        thumb.preserveAspect = false;
+        thumb.raycastTarget = false;
+        thumb.color = thumb.sprite != null ? Color.white
+                                           : new Color(accent.r * 0.5f, accent.g * 0.5f, accent.b * 0.6f, 1f);
+        SetRect(thumb.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, 30f),
+                new Vector2(size.x - 34f, size.y - 96f));
+
+        // big letter badge (last char of "POOL A" / "POOL B") over the thumbnail
+        MakeText(go.transform, PoolLabels[idx].Substring(PoolLabels[idx].Length - 1), 96f,
+                 new Vector2(0.5f, 0.5f), new Vector2(0f, 30f), new Vector2(180f, 180f),
+                 new Color(1f, 1f, 1f, 0.9f), TextAlignmentOptions.Center);
+
+        // label under the thumbnail
+        MakeText(go.transform, PoolLabels[idx], 26f, new Vector2(0.5f, 0f), new Vector2(0f, 24f),
+                 new Vector2(size.x, 40f), Color.white, TextAlignmentOptions.Center);
+    }
+
+    // Recolour the two frames so the selected pool is bright and the other is dimmed.
+    void RefreshPoolHighlight()
+    {
+        if (poolCardFrames == null) return;
+        for (int i = 0; i < poolCardFrames.Length; i++)
+        {
+            if (poolCardFrames[i] == null) continue;
+            Color baseC = PoolAccents[i % PoolAccents.Length];
+            poolCardFrames[i].color = (i == selectedPool)
+                ? Color.Lerp(baseC, Color.white, 0.35f)               // selected → bright
+                : new Color(baseC.r, baseC.g, baseC.b, 0.5f);         // unselected → dim
+        }
+    }
+
+    // Confirm the pool, then run the (previously inline) pre-match start: record the placeholder
+    // result and load the CHOSEN scene instead of the old hardcoded "SampleScene".
+    void ConfirmPoolAndStart()
+    {
+        int pool = Mathf.Clamp(selectedPool, 0, PoolScenes.Length - 1);
+        PlayerPrefs.SetInt(PoolPrefKey, pool);
+        PlayerPrefs.Save();
+
+        LeagueSeason s = LeagueSeason.Current;
+        if (s != null)
+        {
+            // Placeholder result until real match reporting is wired: simulate the player's score,
+            // then load the match. The tournament reflects it next time the screen is opened.
+            s.RecordPlayerResult(Random.Range(0, 13), Random.Range(0, 13));
+            if (s.PlayerIsChampion) MarkCompetitionWon(s.competitionIndex);
+        }
+        SceneManager.LoadScene(PoolScenes[pool]);
+    }
+
     void BuildStandingsContent(Transform sheet)
     {
         LeagueSeason s = LeagueSeason.Current;
@@ -1655,15 +1777,10 @@ public class NavigationManager : MonoBehaviour
                  TextAlignmentOptions.Center);
         MakeText(sheet, "VS", 44f, new Vector2(0.5f, 0.5f), new Vector2(0f, 70f), new Vector2(160f, 56f),
                  new Color(1f, 1f, 1f, 0.9f), TextAlignmentOptions.Center);
+        // PLAY no longer loads the match directly — it opens the pool-choice step, which loads the
+        // chosen scene (and records the placeholder result) on confirm.
         MakeActionButton(sheet, "PLAY", new Vector2(0.5f, 0.5f), new Vector2(0f, -30f), new Vector2(180f, 72f),
-            Green, () =>
-            {
-                // Placeholder result until real match reporting is wired: simulate the player's score,
-                // then load the match. The tournament reflects it next time the screen is opened.
-                s.RecordPlayerResult(Random.Range(0, 13), Random.Range(0, 13));
-                if (s.PlayerIsChampion) MarkCompetitionWon(s.competitionIndex);
-                SceneManager.LoadScene("SampleScene");
-            });
+            Green, OpenPoolSelect);
 
         // Below each pool: logo + name + star rating.
         BuildTeamInfo(sheet, new Vector2(-poolX, -150f), playerName, s.stars[LeagueSeason.PlayerIndex], Blue);

@@ -1592,3 +1592,60 @@ the celebration and the player should still return cleanly afterward, never stra
 kicks up-and-out and the white ring appears high in the mouth; score into the BOTTOM corner → net kicks
 down-and-out, ring low; score dead-centre → straight-out bulge. Corner goals should look punchier than
 centre goals. All three should differ clearly.
+
+---
+
+## SESSION LOG — 2026-07-05b (pool selection screen before a match)
+
+Adds a Pool A / Pool B choice to the pre-match flow. Two match scenes now exist: **Pool A =
+`Assets/Scenes/SampleScene.unity`**, **Pool B = `Assets/Scenes/SampleScene_PoolB.unity`** (Pool B is
+currently an art-duplicate — this change is purely "let the player pick which scene loads").
+
+**Where it hooks in:** the ONLY gameplay-scene load trigger is `NavigationManager.BuildPreMatchContent`'s
+**PLAY** button (was `SceneManager.LoadScene("SampleScene")` inline). That PLAY button now opens the new
+pool-select overlay instead of loading directly; the scene load (and the placeholder result recording)
+moved into the overlay's confirm. (`MainMenuUI` → HubScene and `QuarterBreakUI`/`PauseMenuUI` → HubScene
+are menu nav, not match starts, and were left alone.)
+
+**New in `NavigationManager.cs` (code-built UI, no prefabs, same lazy-overlay pattern as pre-match):**
+- Fields: `poolSelectOverlay`, `selectedPool` (0/1), `poolCardFrames[]`, and static tables
+  `PoolScenes = { "SampleScene", "SampleScene_PoolB" }`, `PoolLabels = { "POOL A", "POOL B" }`,
+  `PoolAccents = { Blue, Red }`, `PoolPrefKey = "selected_pool"`.
+- `OpenPoolSelect()` — lazy-builds `Overlay_POOLSELECT` via the shared `BuildScreenOverlay`, clears +
+  rebuilds the sheet, preselects from `PlayerPrefs["selected_pool"]`.
+- `BuildPoolSelectContent` / `BuildPoolOption` — top bar "SELECT POOL", two clickable option cards
+  (accent frame + `pool-screen` thumbnail, or a plain tinted rectangle if that art is missing, + a big
+  A/B letter so the two read as distinct while Pool B is still a duplicate + a label), and a green
+  **START MATCH** button.
+- `RefreshPoolHighlight()` — brightens the selected card, dims the other (re-run on each tap).
+- `ConfirmPoolAndStart()` — persists the choice to PlayerPrefs, then runs the SAME placeholder
+  `RecordPlayerResult` + `MarkCompetitionWon` the old PLAY handler did, and finally
+  `SceneManager.LoadScene(PoolScenes[selectedPool])` — Pool A → SampleScene, Pool B → SampleScene_PoolB.
+- Same choice is offered for EVERY match (all divisions/tournaments) for now — no per-division wiring.
+
+**`MatchResultUI.cs`:** the post-match **PLAY AGAIN** button (also a match-scene load trigger) now
+reloads the SAME pool via `LastPoolScene()` reading `PlayerPrefs["selected_pool"]` (was hardcoded
+"SampleScene"), so "play again" stays on the pool you picked. Nothing else touched.
+
+**Build Settings fix (REQUIRED — the task's premise was off):** `SampleScene_PoolB.unity` existed on
+disk but was **NOT** registered in `ProjectSettings/EditorBuildSettings.asset` (only MainMenu / HubScene /
+SampleScene were) — so `LoadScene("SampleScene_PoolB")` would have thrown at runtime. Added it as the
+4th enabled scene (guid `bcddd9b6…`). Pool B is now loadable.
+
+**Untouched:** `LeagueSeason.cs` and all tournament logic; everything INSIDE the match scenes.
+
+**Build:** `dotnet build Assembly-CSharp.csproj` → **0 errors** (21 pre-existing warnings, untouched files).
+
+**Slot re-check (nothing NEW to wire — all runtime/procedural):** the pool-select overlay, its cards and
+the letter/label are all code-built in `NavigationManager` at runtime; no Inspector fields. Just confirm
+**HubScene** still has its `NavigationManager` (unchanged) and that **Build Settings** now lists all four
+scenes (MainMenu, HubScene, SampleScene, SampleScene_PoolB — File → Build Settings to eyeball). Optional:
+drop a real `Resources/Sprites/pool-b-preview`-style art later and point `BuildPoolOption`'s thumbnail at
+it per index to visually distinguish the pools.
+
+**How to test:** From the hub → PLAY → competition → **NEXT MATCH** → pre-match → **PLAY**. The SELECT POOL
+screen appears with two cards. (1) Tap **POOL A** (left, highlights blue) → **START MATCH** → confirm
+`SampleScene` loads. (2) From the result screen or a fresh pre-match, PLAY again → tap **POOL B** (right,
+highlights red) → **START MATCH** → confirm `SampleScene_PoolB` loads. (3) Tap the back arrow on SELECT
+POOL → returns to the pre-match screen without loading anything. (4) Pick Pool B, play, then hit **PLAY
+AGAIN** on the result screen → confirm it reloads `SampleScene_PoolB` (the remembered choice).
