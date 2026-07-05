@@ -1649,3 +1649,58 @@ screen appears with two cards. (1) Tap **POOL A** (left, highlights blue) → **
 highlights red) → **START MATCH** → confirm `SampleScene_PoolB` loads. (3) Tap the back arrow on SELECT
 POOL → returns to the pre-match screen without loading anything. (4) Pick Pool B, play, then hit **PLAY
 AGAIN** on the result screen → confirm it reloads `SampleScene_PoolB` (the remembered choice).
+
+---
+
+## SESSION LOG — 2026-07-05c (hub dead-end cleanup: level-4 lock → Season Pass, currency [+] → Shop, gear → Settings)
+
+Wiring-only pass — no new screens, no gameplay/tournament/pool-select changes. Touched
+`NavigationManager.cs` and `ShopUI.cs`.
+
+**TASK 1 — killed the fake "UNLOCKED AT LEVEL 4" lock on the hub Season Pass button:**
+- `BuildBottomBar`'s `BtnSeasonPass` was a pre-Season-Pass placeholder: it drew a dark `LockOverlay`
+  + padlock (`MakeLockSprite`) + "UNLOCKED AT LEVEL 4" text and its handler was
+  `Debug.Log("Season Pass coming soon")`. No player-level system ever existed to unlock it.
+- Removed the whole lock overlay/icon/label + disabled look; the button now
+  `() => ShowOverlay(seasonPassOverlay)` — the SAME destination as the "SEASON ENDS IN" panel
+  (`BuildSeasonTimer`). Two entry points to one screen, intentionally (per the task).
+- `MakeLockSprite` is KEPT — still used by the reward-veil, `SeasonPassUI` and `LeaderboardManager`.
+
+**TASK 2 — hub currency [+] buttons now open the Shop on the right buy tab:**
+- Both `MakePlusButton`s in `BuildHubTopBar` were `Debug.Log("Store coming soon")` stubs.
+- The Shop already had the exact mechanism: `ShopUI.SelectTab(int)` is public and glide-scrolls the
+  horizontal shelf to a section (COINS = tab 5, GEMS = tab 6 — the shop's OWN top-bar [+] shortcuts
+  use `SelectTab(5)`/`SelectTab(6)`).
+- Stored the shop component in a new `shopUI` field (set in `BuildShopOverlay`) and added
+  `public void OpenShopTab(int tab)` = `ShowOverlay(shopOverlay)` then `shopUI.SelectTab(tab)`.
+  Gold [+] → `OpenShopTab(5)` (COINS), diamond [+] → `OpenShopTab(6)` (GEMS).
+
+**TASK 3 — audit for other dead-end buttons/stubs. Wired the one with an obvious destination; the
+rest are flagged below (see the summary for the full list). Wired:**
+- **Shop settings gear** (`ShopUI.BuildTopBar`, was `Debug.Log("Shop settings coming soon")`) → new
+  `public void OpenSettingsScreen()` = `ShowOverlay(settingsOverlay)`, the same (minimal) settings
+  overlay the hub gear already opens. Routed via the existing `nav` reference.
+
+**Build:** `dotnet build Assembly-CSharp.csproj` → **0 errors** (21 pre-existing warnings, untouched files).
+
+**Slot re-check (nothing NEW to wire — all runtime/procedural):** everything is code-built in
+`NavigationManager`/`ShopUI` on the HubScene canvas; no Inspector fields added or changed. Just confirm
+**HubScene** still hosts its `NavigationManager`. (`shopUI` is assigned in code at overlay-build time.)
+
+**How to test — TASK 1:** Hub → the bottom-left **SEASON PASS** button no longer shows the padlock or
+"UNLOCKED AT LEVEL 4"; tapping it opens the Season Pass screen (identical to tapping "SEASON ENDS IN"
+top-right).
+**How to test — TASK 2:** Hub top bar → tap the **[+]** next to the GOLD count → Shop opens scrolled to
+**COIN PACKS**; close, tap the **[+]** next to the GEM count → Shop opens scrolled to **GEM PACKS**.
+(Bonus: the Shop's own gear icon now opens the Settings panel instead of logging.)
+
+**Task 3 — found but NOT wired (need a decision), for the record:**
+- **MainMenu "SETTINGS"** (`MainMenuUI.cs:72`, `Debug.Log("Settings coming soon"`) — the MainMenu is a
+  separate scene with no settings UI and no NavigationManager; wiring it would mean building a settings
+  panel there or loading HubScene into settings (a new behaviour). Left as-is.
+- **Competition "CLAIM REWARDS"** (`NavigationManager.cs`, `Debug.Log("CLAIM REWARDS (placeholder)…")`)
+  — shown when the player wins a competition; there's no championship-reward payout defined (amount/tier
+  is a design call), so no obvious existing destination. Left as-is.
+- **Intentional COMING SOON stubs (correct as-is, not dead-ends — they show a real feedback overlay):**
+  hub FRIENDS / CLUBS / INBOX / GIFTS, RANKING's ELITE/WORLD/FRIENDS/COUNTRY tabs, TeamScreen's
+  FORMATIONS/etc., Shop DRAFT TICKETS + EVENT sections. All need real backends and honestly say so.

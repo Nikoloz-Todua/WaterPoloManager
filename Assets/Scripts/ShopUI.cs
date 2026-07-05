@@ -139,7 +139,7 @@ public class ShopUI : MonoBehaviour
         SetRect(ginner.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(18f, 18f));
         Button gbtn = gear.AddComponent<Button>();
         gbtn.targetGraphic = gimg;
-        gbtn.onClick.AddListener(() => Debug.Log("Shop settings coming soon"));
+        gbtn.onClick.AddListener(() => { if (nav != null) nav.OpenSettingsScreen(); }); // same settings overlay as the hub gear
 
         // Event badge → jumps to the EVENT section; countdown = the real season timer.
         MakeButton(bar.transform, "EVENT  " + SeasonPassManager.Instance.CountdownLabel(), 15f,

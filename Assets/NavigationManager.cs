@@ -55,6 +55,7 @@ public class NavigationManager : MonoBehaviour
     private TextMeshProUGUI gmGoldLabel, gmDiamondLabel; // game-mode top-bar currencies, fed by RosterManager
 
     private GameObject rankingOverlay, shopOverlay, teamOverlay, gameModeOverlay;
+    private ShopUI shopUI;                           // the Shop screen component (for tab-jump shortcuts)
     private GameObject standingsOverlay, preMatchOverlay; // built lazily, content rebuilt on each open
     private GameObject clubOverlay, settingsOverlay, messagesOverlay, giftsOverlay;
     private GameObject missionsOverlay, seasonPassOverlay;
@@ -238,14 +239,15 @@ public class NavigationManager : MonoBehaviour
         BuildFree100Button(bar.transform, new Vector2(660f, 0f));
 
         // Right side, right-to-left: gold [+], gold count, gold icon, diamond [+], diamond count, diamond icon.
+        // The [+] buttons open the Shop straight to the matching buy section (tab 5 = COINS, 6 = GEMS).
         MakePlusButton(bar.transform, new Vector2(1f, 0.5f), new Vector2(-32f, 0f), 30f,
-                       () => Debug.Log("Store coming soon"));
+                       () => OpenShopTab(5)); // gold [+] → Shop COINS tab
         goldLabel = MakeText(bar.transform, "0", 18f, new Vector2(1f, 0.5f), new Vector2(-92f, 0f),
                              new Vector2(66f, 30f), Color.white, TextAlignmentOptions.Right);
         MakeIcon(bar.transform, "Sprites/gold-coin", new Vector2(1f, 0.5f), new Vector2(-145f, 0f), 34f);
 
         MakePlusButton(bar.transform, new Vector2(1f, 0.5f), new Vector2(-192f, 0f), 30f,
-                       () => Debug.Log("Store coming soon"));
+                       () => OpenShopTab(6)); // diamond [+] → Shop GEMS tab
         diamondLabel = MakeText(bar.transform, "0", 18f, new Vector2(1f, 0.5f), new Vector2(-246f, 0f),
                                 new Vector2(54f, 30f), Color.white, TextAlignmentOptions.Right);
         MakeIcon(bar.transform, "Sprites/diamond-coin", new Vector2(1f, 0.5f), new Vector2(-292f, 0f), 34f);
@@ -332,24 +334,14 @@ public class NavigationManager : MonoBehaviour
         bar.anchoredPosition = Vector2.zero;
         bar.sizeDelta = new Vector2(0f, 130f);
 
-        // Season pass (left, locked): art + dark overlay + lock + label.
+        // Season pass (left): opens the Season Pass screen — the SAME destination as the "SEASON
+        // ENDS IN" panel (two entry points to one screen, intentionally). The old dark overlay +
+        // padlock + "UNLOCKED AT LEVEL 4" was a pre-Season-Pass placeholder for a player-level
+        // system that never existed, so it's removed entirely (no lock, no disabled state).
         Button sp = MakeImageButton(barGo.transform, "BtnSeasonPass", "Sprites/season-pass-button",
                                     new Vector2(0f, 0.5f), new Vector2(195f, 0f), new Vector2(260f, 80f),
-                                    () => Debug.Log("Season Pass coming soon"));
+                                    () => ShowOverlay(seasonPassOverlay));
         sp.image.preserveAspect = false; // stretch/fill the 220x110 rect (Image Type stays Simple)
-        Image ovl = NewImage(sp.transform, "LockOverlay");
-        ovl.sprite = GetRoundedSprite();
-        ovl.type = Image.Type.Sliced;
-        ovl.color = new Color(0f, 0f, 0f, 0.55f);
-        ovl.raycastTarget = false;
-        Stretch(ovl.rectTransform);
-        Image lk = NewImage(ovl.transform, "Lock");
-        lk.sprite = MakeLockSprite();
-        lk.color = new Color(0.85f, 0.87f, 0.92f, 1f);
-        lk.raycastTarget = false;
-        SetRect(lk.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, 18f), new Vector2(46f, 46f));
-        MakeText(ovl.transform, "UNLOCKED AT LEVEL 4", 16f, new Vector2(0.5f, 0f), new Vector2(0f, 20f),
-                 new Vector2(260f, 24f), Color.white, TextAlignmentOptions.Center);
 
         // Missions (centre-left): opens the Missions screen; the red badge shows the live
         // claim-ready count (hidden at 0 — see RefreshMissionsBadge).
@@ -671,8 +663,8 @@ public class NavigationManager : MonoBehaviour
         srt.sizeDelta = Vector2.zero;
         srt.anchoredPosition = Vector2.zero;
 
-        ShopUI shop = sheetGo.AddComponent<ShopUI>();
-        shop.Build(sheetGo.transform, this);
+        shopUI = sheetGo.AddComponent<ShopUI>();
+        shopUI.Build(sheetGo.transform, this);
 
         ov.SetActive(false);
         return ov;
@@ -680,6 +672,19 @@ public class NavigationManager : MonoBehaviour
 
     // Called by ShopUI's back arrow.
     public void CloseShopScreen() => HideOverlay(shopOverlay);
+
+    // Open the Shop already scrolled to a specific section (ShopUI tab index: 5 = COINS, 6 = GEMS).
+    // Used by the hub top-bar currency [+] buttons — reuses the shop's own SelectTab glide-scroll,
+    // the same mechanism its internal tab bar and top-bar [+] shortcuts use.
+    public void OpenShopTab(int tab)
+    {
+        ShowOverlay(shopOverlay);           // activates the overlay (so ShopUI can run its scroll)
+        if (shopUI != null) shopUI.SelectTab(tab);
+    }
+
+    // Open the shared (minimal) settings overlay from anywhere (hub gear already uses settingsOverlay
+    // directly; this lets hosted screens like the Shop route their gear to the same destination).
+    public void OpenSettingsScreen() => ShowOverlay(settingsOverlay);
 
     // Called by TeamScreenUI's back arrow. The overlay we came from normally stays active beneath the
     // team sheet, so sliding it closed reveals the right screen on its own; the COMPETITION branch is
