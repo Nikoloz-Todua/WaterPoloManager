@@ -17,6 +17,12 @@ public class ScoreManager : MonoBehaviour
     [Tooltip("HANG TIME (Phase 0): hold this long the instant the ball hits the net — everyone frozen where they stand, ball IN the net, camera still on the action — BEFORE the normal reset sequence (ball to centre, overview camera, formations) begins.")]
     [SerializeField] private float goalHangSeconds = 3.5f;
 
+    // Hang-time buoyancy (Task 3): while resting in the net the ball keeps a gentle float instead
+    // of freezing solid — a small vertical bob plus a tinier horizontal sway around where it settled.
+    const float NetBobAmpY = 0.07f; // vertical bob amplitude (units)
+    const float NetBobAmpX = 0.035f;// horizontal sway amplitude (units)
+    const float NetBobRate = 2.6f;  // rad/s — slow and calm, reads as floating not bouncing
+
     // Frame-accuracy gate: a goal only counts if the ball's real path crosses the goal LINE
     // between the posts. These mirror GoalLineOut's serialized defaults — keep them in sync.
     const float GoalLineX = 7f;
@@ -144,7 +150,10 @@ public class ScoreManager : MonoBehaviour
         // normal follow + goal shake on the net instead of cutting straight to the overview.
         yield return new WaitForSeconds(0.15f);
         if (ball != null) { ball.linearVelocity = Vector2.zero; ball.angularVelocity = 0f; }
-        yield return new WaitForSeconds(Mathf.Max(0f, goalHangSeconds - 0.15f));
+        // The ball settles into the net but keeps a subtle buoyancy bob for the rest of the hang
+        // (Task 3) — a light float, not a frozen screenshot. Everything else about the hang time
+        // (duration, player freeze, camera hold, net squash) is unchanged.
+        yield return StartCoroutine(BallNetBob(Mathf.Max(0f, goalHangSeconds - 0.15f)));
 
         // ---- the original reset sequence begins only now ----
         ResetBall();                              // ball loose at exact (0,0)
@@ -182,6 +191,33 @@ public class ScoreManager : MonoBehaviour
         }
         if (TouchControls.Instance != null) TouchControls.Instance.SetGameplayVisible(true);
         if (ShotClock.Instance != null) ShotClock.Instance.ResetClock();
+    }
+
+    // Gentle in-net buoyancy during the goal hang (Task 3). The ball floats around where it
+    // settled — a small vertical bob plus a tinier horizontal sway, easing from a slightly larger
+    // initial settle down to a calm idle float — so the frozen goal celebration never looks like a
+    // paused screenshot. Play is frozen and nothing else drives the loose ball here (its velocity
+    // is zero and BallFlight runs no flight), so setting its position directly is safe.
+    IEnumerator BallNetBob(float duration)
+    {
+        if (ball == null)
+        {
+            if (duration > 0f) yield return new WaitForSeconds(duration);
+            yield break;
+        }
+        Vector2 rest = ball.position;
+        float phase = Random.value * Mathf.PI * 2f;   // random phase so it never looks mechanical
+        float t0 = Time.time;
+        while (Time.time - t0 < duration)
+        {
+            float t = Time.time - t0;
+            float ease = Mathf.Lerp(1.25f, 0.85f, Mathf.Clamp01(t / Mathf.Max(duration, 0.01f)));
+            float y = Mathf.Sin(t * NetBobRate + phase) * NetBobAmpY * ease;
+            float x = Mathf.Sin(t * NetBobRate * 0.55f + phase) * NetBobAmpX * ease;
+            ball.position = rest + new Vector2(x, y);
+            yield return null;
+        }
+        if (ball != null) ball.position = rest;
     }
 
     Transform FirstMember(TeamSide team)

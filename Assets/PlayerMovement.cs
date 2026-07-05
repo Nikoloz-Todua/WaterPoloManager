@@ -174,6 +174,7 @@ public class PlayerMovement : MonoBehaviour
     private bool touchPassUp;
     private bool touchSprintHeld;
     private bool touchSwitchDown;
+    private bool touchLobHeld;   // F-equivalent for touch: makes the next pass fire as the big LOB (Task 4)
 
     // TeamManager merges this with the C key for manual player switching.
     public bool TouchSwitchDown => touchSwitchDown;
@@ -786,6 +787,10 @@ public class PlayerMovement : MonoBehaviour
         touchSwitchDown = switchDown;
     }
 
+    // Touch LOB modifier (Task 4): TouchControls sets this true while its on-screen LOB toggle is
+    // armed, so a touch pass fires as the big F+B lob. Merged with the F key in ChargedPass.
+    public void SetLobModifier(bool on) { touchLobHeld = on; }
+
     private void ClearTouchInput()
     {
         touchAxis = Vector2.zero;
@@ -793,6 +798,7 @@ public class PlayerMovement : MonoBehaviour
         touchPassHeld = touchPassDown = touchPassUp = false;
         touchSprintHeld = false;
         touchSwitchDown = false;
+        touchLobHeld = false;
     }
 
     void DropBall()
@@ -833,12 +839,13 @@ public class PlayerMovement : MonoBehaviour
         float speed = Mathf.Max(currentPower, minShootSpeed) * ShotSpeedMult; // a tap still fires a real shot
         if (!skip && shotHeight > 0.7f) speed *= highShotSpeedBonus; // high shots fly faster
 
-        // HIGH SHOT (charge past 0.7): the ball leaves the water — an untouchable ASYMMETRIC
-        // arc (steep rise, hang, sharp drop — ArcKind.Shot) that lands 1.5u short of the goal
-        // line it's aimed at, then flies on as a normal shot the keeper can save (with its
-        // usual high-shot penalty). Point-blank / too-short arcs are refused by
-        // LaunchHighBall → the classic flat high shot below fires instead.
-        if (!skip && shotHeight > 0.7f && BallFlight.Instance != null &&
+        // EVERY shot now leaves the water as the untouchable ASYMMETRIC shot arc (steep rise,
+        // hang, sharp drop — ArcKind.Shot), landing 1.5u short of the aimed goal line then flying
+        // on as a normal shot the keeper can save. BallFlight scales the arc height DOWN with
+        // charge, so a weak tap still visibly hops (never flat) while a full charge arcs high —
+        // the old flat quick-tap shot is gone (Task 2). Only a skip shot (deliberate LOW bounce)
+        // or a degenerate zero-distance launch takes the flat path below.
+        if (!skip && BallFlight.Instance != null &&
             BallFlight.Instance.LaunchHighBall(HighShotLandPoint(), speed, shotHeight,
                                                BallFlight.ArcKind.Shot))
         {
@@ -921,12 +928,13 @@ public class PlayerMovement : MonoBehaviour
         // Work out the throw speed BEFORE releasing so a dud (near-zero) pass can be refused — the
         // floor is minPassSpeed even for an untimed tap, so a pass always carries to a teammate.
         // EVERY pass is airborne now (BallFlight arc — untouchable mid-flight by either team):
-        //   B alone  = ArcKind.Pass — a small quick hop at full pass speed (the toned-down arc).
-        //   F + B    = ArcKind.Lob  — the big slow floaty ball over the top.
-        // Only a point-blank throw (LaunchHighBall refuses < 2u) stays flat.
+        //   B alone      = ArcKind.Pass — a small quick hop at full pass speed (the toned-down arc).
+        //   F + B (or the touch LOB toggle) = ArcKind.Lob — the big slow floaty ball over the top.
+        // Only a degenerate near-zero-distance throw stays flat now — every real pass, however
+        // short or weak, arcs (Task 1).
         float speed = Mathf.Clamp(Mathf.Lerp(minPassSpeed, maxPassSpeed, Mathf.Clamp01(charge)),
                                   minPassSpeed, maxPassSpeed);
-        bool lob = Input.GetKey(KeyCode.F);
+        bool lob = Input.GetKey(KeyCode.F) || touchLobHeld;
         if (lob) speed *= lobSpeedFactor;
 
         // Too weak to be a real pass → keep holding rather than dropping the ball at our feet.

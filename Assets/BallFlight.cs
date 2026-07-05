@@ -45,8 +45,13 @@ public class BallFlight : MonoBehaviour
     const float DeadSpeed = 1f;             // slower than this = the flight is over
 
     // ---- the arc (all airborne balls) ----
-    const float MinHighBallDistance = 2f;   // shorter throws stay flat (no room for a real arc)
-    const float MaxFlightTime = 2.5f;       // hard safety cap on any single flight
+    // The old "< 2u throws stay flat" point-blank exception is GONE (Tasks 1 & 2): EVERY pass and
+    // EVERY shot now arcs. Only a degenerate near-zero-distance launch is refused (it would be a
+    // 0/0 direction), and short Pass/Lob throws are held airborne at least MinFlightTime so their
+    // arc reads as an arc instead of a 2-frame blip.
+    const float MinHighBallDistance = 0.05f; // refuse ONLY a zero-distance (degenerate) throw
+    const float MinFlightTime = 0.32f;       // Pass/Lob: shortest airtime, so even a tiny throw reads as an arc
+    const float MaxFlightTime = 2.5f;        // hard safety cap on any single flight
     const float LandMaxX = 6.4f;            // landings are pulled back inside the goal lines...
     const float LandMaxY = 3.9f;            // ...and inside the top/bottom walls (open water only)
     const float LandRollFactor = 0.25f;     // a landed PASS keeps this speed fraction (shots keep 100%)
@@ -57,9 +62,14 @@ public class BallFlight : MonoBehaviour
     // Per-kind arc profiles: peak height per unit of ground distance (clamped), the swell at
     // the peak, and the shadow's on-water size. Pass = a toned-down lob (small quick hop);
     // Lob = the original big floaty ball; Shot = a lower dart with the asymmetric curve.
-    const float PassPeakPerUnit = 0.055f, PassPeakMin = 0.18f, PassPeakMax = 0.5f;
+    // Pass floor RAISED (Task 1): even the shortest / weakest pass now hops a clearly visible
+    // ~0.4u (was 0.18u — read as flat). Still scales up with distance, still stays under the Lob.
+    const float PassPeakPerUnit = 0.08f,  PassPeakMin = 0.4f,  PassPeakMax = 0.6f;
     const float LobPeakPerUnit  = 0.14f,  LobPeakMin  = 0.45f, LobPeakMax  = 1.25f;
-    const float ShotPeakPerUnit = 0.10f,  ShotPeakMin = 0.35f, ShotPeakMax = 0.9f;
+    // Shot floor LOWERED (Task 2) so a weak charge can scale its arc DOWN toward it — but never
+    // to flat; ShotChargeMinScale is the smallest fraction of the distance-peak a min-charge shot keeps.
+    const float ShotPeakPerUnit = 0.10f,  ShotPeakMin = 0.2f,  ShotPeakMax = 0.9f;
+    const float ShotChargeMinScale = 0.3f;
     const float PassSwellMax = 1.08f, LobSwellMax = 1.2f, ShotSwellMax = 1.15f;
     const float PassShadowGround = 0.55f, LobShadowGround = 0.75f, ShotShadowGround = 0.6f;
     const float ShotArcPeakT = 0.35f;       // the shot curve peaks this far into the flight
@@ -284,9 +294,20 @@ public class BallFlight : MonoBehaviour
         highBallKind = kind;
         highBallFrom = from;
         highBallTo = landPos;
-        highBallSpeed = groundSpeed;
         highBallStart = Time.time;
-        highBallFlightTime = Mathf.Min(dist / groundSpeed, MaxFlightTime);
+
+        // Flight time & speed. Shots keep their full pace (dist / groundSpeed). A very short
+        // Pass/Lob is SLOWED to MinFlightTime so its arc stays airborne long enough to READ as an
+        // arc — the ball still lands exactly at landPos (speed = dist / flightTime).
+        float flightTime = dist / groundSpeed;
+        float launchSpeed = groundSpeed;
+        if (kind != ArcKind.Shot && flightTime < MinFlightTime)
+        {
+            flightTime = MinFlightTime;
+            launchSpeed = dist / flightTime;
+        }
+        highBallSpeed = launchSpeed;
+        highBallFlightTime = Mathf.Min(flightTime, MaxFlightTime);
         switch (kind)
         {
             case ArcKind.Pass:
@@ -299,8 +320,11 @@ public class BallFlight : MonoBehaviour
                 highBallSwellMax = LobSwellMax;
                 highBallShadowGround = LobShadowGround;
                 break;
-            default: // Shot
-                highBallPeak = Mathf.Clamp(dist * ShotPeakPerUnit, ShotPeakMin, ShotPeakMax);
+            default: // Shot — peak scales with distance AND charge (height01): a weak tap hops
+                     // low, a full charge arcs high; floored at ShotPeakMin so even the faintest
+                     // shot has a clearly visible hop — never flat (Task 2).
+                float shotChargeScale = Mathf.Lerp(ShotChargeMinScale, 1f, Mathf.Clamp01(height01));
+                highBallPeak = Mathf.Clamp(dist * ShotPeakPerUnit * shotChargeScale, ShotPeakMin, ShotPeakMax);
                 highBallSwellMax = ShotSwellMax;
                 highBallShadowGround = ShotShadowGround;
                 break;
@@ -315,7 +339,7 @@ public class BallFlight : MonoBehaviour
         // is needed.
         SuppressBallPhysics();
         rb.simulated = true;
-        rb.linearVelocity = (landPos - from) / dist * groundSpeed;
+        rb.linearVelocity = (landPos - from) / dist * launchSpeed;
 
         if (kind == ArcKind.Shot)
         {

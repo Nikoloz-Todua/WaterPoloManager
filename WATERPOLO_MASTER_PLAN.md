@@ -1461,3 +1461,72 @@ shows the new **Goal Hang Seconds** (3.5) field; **GoalRight/GoalLeft** → Goal
 has **Score Manager** set; **Player1–6** PlayerMovement **Ball + Aim Line** slots; **KeeperLeft/
 KeeperRight** Goalkeeper **Ball** slot. Also worth re-running **Tools → Fix Goal Colliders** once
 so the trigger boxes match the visual mouth (the new gate makes scoring exact even if they don't).
+
+---
+
+## SESSION LOG — 2026-07-04c (visible pass arc floor, every-shot arc, in-net bob, touch LOB button)
+
+Builds directly on 2026-07-04b. Four polish tasks, no new systems — tuning + one new touch button.
+
+**TASK 1 — the default Pass arc is now unmistakable, and NO pass is ever flat:**
+- The Pass ArcKind already existed but its peak (`dist×0.055` clamped **0.18–0.5u**) read as flat at
+  short range. Raised the floor: **`PassPeakMin` 0.18 → 0.4u**, `PassPeakMax` 0.5 → 0.6u,
+  `PassPeakPerUnit` 0.055 → 0.08 (so mid-range passes visibly scale above the floor before capping).
+  Net: every pass now hops a clearly-visible ~0.4u minimum with a real shadow, still well under the
+  Lob (0.45–1.25u), still scaling with distance/charge.
+- **Removed the `<2u` point-blank flat exception entirely.** `MinHighBallDistance` 2.0 → **0.05u**
+  (now only a degenerate zero-distance 0/0 throw is refused). Every pass — human B, bot, keeper
+  PassOut, however short/weak — arcs.
+- Added **`MinFlightTime` 0.32s** for Pass/Lob only: a very short pass is SLOWED (speed = dist/time,
+  still lands exactly at landPos) so its arc stays airborne long enough to read instead of being a
+  2-frame blip. Shots keep full pace (unaffected).
+- **F+B Lob unchanged** — now purely an optional "bigger lob" on top of an already-good Pass, not a
+  requirement to get any arc.
+
+**TASK 2 — every shot gets the asymmetric shot arc (the flat quick-tap is gone):**
+- `PlayerMovement.Shoot`: dropped the `shotHeight > 0.7f` gate — **every** non-skip shot now routes
+  through `LaunchHighBall(..., ArcKind.Shot)` at any charge. Only a skip shot (deliberate LOW
+  bounce, Q+Space) or a degenerate launch takes the flat path.
+- Shot arc peak now scales with **charge as well as distance**: `dist×0.10 × Lerp(ShotChargeMinScale
+  0.3, 1, height01)`, clamped **0.2–0.9u**. A barely-tapped shot still visibly hops (floored 0.2u,
+  never a straight line); a full charge arcs high. `ShotPeakMin` lowered 0.35 → 0.2 so weak charges
+  have room to scale down toward (but never reaching) zero.
+- **Shot-vs-pass distinction preserved:** shots still use the asymmetric `ShotArc01` curve (steep
+  rise → early peak → hang → sharp drop), still ×1.35 faster (`ShotSpeedMult`), still fire the
+  release snap + glow + full-speed landing; passes stay symmetric, slower, no snap, roll-landing.
+- Keeper manual shot (`KeeperShoot`) and bot shots (`WaterPoloBrain.Shoot`) intentionally left flat
+  — distinct manual/AI mechanics, out of this task's scope.
+
+**TASK 3 — the netted ball floats instead of freezing solid during the goal hang:**
+- `ScoreManager.ResumeAfterGoal` Phase 0: after the 0.15s settle-and-zero, the remaining hang runs a
+  new **`BallNetBob`** coroutine — a gentle buoyancy float around where the ball settled (vertical
+  bob `NetBobAmpY` 0.07u + tinier sway `NetBobAmpX` 0.035u at `NetBobRate` 2.6 rad/s, random phase,
+  amplitude easing 1.25→0.85 as it settles). Reads as "resting in the net in water," not a paused
+  screenshot.
+- Safe by construction: play is frozen, the ball's velocity is zero and BallFlight runs no flight,
+  so driving `ball.position` directly is uncontested; the frame-accuracy goal gate ignores it
+  (velocity 0 ⇒ no re-score). Everything else about the hang (duration, player freeze, camera hold,
+  net squash) is byte-for-byte unchanged.
+
+**TASK 4 — touch LOB button (mobile had no F-equivalent):**
+- New attack-only **LOB toggle** in `TouchControls`, left of the PASS button (`LobPos` -785,160, same
+  bottom-right-anchored cluster, own full-stretch group + "LOB" caption). Tap to ARM ("next pass =
+  lob", button brightens), tap PASS to throw it; it auto-disarms after that pass (one-shot, matching
+  how holding F behaves). Hidden + disarmed in defense and while controlling the keeper.
+- Wiring: `PlayerMovement.SetLobModifier(bool)` sets a new `touchLobHeld`, merged into `ChargedPass`'s
+  `lob` with `Input.GetKey(KeyCode.F)`. TouchControls (exec order −100) sets it the same frame the
+  pass releases, so the lob applies, then disarms. Optional `Resources/Sprites/lob` art is used if
+  present, else it reuses the pass icon.
+
+**Before/after (Task 1 floor, the explicit numbers asked for):** Pass minimum peak **0.18u → 0.4u**
+(≈2.2× taller — a modest short pass now clears roughly one ball-diameter, with a visible shadow);
+`PassPeakMax` 0.5→0.6u, `PassPeakPerUnit` 0.055→0.08. Shot floor **0.35u → 0.2u** (so weak charges
+scale down), full-charge shots still peak up to 0.9u.
+
+**Build:** `dotnet build Assembly-CSharp.csproj` → **0 errors** (21 pre-existing warnings, untouched files).
+**Slot re-check (nothing NEW to wire — all runtime/procedural):** verify the usual slots survived the
+full-script replaces — **ScoreManager** → Ball / Player+Bot Score Text / Player+Bot Team (+ Goal Hang
+Seconds 3.5); **Player1–6** PlayerMovement **Ball + Aim Line**; **KeeperLeft/Right** Goalkeeper **Ball**;
+**GameManager** MatchContext **Ball / Player Team / Bot Team**. The LOB button, its icon and the net-bob
+are all built/driven in code — no Inspector fields to set. (Optional: drop a `Resources/Sprites/lob.png`
+to give the LOB button dedicated art instead of the reused pass icon.)

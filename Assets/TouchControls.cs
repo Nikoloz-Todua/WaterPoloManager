@@ -50,6 +50,10 @@ public class TouchControls : MonoBehaviour
     static readonly Vector2 BottomRightPos = new Vector2(-215f, 160f); // shoot / defend
     static readonly Vector2 BottomLeftPos  = new Vector2(-510f, 160f); // pass / block
 
+    // LOB button (Task 4): left of the PASS button, same bottom-right-anchored cluster. Attack-only.
+    static readonly Vector2 LobPos      = new Vector2(-785f, 160f);
+    static readonly Vector2 LobLabelPos = new Vector2(-785f, 25f);   // "LOB" caption under it
+
     // PASS OUT button: centre-right (anchor 1,0.5), with its label just below it.
     static readonly Vector2 PassOutPos      = new Vector2(-330f, 60f);
     static readonly Vector2 PassOutLabelPos = new Vector2(-330f, -112.5f);
@@ -68,18 +72,20 @@ public class TouchControls : MonoBehaviour
 
     private GameObject actionGroup;   // holds the 3 mode buttons (hidden during keeper pass-out)
     private GameObject passOutGroup;  // holds the single PASS OUT button + label
+    private GameObject lobGroup;      // holds the LOB toggle button + label (attack-only, Task 4)
 
     // top, bottom-right, bottom-left buttons + their images (for icon swap / fade)
-    private TouchButton topBtn, brBtn, blBtn, passOutBtn;
-    private Image topImg, brImg, blImg;
+    private TouchButton topBtn, brBtn, blBtn, passOutBtn, lobBtn;
+    private Image topImg, brImg, blImg, lobImg;
 
     // icons (loaded once from Resources)
-    private Sprite sprSprint, sprShoot, sprPass, sprDefend, sprSwitch, sprBlock;
+    private Sprite sprSprint, sprShoot, sprPass, sprDefend, sprSwitch, sprBlock, sprLob;
 
     private bool attackMode = true;
     private bool modeInitialized;
     private Coroutine modeFade;
-    private bool prevTop, prevBR, prevBL; // tap (down/up) edge detection
+    private bool prevTop, prevBR, prevBL, prevLob; // tap (down/up) edge detection
+    private bool lobArmed;                          // LOB toggle: the next touch pass fires as a lob
 
     // --- Stamina HUD: a panel above the joystick — player number (or "GK" when the human controls
     //     the keeper) + a fill bar. It reads PlayerMovement.StaminaPercent01 /
@@ -168,6 +174,18 @@ public class TouchControls : MonoBehaviour
         bool blDown  = blHeld && !prevBL;
         bool blUp    = !blHeld && prevBL;
 
+        bool lobHeld = lobBtn.Pressed;
+        bool lobDown = lobHeld && !prevLob;
+
+        // LOB toggle (attack only): a tap arms "next pass = lob"; the button is hidden and any
+        // armed state cleared in defense or while controlling the keeper. Armed = bright, idle = dim.
+        bool showLob = attackMode && !keeperControl;
+        if (lobGroup != null && lobGroup.activeSelf != showLob) lobGroup.SetActive(showLob);
+        if (!showLob) lobArmed = false;
+        else if (lobDown) lobArmed = !lobArmed;
+        if (lobImg != null && showLob)
+            lobImg.color = new Color(1f, 1f, 1f, lobArmed ? iconAlpha : iconAlpha * 0.45f);
+
         PlayerMovement pm = TeamManager.ActivePlayer;
         Vector2 axis = joystick.Axis;
 
@@ -213,7 +231,13 @@ public class TouchControls : MonoBehaviour
             }
         }
 
-        prevTop = topHeld; prevBR = brHeld; prevBL = blHeld;
+        prevTop = topHeld; prevBR = brHeld; prevBL = blHeld; prevLob = lobHeld;
+
+        // Feed the LOB modifier to the active field player, then consume it: the armed lob applies
+        // to the pass released THIS frame (TouchControls runs before PlayerMovement), then disarms
+        // so it's a one-shot "next pass is a lob" — matching how holding F works on keyboard.
+        if (pm != null) pm.SetLobModifier(showLob && lobArmed);
+        if (blUp && lobArmed) lobArmed = false;
     }
 
     // Defend-press target: the enemy ball carrier if they have it (matches the proximity
@@ -320,12 +344,22 @@ public class TouchControls : MonoBehaviour
         sprDefend = LoadButtonSprite("Defend"); // capital D on disk
         sprSwitch = LoadButtonSprite("switch");
         sprBlock  = LoadButtonSprite("block");
+        sprLob    = LoadButtonSprite("lob");        // optional dedicated art...
+        if (sprLob == null) sprLob = sprPass;       // ...else reuse the pass icon (LOB is a pass variant)
 
         // --- 3 action buttons (own group so we can hide them as a set); start in ATTACK icons ---
         actionGroup = MakeFullStretchGroup("ActionButtons");
         topBtn = MakeImageButton(actionGroup.transform, "BtnTop",         TopRightPos,    mainButtonSize,   sprSprint, out topImg);
         brBtn  = MakeImageButton(actionGroup.transform, "BtnBottomRight", BottomRightPos, actionButtonSize, sprShoot,  out brImg);
         blBtn  = MakeImageButton(actionGroup.transform, "BtnBottomLeft",  BottomLeftPos,  actionButtonSize, sprPass,   out blImg);
+
+        // --- LOB button (Task 4): the touch equivalent of holding F while passing. A TOGGLE —
+        //     tap to ARM "next pass = LOB", then tap PASS to throw it (auto-disarms after that
+        //     pass). Shown only in ATTACK (hidden in defense / while controlling the keeper). ---
+        lobGroup = MakeFullStretchGroup("LobButton");
+        lobBtn = MakeImageButton(lobGroup.transform, "BtnLob", LobPos, actionButtonSize, sprLob, out lobImg);
+        MakeLabel(lobGroup.transform, "LOB", new Vector2(1f, 0f), LobLabelPos, new Vector2(180f, 46f), 34f);
+        lobGroup.SetActive(false);
 
         // --- single PASS OUT button (hidden until the player's keeper holds the ball) ---
         passOutGroup = MakeFullStretchGroup("PassOutButton");
