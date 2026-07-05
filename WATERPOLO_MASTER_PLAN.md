@@ -1530,3 +1530,65 @@ Seconds 3.5); **Player1–6** PlayerMovement **Ball + Aim Line**; **KeeperLeft/R
 **GameManager** MatchContext **Ball / Player Team / Bot Team**. The LOB button, its icon and the net-bob
 are all built/driven in code — no Inspector fields to set. (Optional: drop a `Resources/Sprites/lob.png`
 to give the LOB button dedicated art instead of the reused pass icon.)
+
+---
+
+## SESSION LOG — 2026-07-05 (reliable exclusion re-entry + position-aware net reaction)
+
+Two targeted fixes, no new systems. Only `ExclusionManager.cs` and `ScoreManager.cs` changed.
+
+**TASK 1 — excluded players now re-enter reliably (was "sometimes stuck outside play"):**
+- ROOT CAUSE: the re-entry only nulled the roster slot back in and left the player's BODY dumped
+  in the goal corner (`PlaceAtCorner` → |x| = 7, which is PAST the `playerLimitX` 6.9 clamp),
+  relying entirely on the AI brain to swim it all the way back across the pool. Combined with a
+  countdown that ran off an absolute `Time.time` deadline — which keeps advancing during soft
+  `MatchContext.PlayFrozen` freezes (goal restart / penalty / sprint duel) — an exclusion could be
+  wholly "served" and silently restored DURING a goal celebration the player couldn't be seen
+  re-entering from, leaving it marooned in the corner.
+- FIX (all in `ExclusionManager`):
+  - `Exclusion.endTime` (absolute) → **`remaining`** (seconds of LIVE play left). `Update()` now
+    only decrements it when **not** `PlayFrozen` (hard `timeScale = 0` pauses already zero
+    `deltaTime`), so an exclusion is a true `exclusionSeconds` of gameplay and never bleeds away
+    during a stoppage. HUD reads `remaining` directly.
+  - New **`ReturnToPlay(e)`**: restores the roster slot (with a **`SnapshotIndex`** fallback to the
+    `Start()` roster snapshot so a stale/out-of-range index can NEVER silently drop a player out of
+    the roster for good), clears the excluded flag, then **actively teleports the player onto a live
+    goal-side `TeamSide.DefendSpot`** (ClampToField-bounded) with zero velocity — it re-enters IN
+    position instead of swimming back from behind its own goal.
+- **Behaviour change to note:** a returning player now appears at a sensible defensive spot rather
+  than swimming in from the corner (water-polo-purists' corner re-entry is traded for reliability,
+  which is what was asked). Exclusion duration now excludes freeze time (feels slightly longer in
+  wall-clock across a goal, but is a correct 5 s of actual play).
+
+**TASK 2 — net reaction now reacts at the ACTUAL impact point:**
+- `ScoreManager.BallEnteredGoal` reuses the frame-accuracy gate's projected line-crossing (`yAtLine`)
+  as the true impact point `(netSign·GoalLineX, yAtLine)`, then **`NormalizedImpact`** maps it to a
+  0..1 coordinate inside the goal **Collider2D's real `bounds`** (x left→right, y bottom→top) — read
+  live from the collider, so NO pixel/world size is baked in and it survives a goal art/collider swap
+  (falls back to a centred 0.5,0.5 hit if the goal has no collider).
+- `PlayNetReaction` / `NetPulse` are now driven by that impact:
+  - **Vertical lean:** the net is nudged toward the struck height (`iy · 0.10·goalHeight · bulge`) —
+    a **top-corner** goal kicks the net **up-and-out**, a **bottom-corner** goal **down-and-out**, a
+    **centre** goal **straight out**. The throw is a fraction of the goal's REAL height, not a baked
+    distance.
+  - **Corner intensity:** `intensity = 1 + 0.6·|iy|` scales the outward stretch + x-nudge, and a
+    corner hit folds a little MORE on the y-squash (`0.10 + 0.06·|iy|`) — cornered goals visibly
+    punch harder than dead-centre ones.
+  - **Ripple** spawns at the exact crossing point (`impactWorld`) instead of the ball's current pose.
+
+**Build:** `dotnet build Assembly-CSharp.csproj` → **0 errors** (21 pre-existing warnings, untouched files).
+**Slot re-check (nothing NEW to wire — both changes are pure code):** verify the usual slots survived
+the full-script replaces — **ScoreManager** → Ball / Player+Bot Score Text / Player+Bot Team / Goal
+Hang Seconds; **ExclusionManager** → Match Timer / Exclusion Text; **GoalRight/GoalLeft** must each
+still have a **Box Collider 2D** (the net reaction reads its bounds — run **Tools → Fix Goal Colliders**
+if unsure) + their Goal **Score Manager** ref.
+
+**How to test — TASK 1 (re-entry):** Play. Provoke exclusions (spam Space/Block steals on a carrier —
+2 failed fouls in 10 s → 5 s exclusion), watch the offender sit in its goal corner, and confirm at the
+end of the HUD countdown it snaps back onto a defensive spot and immediately rejoins play. Repeat while
+a GOAL happens mid-exclusion (score right after excluding someone) — the countdown should PAUSE through
+the celebration and the player should still return cleanly afterward, never stranded in the corner.
+**How to test — TASK 2 (net reaction):** Score into the TOP corner (high shot aimed high) → the net
+kicks up-and-out and the white ring appears high in the mouth; score into the BOTTOM corner → net kicks
+down-and-out, ring low; score dead-centre → straight-out bulge. Corner goals should look punchier than
+centre goals. All three should differ clearly.

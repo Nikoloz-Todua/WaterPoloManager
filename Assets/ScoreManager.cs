@@ -95,9 +95,34 @@ public class ScoreManager : MonoBehaviour
 
         RestartAfterGoal(conceding);
 
+        // WHERE the ball actually crossed the goal line (x = the line, y = the projected
+        // crossing height from the frame-accuracy gate above) → the true impact point, and its
+        // position NORMALIZED to the goal collider's real bounds (0..1 left→right, 0..1
+        // bottom→top). Everything the net reaction does is driven off this, so a top-corner goal
+        // reacts differently from a bottom-corner or centre goal — and it survives an art/collider
+        // swap because nothing is a hardcoded pixel/world position.
+        Collider2D goalCol = goalNet != null ? goalNet.GetComponent<Collider2D>() : null;
+        Vector2 impactWorld = new Vector2(netSign * GoalLineX, yAtLine);
+        Vector2 impactNorm = NormalizedImpact(goalCol, impactWorld);
+        float goalHeight = goalCol != null ? goalCol.bounds.size.y : GoalMouthHalfHeight * 2f;
+
         // Net reaction AFTER RestartAfterGoal — its StopAllCoroutines would kill a pulse
         // started any earlier. Plays over the hang-time hold.
-        PlayNetReaction(goalNet, netSign);
+        PlayNetReaction(goalNet, netSign, impactNorm, impactWorld, goalHeight);
+    }
+
+    // The world impact point expressed as a 0..1 coordinate inside the goal collider's REAL
+    // bounds (x = left→right across the collider, y = bottom→top). Falls back to a dead-centre
+    // (0.5, 0.5) hit if the goal has no Collider2D. Reads the live collider bounds, so no pixel
+    // or world size is baked in — swap the goal sprite/collider for different art and this keeps
+    // mapping impacts correctly.
+    Vector2 NormalizedImpact(Collider2D goalCol, Vector2 worldPoint)
+    {
+        if (goalCol == null) return new Vector2(0.5f, 0.5f);
+        Bounds b = goalCol.bounds;
+        float nx = b.size.x > 1e-4f ? Mathf.InverseLerp(b.min.x, b.max.x, worldPoint.x) : 0.5f;
+        float ny = b.size.y > 1e-4f ? Mathf.InverseLerp(b.min.y, b.max.y, worldPoint.y) : 0.5f;
+        return new Vector2(Mathf.Clamp01(nx), Mathf.Clamp01(ny));
     }
 
     // Which team currently attacks the net on the given side (+1 = Right, -1 = Left).
@@ -247,13 +272,16 @@ public class ScoreManager : MonoBehaviour
         ball.transform.position = Vector3.zero;  // transform -> exact (0,0,0)
     }
 
-    // ---- net reaction (Task 4): a springy squash on the goal sprite + an impact ripple ----
-    // Cheapest thing that reads as "the ball hit the net": the goal object itself gets one
-    // strong outward bulge (scale + a small push away from the pool) that wobbles back to
-    // rest on a damped spring, plus an expanding white ring at the impact point. No cloth
-    // sim, no new art — pure hand-rolled Lerp/sine on the existing net sprite.
+    // ---- net reaction: a springy squash on the goal sprite + an impact ripple, LOCALIZED to
+    // where the ball actually hit (Task 2) ----
+    // Cheapest thing that reads as "the ball hit the net HERE": the goal object gets one strong
+    // bulge (scale + a push that leans toward the struck spot) that wobbles back on a damped
+    // spring, plus an expanding white ring at the exact crossing point. A top-corner goal kicks
+    // the net up-and-out, a bottom-corner goal down-and-out, and a centre goal straight out;
+    // corner hits punch a touch harder. No cloth sim, no new art — hand-rolled Lerp/sine on the
+    // existing net sprite, all driven by the normalized impact so an art swap needs no retuning.
 
-    void PlayNetReaction(Transform goalNet, float netSign)
+    void PlayNetReaction(Transform goalNet, float netSign, Vector2 impactNorm, Vector2 impactWorld, float goalHeight)
     {
         // a previous pulse could have been cut short by StopAllCoroutines — restore it first
         if (pulseNet != null)
@@ -267,41 +295,63 @@ public class ScoreManager : MonoBehaviour
             pulseNet = goalNet;
             pulseScale0 = goalNet.localScale;
             pulsePos0 = goalNet.localPosition;
-            StartCoroutine(NetPulse(goalNet, netSign));
+            StartCoroutine(NetPulse(goalNet, netSign, impactNorm, goalHeight));
         }
-        SpawnNetRipple();
+        SpawnNetRipple(impactWorld);
     }
 
-    IEnumerator NetPulse(Transform net, float sign)
+    IEnumerator NetPulse(Transform net, float sign, Vector2 impactNorm, float goalHeight)
     {
         Vector3 s0 = pulseScale0;
         Vector3 p0 = pulsePos0;
+
+        // Impact as signed offsets from the net centre, in [-1, 1]:
+        //   iy < 0 = hit LOW, iy > 0 = hit HIGH (top/bottom corner is the salient cue).
+        float iy = Mathf.Clamp(impactNorm.y * 2f - 1f, -1f, 1f);
+        float corner = Mathf.Abs(iy);              // 0 dead-centre → 1 hard in a corner
+        float intensity = 1f + 0.6f * corner;      // corner goals punch a bit harder
+        // Vertical throw is a fraction of the goal's REAL height (not a baked distance), so it
+        // scales with whatever goal art/collider is in the scene.
+        float yThrow = 0.10f * goalHeight;
+
         const float Dur = 0.45f;
         float t0 = Time.time;
         while (Time.time - t0 < Dur && net != null)
         {
             float t = (Time.time - t0) / Dur;
-            // damped spring: a hard outward bulge on impact, wobbling back to rest
+            // damped spring: a hard bulge on impact, wobbling back to rest
             float bulge = Mathf.Sin(t * 18f) * Mathf.Exp(-4.5f * t);
-            net.localScale = new Vector3(s0.x * (1f + 0.22f * bulge),
-                                         s0.y * (1f - 0.10f * bulge), s0.z);
-            net.localPosition = p0 + new Vector3(sign * 0.09f * bulge, 0f, 0f);
+
+            // outward (into the net) stretch on x; a y-squash that folds a little MORE for a
+            // corner hit (the net creases where it was struck)
+            net.localScale = new Vector3(
+                s0.x * (1f + 0.22f * intensity * bulge),
+                s0.y * (1f - (0.10f + 0.06f * corner) * bulge),
+                s0.z);
+
+            // nudge outward from the pool (sign*x) AND toward the struck height (iy*y): a top
+            // goal leans the net up-and-out, a bottom goal down-and-out, a centre goal straight out
+            net.localPosition = p0 + new Vector3(
+                sign * 0.09f * intensity * bulge,
+                iy * yThrow * bulge,
+                0f);
             yield return null;
         }
         if (net != null) { net.localScale = s0; net.localPosition = p0; }
         if (pulseNet == net) pulseNet = null;
     }
 
-    // Expanding, fading white ring where the ball met the net — the same trick as the
-    // skip-shot's water ripple in BallFlight. World-space, self-destroys.
-    void SpawnNetRipple()
+    // Expanding, fading white ring at the EXACT point the ball crossed the net (the projected
+    // line-crossing, not just the ball's current pose) — same trick as the skip-shot's water
+    // ripple in BallFlight. World-space, self-destroys.
+    void SpawnNetRipple(Vector2 impactWorld)
     {
         if (ball == null) return;
         SpriteRenderer ballSr = ball.GetComponent<SpriteRenderer>();
         if (ballSr == null || ballSr.sprite == null) return;
 
         GameObject go = new GameObject("NetRipple");
-        go.transform.position = ball.transform.position;
+        go.transform.position = new Vector3(impactWorld.x, impactWorld.y, ball.transform.position.z);
         SpriteRenderer rs = go.AddComponent<SpriteRenderer>();
         rs.sprite = ballSr.sprite;
         rs.sortingOrder = ballSr.sortingOrder + 1; // over the net art

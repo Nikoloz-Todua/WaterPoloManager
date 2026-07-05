@@ -34,13 +34,13 @@ public class ExclusionManager : MonoBehaviour
     private TeamSide playerTeam;
     private TeamSide botTeam;
 
-    // one active temporary exclusion (the player returns after endTime)
+    // one active temporary exclusion (the player returns once `remaining` runs out)
     private class Exclusion
     {
         public Transform agent;
         public TeamSide team;
-        public int memberIndex; // original slot in team.members, restored on return
-        public float endTime;
+        public int memberIndex;   // original slot in team.members, restored on return
+        public float remaining;   // seconds of LIVE play left before returning (paused while frozen)
     }
 
     private readonly List<Exclusion> activeExclusions = new List<Exclusion>();
@@ -76,22 +76,73 @@ public class ExclusionManager : MonoBehaviour
 
     void Update()
     {
-        // Return temporarily-excluded players when their time is up.
+        // The exclusion countdown only advances during LIVE play. It is PAUSED while play is
+        // frozen — both a hard Time.timeScale = 0 stop (pause / quarter break / full time,
+        // where deltaTime is already 0) AND a soft MatchContext.PlayFrozen freeze (goal
+        // restart / penalty / sprint duel, where Time.time keeps running). The old code
+        // compared against an absolute Time.time deadline, so a soft freeze silently "served"
+        // the exclusion during a goal celebration the player couldn't be seen returning from —
+        // one of the ways a returning player ended up stranded in the corner. Counting only
+        // live play makes an exclusion a true `exclusionSeconds` of gameplay.
+        MatchContext ctx = MatchContext.Instance;
+        bool frozen = ctx != null && ctx.PlayFrozen;
+
         for (int i = activeExclusions.Count - 1; i >= 0; i--)
         {
             Exclusion e = activeExclusions[i];
-            if (Time.time < e.endTime) continue;
+            if (!frozen) e.remaining -= Time.deltaTime;
+            if (e.remaining > 0f) continue;
 
-            // restore to its ORIGINAL slot so roster order is preserved
-            if (e.agent != null && e.team != null && e.team.members != null &&
-                e.memberIndex >= 0 && e.memberIndex < e.team.members.Length)
-                e.team.members[e.memberIndex] = e.agent;
-
-            if (e.agent != null) excludedNow.Remove(e.agent);
+            ReturnToPlay(e);            // restore roster slot + drop the body back onto the field
             activeExclusions.RemoveAt(i);
         }
 
         UpdateHud();
+    }
+
+    // Bring a temporarily-excluded player back into the match. The old re-entry only nulled the
+    // roster slot back in and left the body dumped in the goal corner (|x| = 7, PAST the
+    // playerLimitX 6.9 clamp), relying entirely on the AI brain to swim it all the way across the
+    // pool — which is what "sometimes doesn't re-enter, stuck outside play" was. Now it:
+    //   1) restores the ORIGINAL roster slot (falling back to the Start() snapshot so a stale
+    //      index can never silently drop the player OUT of the roster for good),
+    //   2) clears the excluded flag so the brain drives it again, and
+    //   3) actively teleports it onto a live goal-side DEFENSIVE spot with zero velocity, so it
+    //      is unambiguously back in play instead of marooned behind its own goal line.
+    void ReturnToPlay(Exclusion e)
+    {
+        Transform agent = e.agent;
+        TeamSide team = e.team;
+        if (agent == null) return;
+
+        int idx = (team != null && team.members != null &&
+                   e.memberIndex >= 0 && e.memberIndex < team.members.Length)
+                  ? e.memberIndex : SnapshotIndex(team, agent);
+        if (idx >= 0 && team != null && team.members != null && idx < team.members.Length)
+            team.members[idx] = agent;   // restore FIRST so DefendSpot's role lookup finds it
+
+        excludedNow.Remove(agent);       // IsExcluded → false → the brain resumes control
+
+        if (team != null)
+        {
+            MatchContext ctx = MatchContext.Instance;
+            Vector2 ballPos = ctx != null ? ctx.BallPosition : Vector2.zero;
+            Vector2 spot = team.DefendSpot(agent, ballPos); // ClampToField keeps it in the pool
+            agent.position = new Vector3(spot.x, spot.y, agent.position.z);
+        }
+
+        Rigidbody2D rb = agent.GetComponent<Rigidbody2D>();
+        if (rb != null) rb.linearVelocity = Vector2.zero;
+    }
+
+    // The agent's ORIGINAL slot from the Start() roster snapshot — the restore fallback when the
+    // captured member index is somehow out of range, so re-entry can never fail to seat a player.
+    int SnapshotIndex(TeamSide team, Transform agent)
+    {
+        if (team == null || !originalRoster.TryGetValue(team, out Transform[] roster)) return -1;
+        for (int i = 0; i < roster.Length; i++)
+            if (roster[i] == agent) return i;
+        return -1;
     }
 
     // ---------- public API ----------
@@ -249,7 +300,7 @@ public class ExclusionManager : MonoBehaviour
                 agent = agent,
                 team = team,
                 memberIndex = idx,
-                endTime = Time.time + exclusionSeconds
+                remaining = exclusionSeconds
             });
         }
 
@@ -328,7 +379,7 @@ public class ExclusionManager : MonoBehaviour
         float youMax = -1f, botMax = -1f;
         foreach (Exclusion e in activeExclusions)
         {
-            float rem = e.endTime - Time.time;
+            float rem = e.remaining;
             if (rem < 0f) continue;
             if (e.team == playerTeam) { if (rem > youMax) youMax = rem; }
             else if (e.team == botTeam) { if (rem > botMax) botMax = rem; }
