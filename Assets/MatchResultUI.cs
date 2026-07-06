@@ -81,18 +81,9 @@ public class MatchResultUI : MonoBehaviour
         scoreText  = MakeText("Score",  "",          56f, new Vector2(0f, 70f));
         winnerText = MakeText("Winner", "",          44f, new Vector2(0f, -20f));
 
-        // PLAY AGAIN reloads the SAME pool the player last picked in the pre-match pool-select
-        // screen (persisted by NavigationManager under "selected_pool"); defaults to Pool A.
-        MakeButton("PLAY AGAIN", new Vector2(0f, -120f), () => LoadScene(LastPoolScene()));
+        // PLAY AGAIN reloads the one match scene (the old pool-select + Pool A are retired).
+        MakeButton("PLAY AGAIN", new Vector2(0f, -120f), () => LoadScene(NavigationManager.MatchScene));
         MakeButton("MAIN MENU",  new Vector2(0f, -210f), () => LoadScene("HubScene"));
-    }
-
-    // Scene name for the last-selected pool. Kept in sync with NavigationManager.PoolScenes /
-    // PoolPrefKey — two pools for now (Pool A = SampleScene, Pool B = SampleScene_PoolB).
-    static string LastPoolScene()
-    {
-        int pool = Mathf.Clamp(PlayerPrefs.GetInt("selected_pool", 0), 0, 1);
-        return pool == 1 ? "SampleScene_PoolB" : "SampleScene";
     }
 
     static void LoadScene(string sceneName)

@@ -30,6 +30,13 @@ public class ExclusionManager : MonoBehaviour
     [SerializeField] private MatchTimer matchTimer;           // to end the match on a forfeit
     [SerializeField] private TMP_Text exclusionText;          // HUD countdowns, e.g. "YOU EXC: 4.2"
 
+    [Header("Exclusion pen markers")]
+    // Where an excluded player sits out and re-enters from. Left empty these auto-find the scene
+    // objects named ExclusionSpot_Home (left half) / ExclusionSpot_Away (right half); if a scene
+    // has neither, defaults are self-healed at the bottom corners so exclusions always work.
+    [SerializeField] private Transform exclusionSpotHome;
+    [SerializeField] private Transform exclusionSpotAway;
+
     // cached from MatchContext (so no extra Inspector wiring of teams)
     private TeamSide playerTeam;
     private TeamSide botTeam;
@@ -66,6 +73,43 @@ public class ExclusionManager : MonoBehaviour
             Snapshot(botTeam);
         }
         if (exclusionText != null) exclusionText.enabled = false;
+        EnsureExclusionSpots();
+    }
+
+    // Resolve the two pen markers: serialized slot → scene object by name → self-healed default.
+    // The defaults sit at the bottom pool corners; if you see the warning, add empty GameObjects
+    // with these exact names in the scene and nudge them onto the exclusion pen art.
+    void EnsureExclusionSpots()
+    {
+        if (exclusionSpotHome == null)
+            exclusionSpotHome = FindOrCreateSpot("ExclusionSpot_Home", new Vector3(-7.2f, -4.1f, 0f));
+        if (exclusionSpotAway == null)
+            exclusionSpotAway = FindOrCreateSpot("ExclusionSpot_Away", new Vector3(7.2f, -4.1f, 0f));
+    }
+
+    static Transform FindOrCreateSpot(string name, Vector3 defaultPos)
+    {
+        GameObject go = GameObject.Find(name);
+        if (go == null)
+        {
+            go = new GameObject(name);
+            go.transform.position = defaultPos;
+            Debug.LogWarning("[ExclusionManager] No '" + name + "' in this scene — self-healed one at "
+                             + defaultPos + ". Create a scene object with that exact name (or wire the "
+                             + "Inspector slot) to place the pen where the art is.");
+        }
+        return go.transform;
+    }
+
+    // The pen for a team = whichever marker sits in the half of the pool the team currently
+    // DEFENDS (matched by x sign, not by name, so it stays correct after the halftime SwapEnds).
+    Transform PenFor(TeamSide team)
+    {
+        if (exclusionSpotHome == null) return exclusionSpotAway;
+        if (exclusionSpotAway == null) return exclusionSpotHome;
+        float sign = (team != null && team.defendGoal != null) ? Mathf.Sign(team.defendGoal.position.x) : -1f;
+        if (sign == 0f) sign = -1f;
+        return Mathf.Sign(exclusionSpotHome.position.x) == sign ? exclusionSpotHome : exclusionSpotAway;
     }
 
     void Snapshot(TeamSide team)
@@ -123,7 +167,18 @@ public class ExclusionManager : MonoBehaviour
 
         excludedNow.Remove(agent);       // IsExcluded → false → the brain resumes control
 
-        if (team != null)
+        // Re-enter FROM the pen marker: dropped at the pen's position clamped just inside live
+        // water (the marker may be nudged onto deck art outside the field, and the exclusion
+        // softlock fix must not regress — the drop-in point always stays inside the playerLimitX
+        // 6.9 / wall ±4.5 bounds, so the brain can swim the player back into shape from there).
+        Transform pen = PenFor(team);
+        if (pen != null)
+        {
+            Vector3 p = pen.position;
+            agent.position = new Vector3(Mathf.Clamp(p.x, -6.4f, 6.4f),
+                                         Mathf.Clamp(p.y, -3.9f, 3.9f), agent.position.z);
+        }
+        else if (team != null)
         {
             MatchContext ctx = MatchContext.Instance;
             Vector2 ballPos = ctx != null ? ctx.BallPosition : Vector2.zero;
@@ -334,11 +389,15 @@ public class ExclusionManager : MonoBehaviour
         ctx.SetPossession(null);
     }
 
+    // Park the excluded player AT its team's pen marker (the old version hardcoded the goal
+    // corner at (±7, −4); now the pen art placement in the scene is the single source of truth).
     void PlaceAtCorner(Transform agent, TeamSide team)
     {
-        float sign = (team != null && team.defendGoal != null) ? Mathf.Sign(team.defendGoal.position.x) : 1f;
-        if (sign == 0f) sign = 1f;
-        agent.position = new Vector3(sign * 7f, -4f, agent.position.z);
+        Transform pen = PenFor(team);
+        Vector3 p = pen != null
+            ? pen.position
+            : new Vector3(((team != null && team.defendGoal != null && team.defendGoal.position.x < 0f) ? -7f : 7f), -4f, 0f);
+        agent.position = new Vector3(p.x, p.y, agent.position.z);
 
         Rigidbody2D rb = agent.GetComponent<Rigidbody2D>();
         if (rb != null) rb.linearVelocity = Vector2.zero;

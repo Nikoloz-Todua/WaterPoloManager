@@ -36,7 +36,7 @@ public static class AnimatorBuilder
     const string BackHoldPrefabPath = PlayersDir + "/back-side_0.prefab";
     const string BackHoldControllerPath = AnimDir + "/BackHoldBodyAnimation.controller";
 
-    // The six human red-team swimmers in SampleScene, by GameObject name.
+    // The six human red-team swimmers in the match scene, by GameObject name.
     static readonly string[] PlayerNames =
         { "Player", "Player2", "Player3", "Player4", "Player5", "Player6" };
 
@@ -315,7 +315,7 @@ public static class AnimatorBuilder
         if (players.Length == 0)
         {
             Debug.LogWarning("[AnimatorBuilder] No PlayerAnimator in the open scene. Open " +
-                             "Assets/Scenes/SampleScene.unity and run again.");
+                             "Assets/Scenes/SampleScene_PoolB.unity and run again.");
             return;
         }
 

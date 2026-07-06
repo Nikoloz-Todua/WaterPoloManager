@@ -245,7 +245,7 @@ Filter Mode: Bilinear, Max Size: 4096
 - Poolside/edge tiles
 - Player ripple effects
 
-Game Mode screen with 4 competition cards, lock-sign sprite, animated background, card polish. Competition screen (per division): GROUP STAGE / KNOCKOUT tabs — two collapsible framed group tables (collapsed = top 5, Pos|Team|Pts; expanded = all 8 full columns; tap card to toggle; player row gold) in a vertical ScrollRect, plus a bracket view (QF 2x2, SF, Final; player's tie gold-framed, losers dimmed, "vs"/TBD for unplayed). Bottom bar: NEXT MATCH + TEAM shortcut (back from Team returns to the competition screen via `teamReturnTo` context; hub TEAM returns to hub). Pre-Match screen (two pool-screen pools, 6 formation markers, phase-aware match label, PLAY). Full nav flow: Hub → Game Mode → Competition → Pre-Match → SampleScene. Universal back-button sprite.
+Game Mode screen with 4 competition cards, lock-sign sprite, animated background, card polish. Competition screen (per division): GROUP STAGE / KNOCKOUT tabs — two collapsible framed group tables (collapsed = top 5, Pos|Team|Pts; expanded = all 8 full columns; tap card to toggle; player row gold) in a vertical ScrollRect, plus a bracket view (QF 2x2, SF, Final; player's tie gold-framed, losers dimmed, "vs"/TBD for unplayed). Bottom bar: NEXT MATCH + TEAM shortcut (back from Team returns to the competition screen via `teamReturnTo` context; hub TEAM returns to hub). Pre-Match screen (two pool-screen pools, 6 formation markers, phase-aware match label, PLAY). Full nav flow: Hub → Game Mode → Competition → Pre-Match → SampleScene_PoolB (the one match scene — the old SampleScene + SELECT POOL step are retired, see 2026-07-06 session log). Universal back-button sprite.
 
 ## A9. Controls (keyboard — for PC testing; touch comes later)
 
@@ -566,7 +566,8 @@ Both in `Assets/Sprites/Players/Animations/`.
   both bodies, front/back switch + flipX).
 - **Editor tooling** — `Assets/Editor/AnimatorBuilder.cs` (menus: Setup All Players, Wire Animation
   Clips, Build Player Animator Controllers, Setup Player GameObjects).
-- **Scene** — `Assets/Scenes/SampleScene.unity`.
+- **Scene** — `Assets/Scenes/SampleScene_PoolB.unity` (the sole match scene since 2026-07-06; the old
+  `SampleScene.unity` is retired — still on disk, but nothing loads it and it's out of Build Settings).
 
 ### How to add a NEW player (future workflow)
 1. Generate front + back images for each pose (idle, swim, hold, throw, defend, steal) at the **same
@@ -723,8 +724,8 @@ Unlock state stored in PlayerPrefs (div1_won / pl_won / cc_won / wcl_won); set w
 
 All four divisions share the same tournament format (see `LeagueSeason.cs` in A5): 7 group matches, top 4 per group → QF → SF → Final.
 
-Pool variants per competition (visual only, same SampleScene):
-- Division 1 → current outdoor pool (existing SampleScene)
+Pool variants per competition (visual only, same match scene — SampleScene_PoolB):
+- Division 1 → current outdoor pool (existing SampleScene_PoolB)
 - Premier League → indoor club pool (future art)
 - Continental Cup → arena pool with crowd (future art)
 - World Champions League → Olympic arena (future art)
@@ -1704,3 +1705,148 @@ top-right).
 - **Intentional COMING SOON stubs (correct as-is, not dead-ends — they show a real feedback overlay):**
   hub FRIENDS / CLUBS / INBOX / GIFTS, RANKING's ELITE/WORLD/FRIENDS/COUNTRY tabs, TeamScreen's
   FORMATIONS/etc., Shop DRAFT TICKETS + EVENT sections. All need real backends and honestly say so.
+
+---
+
+## SESSION LOG — 2026-07-05d (tighter Group Stage standings layout)
+
+Pure spacing/sizing pass on the competition **Group Stage** cards (`NavigationManager.BuildGroupCard` /
+`BuildGroupStageTab` / `MakeGroupRowStrip`). No logic touched — group standings, knockout, VIEW ALL
+expand, the gold MY-TEAM row highlight and tap-to-expand all behave exactly as before.
+
+**What changed (constants only):**
+- `headerH` **46 → 40** (less space around the GROUP A/B + VIEW ALL header bar).
+- `rowH` **34/30 → 28/26** (expanded / collapsed) — shorter rows, less padding around each row's text.
+- `colHeadH` (expanded column-header strip) **28 → 22**.
+- Card bottom padding **+12 → +8**.
+- Inter-card gap (Group A → Group B) **+16 → +10** in `BuildGroupStageTab`.
+- Row-strip inset in `MakeGroupRowStrip` **rowH−4 → rowH−3** (3px inter-row gap, a touch less dead space
+  while rows stay visually separated).
+
+**Net:** a collapsed 5-row card drops ~208px → ~178px tall; an expanded 8-row card ~358px → ~294px, so
+both groups fit far more compactly with the same fonts/columns/colours. All text boxes still clear the
+shorter rows (compact 16pt in a 26px row, full 17pt in 28px, col-header 14pt in 22px, GROUP name 20pt in
+the 40px header).
+
+**Build:** `dotnet build Assembly-CSharp.csproj` → **0 errors** (21 pre-existing warnings, untouched files).
+
+**Slot re-check:** none — all runtime/procedural in `NavigationManager`, no Inspector fields.
+
+**How to test:** Hub → PLAY → a competition in the **GROUP STAGE** phase → the Standings screen opens on
+the GROUP STAGE tab. (1) Both **GROUP A** and **GROUP B** cards should read noticeably tighter — shorter
+rows, less gap around the header and between the two cards — with all 5 collapsed rows (Pos | Team | Pts)
+still legible and your club's row still gold. (2) Tap a card → **VIEW ALL** expands to all 8 teams with the
+full POS/TEAM/P/W/D/L/GD/PTS columns, also compact and aligned; the column header + rows fit without
+overlap. (3) Tap again → **COLLAPSE** back to 5 rows. (4) Scroll the list — both cards stack with the
+smaller gap and nothing clips.
+
+---
+
+## SESSION LOG — 2026-07-06 (SampleScene retired + PoolB-only; exclusion pen markers; crowd fans; cameraman flashes)
+
+**1) SampleScene retired, pool-select removed (reverses 2026-07-05b).** `SampleScene_PoolB` is now the
+ONLY match scene; the SELECT POOL overlay is deleted outright (dead code removed, not hidden).
+- `NavigationManager.cs`: removed `poolSelectOverlay`, `PoolScenes`/`PoolLabels`/`PoolAccents`/
+  `PoolPrefKey`/`selectedPool`/`poolCardFrames` and `OpenPoolSelect`/`BuildPoolSelectContent`/
+  `BuildPoolOption`/`RefreshPoolHighlight`/`ConfirmPoolAndStart`. New `public const string MatchScene =
+  "SampleScene_PoolB"` + `StartMatch()` (records the placeholder result, loads MatchScene); the pre-match
+  **PLAY** button calls it directly again.
+- `MatchResultUI.cs`: PLAY AGAIN → `NavigationManager.MatchScene` (the `LastPoolScene()` /
+  `PlayerPrefs["selected_pool"]` reader is deleted; the old pref key is simply orphaned).
+- `ProjectSettings/EditorBuildSettings.asset`: **SampleScene removed from Build Settings** (edited
+  directly — verify in File → Build Settings: MainMenu, HubScene, SampleScene_PoolB only).
+- `Assets/Editor/AnimatorBuilder.cs`: its "open SampleScene" warning now names SampleScene_PoolB.
+- `SampleScene.unity` still exists on disk untouched — nothing loads it. (`ProjectSettings.asset`
+  `templateDefaultScene` still points at it; editor-only, harmless.)
+
+**2) Exclusion pen markers (ExclusionManager).** Two empty marker objects added to SampleScene_PoolB:
+**`ExclusionSpot_Home` at (−7.2, −4.1)** and **`ExclusionSpot_Away` at (7.2, −4.1)** (bottom pool
+corners — NUDGE THEM onto the exclusion-pen art). `ExclusionManager` gained serialized
+`exclusionSpotHome/Away` Transform slots that auto-find those names at Start and SELF-HEAL (create at
+the same defaults + warn) if a scene lacks them. An excluded player is now parked AT its team's pen
+(replacing the hardcoded (±7, −4) corner) and re-enters FROM the pen, clamped just inside live water
+(x ±6.4 / y ±3.9) so the 2026-07-05 softlock fix can't regress; the pen is matched to a team by which
+half it sits in (x sign vs the team's CURRENT defend goal), so halftime SwapEnds stays correct.
+
+**3) CrowdSpawner.cs (new, Assets/).** At Start, finds every GameObject tagged **FanSeat** and spawns
+one fan sprite per seat (random pick from `[SerializeField] Sprite[] fanVariants` — the art in
+`Assets/Sprites/Pool/fans/` is NOT under Resources, so it must be Inspector-wired), scaled to
+`fanWorldHeight` (0.6u), sorted just above the seat's SpriteRenderer, random flipX, each with a nested
+`FanIdle` sine bob (±0.035u) + sway (±2.5°) at random speed/phase (PackCardFX/PoolLineFloat pattern).
+Empty `fanVariants` or zero tagged seats → a clear console warning, no spawn, no crash. A
+**CrowdSpawner object was added to SampleScene_PoolB** (scene YAML + pre-made script .meta GUID) with
+an EMPTY fanVariants array. ⚠️ The **FanSeat tag is registered but applied to NOTHING yet** — fans
+will not appear until seats are tagged (see the manual steps in the session summary).
+
+**4) CameramanFX.cs (new, Assets/).** Self-bootstrapping (StaminaSystem pattern — no scene object, no
+wiring): on every scene load finds all GameObjects tagged **Cameraman** and runs an independent flash
+loop per cameraman — every 4–10s (re-rolled each flash) a small procedural white radial glow pops at
+the sprite's upper-centre: 0.04s fade-in, 0.18s fade-out with a slight expand. Purely cosmetic. The
+**Cameraman tag did NOT exist** (despite being believed applied): it was registered in
+`TagManager.asset` and applied via scene-YAML edit to the 5 cameraman objects in SampleScene_PoolB
+(cameraman1_0, cameraman2_0, cameraman3_0, cameraman3_0 (1), cameraman4_0).
+
+**Project tags now:** `Ball` (the ball object, read by CameraFollow etc.), `FanSeat` (CrowdSpawner —
+applied to nothing yet), `Cameraman` (CameramanFX — 5 objects in PoolB).
+
+**Build:** `dotnet build Assembly-CSharp.csproj` → **0 errors** (22 pre-existing warnings, untouched
+files; the two new scripts were also added to the csproj so the check compiles them — Unity will
+regenerate it anyway).
+
+**Slot re-check:** Build Settings scene list (above); `ExclusionManager` object → two new optional
+`Exclusion Spot Home/Away` slots (leave empty = auto-find by name); **CrowdSpawner object in
+SampleScene_PoolB → drag fan1..fan8 into `Fan Variants` (REQUIRED — it warns + skips otherwise)**.
+Standard reminder: ExclusionManager's existing `Match Timer` + `Exclusion Text` slots should still be
+filled (script was replaced).
+
+**How to test:** see the 2026-07-06 session summary (per-task steps: hub PLAY flow + PLAY AGAIN both
+land in PoolB with no SELECT POOL; exclusion parks at / re-enters from the markers; fans spawn on
+tagged seats after wiring sprites; cameramen flash every 4–10s).
+
+---
+
+## SESSION LOG — 2026-07-06b (crowd pass 2: multi-fan benches, true seat alignment, breathing idle)
+
+`CrowdSpawner.cs` reworked (nothing else touched — CameramanFX / ExclusionManager / gameplay intact).
+Context discovered first: the 10 FanSeat-tagged objects (bench1–bench10, tagged + sprite-wired by the
+dev since 2026-07-06) render **bench.jpg — a 7-row × ~19-seat grandstand block** (~6.7×3.3u at their
+0.6 scale), and the fan art is a **full seated figure** whose seat-contact point (butt) sits ~⅓ up the
+sprite — both facts drive the new placement math.
+
+**1) Multi-fan distribution.** One fan per bench pivot → `fansPerBench` (new int field, default 4)
+fans spread evenly across the bench SpriteRenderer's rendered `bounds` width (even slots, each fan
+jittered ±15% of its slot in x / ±6% of a row pitch in y — organic, still reads as one row). Benches
+with no SpriteRenderer or ~zero bounds log a warning and are skipped, never crash.
+
+**2) Seat alignment derived from BOTH sprites' bounds (no fixed offsets).** Fans floated because they
+were centred on the bench pivot. Now: the bench art paints `rowsInBenchArt` (7) seat rows, so one
+row's pitch = bounds.height / rows; the seat-surface line is `seatSurface01` (0.48 = middle row) of
+the bounds height; and the fan's `fanSeatAnchor01` (0.34) butt-point — not its feet — is what lands
+on that line (pivot-agnostic: computed via sprite.bounds.min.y), so the legs hang over the bench
+front under the fan's +1 sorting order like a real seated person. Rescale a bench or swap its art →
+everything recomputes.
+
+**3) Proportional scale + breathing idle.** The flat `fanWorldHeight` (0.6u) is GONE; fan height =
+`fanHeightInRows` (1.5) × one row pitch (≈0.71u on the current benches — the visible figure ends up
+≈0.29u wide vs the art's ≈0.35u seats), capped by slot width so a high fansPerBench packs tighter
+instead of overlapping. FanIdle: bob 0.035u fixed → **1.5% of the fan's own height** (≈0.011u), sway
+2.5° → **0.6°**, speed 0.6–0.9Hz → **0.25–0.45Hz** (resting-breath rate). Reads as a living twitch,
+not a hover.
+
+**Scene:** the CrowdSpawner component's stale serialized `fanWorldHeight`/`sortingOrderFallback`
+values were replaced in SampleScene_PoolB.unity with the new defaults; the 8 wired fanVariants
+sprites were preserved untouched.
+
+**Build:** `dotnet build Assembly-CSharp.csproj` → **0 errors** (22 pre-existing warnings).
+
+**Slot re-check (CrowdSpawner object in SampleScene_PoolB):** `Fan Variants` should still show the 8
+sprites (verify — the script was replaced!); new tunables `Fans Per Bench` 4, `Rows In Bench Art` 7,
+`Fan Height In Rows` 1.5, `Seat Surface 01` 0.48, `Fan Seat Anchor 01` 0.34. To seat fans on a
+different row: seat-surface ≈ (rowIndexFromBottom + 0.35) / 7.
+
+**How to test:** enter a match → each tagged bench shows 4 fans in one line across its width, slightly
+uneven spacing, sized so a fan roughly fills one painted seat; fans' bottoms sit ON a seat row (legs
+over the bench front), not floating above/below; watch 10s — movement is a subtle breath, neighbours
+out of sync. Bump `Fans Per Bench` to 12 → tighter row, no overlaps. Un-tag one bench → that bench
+empty, no errors; temporarily tag an empty GameObject → console warns "no SpriteRenderer with usable
+bounds", play continues.
