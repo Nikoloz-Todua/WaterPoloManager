@@ -1,10 +1,10 @@
 fileFormatVersion: 2
-guid: 0ead2d4e47fa361428c8797524b4447f
+guid: 8eff36e16ad9b8f408e825f9dcedc6a1
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: 3457668647397975634
-    second: fan8_0
+      213: 1769898457788661934
+    second: fan3sel_0
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -139,13 +139,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: fan8_0
+      name: fan3sel_0
       rect:
         serializedVersion: 2
-        x: 314
-        y: 57
-        width: 629
-        height: 1153
+        x: 230
+        y: 72
+        width: 572
+        height: 922
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -154,8 +154,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: 2566927b05b1cff20800000000000000
-      internalID: 3457668647397975634
+      spriteID: ea041012541ff8810800000000000000
+      internalID: 1769898457788661934
       vertices: []
       indices: 
       edges: []
@@ -174,7 +174,7 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      fan8_0: 3457668647397975634
+      fan3sel_0: 1769898457788661934
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

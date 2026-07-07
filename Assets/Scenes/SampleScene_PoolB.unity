@@ -967,7 +967,7 @@ GameObject:
   - component: {fileID: 91002193}
   m_Layer: 0
   m_Name: bench9
-  m_TagString: FanSeat
+  m_TagString: FanSeatSide
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -2079,7 +2079,7 @@ GameObject:
   - component: {fileID: 202656557}
   m_Layer: 0
   m_Name: bench5
-  m_TagString: FanSeat
+  m_TagString: FanSeatSide
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -14141,7 +14141,7 @@ GameObject:
   - component: {fileID: 1568105348}
   m_Layer: 0
   m_Name: bench8
-  m_TagString: FanSeat
+  m_TagString: FanSeatBack
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -14371,6 +14371,97 @@ LineRenderer:
   m_UseWorldSpace: 1
   m_Loop: 0
   m_ApplyActiveColorSpace: 1
+--- !u!1 &1574279406
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1574279408}
+  - component: {fileID: 1574279407}
+  m_Layer: 0
+  m_Name: fan8_0
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!212 &1574279407
+SpriteRenderer:
+  serializedVersion: 2
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1574279406}
+  m_Enabled: 1
+  m_CastShadows: 0
+  m_ReceiveShadows: 0
+  m_DynamicOccludee: 1
+  m_StaticShadowCaster: 0
+  m_MotionVectors: 1
+  m_LightProbeUsage: 1
+  m_ReflectionProbeUsage: 1
+  m_RayTracingMode: 0
+  m_RayTraceProcedural: 0
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
+  m_SmallMeshCulling: 1
+  m_ForceMeshLod: -1
+  m_MeshLodSelectionBias: 0
+  m_RenderingLayerMask: 1
+  m_RendererPriority: 0
+  m_Materials:
+  - {fileID: 2100000, guid: a97c105638bdf8b4a8650670310a4cd3, type: 2}
+  m_StaticBatchInfo:
+    firstSubMesh: 0
+    subMeshCount: 0
+  m_StaticBatchRoot: {fileID: 0}
+  m_ProbeAnchor: {fileID: 0}
+  m_LightProbeVolumeOverride: {fileID: 0}
+  m_ScaleInLightmap: 1
+  m_ReceiveGI: 1
+  m_PreserveUVs: 0
+  m_IgnoreNormalsForChartDetection: 0
+  m_ImportantGI: 0
+  m_StitchLightmapSeams: 1
+  m_SelectedEditorRenderState: 0
+  m_MinimumChartSize: 4
+  m_AutoUVMaxDistance: 0.5
+  m_AutoUVMaxAngle: 89
+  m_LightmapParameters: {fileID: 0}
+  m_GlobalIlluminationMeshLod: 0
+  m_SortingLayerID: 0
+  m_SortingLayer: 0
+  m_SortingOrder: 2
+  m_MaskInteraction: 0
+  m_Sprite: {fileID: 3457668647397975634, guid: 0ead2d4e47fa361428c8797524b4447f, type: 3}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_FlipX: 0
+  m_FlipY: 0
+  m_DrawMode: 0
+  m_Size: {x: 6.29, y: 11.53}
+  m_AdaptiveModeThreshold: 0.5
+  m_SpriteTileMode: 0
+  m_WasSpriteAssigned: 0
+  m_SpriteSortPoint: 0
+--- !u!4 &1574279408
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1574279406}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 4.98, y: -5.49, z: 0}
+  m_LocalScale: {x: 0.05, y: 0.05, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!4 &1574390571 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 5880322798823911524, guid: 38bdbf61c2a168542bc5ea7645eb4f78, type: 3}
@@ -15464,7 +15555,7 @@ GameObject:
   - component: {fileID: 1747668031}
   m_Layer: 0
   m_Name: bench10
-  m_TagString: FanSeat
+  m_TagString: FanSeatBack
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -17105,7 +17196,7 @@ GameObject:
   - component: {fileID: 1818885726}
   m_Layer: 0
   m_Name: bench6
-  m_TagString: FanSeat
+  m_TagString: FanSeatBack
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -17486,7 +17577,7 @@ GameObject:
   - component: {fileID: 1863290544}
   m_Layer: 0
   m_Name: bench7
-  m_TagString: FanSeat
+  m_TagString: FanSeatBack
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -17900,11 +17991,72 @@ MonoBehaviour:
   - {fileID: 2200464177630190127, guid: e9fbd00017944bc408eb57cbe67e8b77, type: 3}
   - {fileID: 577099800707072527, guid: fd28a969d4bb8b542bf00603143cb4a9, type: 3}
   - {fileID: 3457668647397975634, guid: 7ce448433c5c35b409da33c409061da4, type: 3}
-  fansPerBench: 4
+  fanVariantsBack:
+  - {fileID: -6437429725981760253, guid: 02f765cca1f36774b989484c6a2a4497, type: 3}
+  - {fileID: -6518624834322818887, guid: d94f78e45ad713c48a284f759b1291dd, type: 3}
+  - {fileID: 1455596095666658247, guid: 7d715eaead68c894fa2c9df73d7bb6d5, type: 3}
+  - {fileID: 6241914999140418538, guid: 4571a991c5f0b1f4f9b59e347fe9f332, type: 3}
+  - {fileID: 4604812271768959672, guid: d0daa9c69f0fbfd4d999f7514769604c, type: 3}
+  - {fileID: 2600271268855095806, guid: 2db0b8a98b5701e4ba9ba7d68ac3cf7e, type: 3}
+  - {fileID: 884020108480729248, guid: d4174c5ed0bfa444db13910413198dd3, type: 3}
+  - {fileID: 6124909676995984680, guid: f7a590adc779b5d47bf21333ee6a829e, type: 3}
+  fanVariantsSide:
+  - {fileID: 6268598878345750437, guid: d06309e46db55f146bb8f8077d785a6a, type: 3}
+  - {fileID: 8633978177866443796, guid: 898de83407dbec947bd6df89fcae21da, type: 3}
+  - {fileID: -7717291753678236092, guid: dda631a9286663a45930f6223a1ac77e, type: 3}
+  - {fileID: 2461648161933385343, guid: 2eff5923331a89444960b8da7abc98b2, type: 3}
+  - {fileID: 3173343119906942777, guid: 6437ed64591ab914f90025d61ccfcf23, type: 3}
+  - {fileID: 6941731040655281735, guid: 81d296fd0d128b246b1b270f9b394232, type: 3}
+  - {fileID: -2172732154404119565, guid: 2421991430b8e0d42982901c39348ae7, type: 3}
+  - {fileID: -7994197491229249408, guid: 46b35c0b87efa2c4cbf4dce5b03f1dd5, type: 3}
+  fansPerBench: 70
   rowsInBenchArt: 7
-  fanHeightInRows: 1.5
-  seatSurface01: 0.48
+  columnsInBenchArt: 20
+  frontFanHeightInRows: 1.5
+  backFanHeightInRows: 1.75
+  sideFanHeightInRows: 1.5
+  frontSeatLineInRow01: 0.35
+  backSeatLineInRow01: 0.35
+  sideSeatLineInRow01: 0.42
   fanSeatAnchor01: 0.34
+  backScaleOverride:
+  - 1
+  - 1
+  - 1
+  - 1.15
+  - 1
+  - 1
+  - 1.13
+  - 1.09
+  backOffsetOverride: []
+  fanVariantsFrontCele:
+  - {fileID: 4612109226086366417, guid: add173117d2d46a479518f7486ccc5cf, type: 3}
+  - {fileID: 5220311252329821197, guid: 9846586e48643114295aee1a9478212b, type: 3}
+  - {fileID: 1769898457788661934, guid: 8eff36e16ad9b8f408e825f9dcedc6a1, type: 3}
+  - {fileID: -3112738061080549634, guid: 10180eb07bbc48a49a1895304209cf31, type: 3}
+  - {fileID: -4136514048821401005, guid: db5732c9a472d5046ab17907df38bb85, type: 3}
+  - {fileID: 3268765895263013897, guid: 019fd75b4a8865b4c8e34878b60e7770, type: 3}
+  - {fileID: 1690764164407297063, guid: c6292c8009ca8ae4fabe19b8ca95304f, type: 3}
+  - {fileID: -9192814267134671754, guid: 58bf27a7385c7254e8a2f927fa46f66e, type: 3}
+  fanVariantsBackCele:
+  - {fileID: 1639007913822603106, guid: 2a999d8c5b7742442ba0d3dcf7b201b3, type: 3}
+  - {fileID: -2695384997218610684, guid: b575e35f852a85b4f8357faae00b1966, type: 3}
+  - {fileID: -1006625244968358353, guid: 1554b302a3b5bca45a7babc23c6d4e95, type: 3}
+  - {fileID: -8424131329542590727, guid: 611d1e7e9f7da6e40b60c7acd3a21d94, type: 3}
+  - {fileID: -6949962783030483757, guid: eddb3f36c02743e4db9c3c91b98a71c1, type: 3}
+  - {fileID: -784754849929402936, guid: 02f27c0c00b60364b8ebada9f38346cc, type: 3}
+  - {fileID: -600756523260065627, guid: 80785efd31e0dfb49bfdcc234bec4213, type: 3}
+  - {fileID: 5904103426654644467, guid: ea1dec45284fe1a40a236f882b042732, type: 3}
+  fanVariantsSideCele:
+  - {fileID: 7203793949998927444, guid: c62752bf7afc9bb41a9c30e3fc340bb6, type: 3}
+  - {fileID: -3345018582767864780, guid: 02e3ce5e296d53d4a9cf9ffd637034d7, type: 3}
+  - {fileID: -8243277797339567414, guid: ad973b36d1c6be34c8a9d3e804071093, type: 3}
+  - {fileID: -1992956648670046881, guid: 56939db4793bf064093ae665812d1a2b, type: 3}
+  - {fileID: 3886215344445077358, guid: c1f0ca88b219d7e4a99d3c48e788ef27, type: 3}
+  - {fileID: -998703403048319496, guid: 8b4c7926a782c404ebfc632b5747d86f, type: 3}
+  - {fileID: -7902127661773348962, guid: efa8864bd71fe7c4c9cc3253096180dd, type: 3}
+  - {fileID: -1828511901565167100, guid: 1be605d8735a38d458e2d1057bc12ec1, type: 3}
+  celebrateSeconds: 3.5
 --- !u!1 &1910122124
 GameObject:
   m_ObjectHideFlags: 0
@@ -19316,3 +19468,4 @@ SceneRoots:
   - {fileID: 1900000102}
   - {fileID: 1900000104}
   - {fileID: 1900000106}
+  - {fileID: 1574279408}

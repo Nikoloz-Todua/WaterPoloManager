@@ -1850,3 +1850,354 @@ over the bench front), not floating above/below; watch 10s — movement is a sub
 out of sync. Bump `Fans Per Bench` to 12 → tighter row, no overlaps. Un-tag one bench → that bench
 empty, no errors; temporarily tag an empty GameObject → console warns "no SpriteRenderer with usable
 bounds", play continues.
+
+---
+
+## SESSION LOG — 2026-07-07 (crowd bug hunt: side-array "wrong sprites" was a misdiagnosis; back-fan size = inconsistent art + a tuning knob)
+
+Two reported bugs in the three-stand `CrowdSpawner` (front/back/side) from 2026-07-06/07.
+Investigation only for BUG 1 (no fix needed); one additive code field for BUG 2. **Only
+`CrowdSpawner.cs` changed** — no scene YAML, no import settings, no other files.
+
+**BUG 1 — "wrong sprites in `fanVariantsSide` (Element 6 = `fan9_0`, Element 7 = `fam8left_0`)" was a MISDIAGNOSIS. Nothing was wired wrong.**
+- On disk `Assets/Sprites/Pool/fans/side/` holds EXACTLY 8 correctly-named files, `fanSideL1.png`
+  … `fanSideL8.png`, no typos. A project-wide search found **no** `fan9`, `fam8`, `fan8left`
+  file anywhere — the names the Inspector showed do not exist as assets.
+- Root cause: **every** fan PNG (front, back AND side) imports as **`spriteMode: 2` (Multiple)**
+  with a single auto-generated sub-sprite, and the Inspector shows that sub-sprite's *internal
+  name*, not the file name. Those names are inconsistent leftovers from the source art:
+  `fanSideL1..L6` → `fan1left_0..fan6left_0`, but **`fanSideL7` → `fan9_0`** and **`fanSideL8`
+  → `fam8left_0`** (a stray index and a `fam`/`fan` typo baked into the meta's sprite name).
+  So Element 6/7 correctly reference `fanSideL7.png`/`fanSideL8.png` — only their display
+  labels look wrong. (The array is even in the right order, L1→L8.)
+- **Content verified by eye:** opened `fanSideL7.png` (yellow shirt) and `fanSideL8.png` (blue
+  shirt) — both are correct left-profile seated fans, identical framing/orientation to the
+  known-good `fanSideL1.png`. Not the "old back-facing test sprite" that was feared.
+- **No rewire, no code change.** Optional tidy-up (NOT done, would break the current drag refs
+  → user re-drags): reimport those PNGs as Sprite Mode = Single, or rename the sub-sprites in
+  the Sprite Editor, so the Inspector shows sane names.
+- **⚠️ Discovered while looking: the `fanVariantsBack` / `fanVariantsSide` wiring is NOT saved to
+  `SampleScene_PoolB.unity`.** The `CrowdSpawner` MonoBehaviour on disk still serializes only
+  the OLD field set (`fanVariants` + pre-rework `rowsInBenchArt/fanHeightInRows/seatSurface01/
+  fanSeatAnchor01`, plus the hand-edited `fansPerBench: 70`) — no `fanVariantsBack`,
+  `fanVariantsSide`, `columnsInBenchArt`, `seatLineInRow01`. The back/side arrays exist only in
+  the live (unsaved) Unity session, which is why the back fans were visible in-game but absent
+  from the file. **Action required: Ctrl+S the scene** so the wiring + new fields persist.
+
+**BUG 2 — inconsistent apparent size across `fanVariantsBack` fans is an ART problem, not a code problem. Root cause CONFIRMED with measurements:**
+- CrowdSpawner scales every fan so its sub-sprite RECT maps to one fixed world height
+  (`fanHeightInRows × rowPitch`), i.e. it normalizes on `sprite.bounds.size.y`. That is only
+  uniform if each PNG frames its character at the same scale/aspect. The **front** stand does
+  (all 8 are 1254² canvases, rects ~540×~1130, aspect ~0.48 → uniform, which is why front
+  looked right). The **back** stand does NOT:
+  - Canvas sizes are mixed: `fanBack1` 1254², `fanBack3` 1024², the other six 500².
+  - `fanBack1` is a **legless upper-body crop** (character bbox 843×864, aspect ~0.98) → renders
+    as an oversized broad torso.
+  - `fanBack3` is a full cross-legged figure **wrapped in a glow/aura** that inflates its alpha
+    bounds (bbox 669×648 inside a 939-tall rect, fill ~0.69) → the person renders too small AND
+    carries a visible halo.
+  - The six 500² fans (`fanBack2,4,5,6,7,8`) are a fairly consistent seated cluster (fill
+    ~0.72–0.83, aspect ~0.69–0.92).
+  A single array-wide factor can't reconcile a legless crop, an aura'd figure and clean seated
+  figures — the differences are per-sprite pose/framing, not a uniform offset.
+- **Fix shipped (additive, zero behavior change by default):** new `[SerializeField] float[]
+  backScaleOverride` — an optional per-element size multiplier for the **back stand only**
+  (same index as `fanVariantsBack`: element 0 = fanBack1 … element 7 = fanBack8). Empty, or any
+  element ≤ 0, means 1. Applied after the width cap and before the seat anchor so a tuned value
+  visibly resizes the fan and it still sits correctly. Front/side pass `null` (untouched).
+- **Real recommendation: regenerate the two outliers** `fanBack1` (frame the FULL seated figure
+  like the others, not a legless crop) and `fanBack3` (drop the glow aura; a 500²-ish clean
+  canvas) to match the six-fan cluster. The override is the stop-gap if regenerating isn't
+  practical. Measured starting values (equalising fill to the ~0.77 cluster median; expect to
+  tune by eye): fanBack1 ≈ 0.75, fanBack3 ≈ 1.15, fanBack7 ≈ 1.05, the rest ≈ 0.95–1.0. These
+  correct HEIGHT only — they can't fix fanBack1's missing legs or fanBack3's halo.
+- **Side stand has a milder version of the same issue** (`fanSideL1/L2/L7` are 1024² with
+  ~900–930 rects vs the ~1150 cluster) — left alone this session (BUG 2 was scoped to back). Say
+  the word and I'll add a matching `sideScaleOverride`.
+
+**Build:** `dotnet build Assembly-CSharp.csproj` → **0 errors** (22 pre-existing warnings, untouched files).
+
+**Slot re-check (CrowdSpawner object in SampleScene_PoolB):** the script was edited, so confirm
+`Fan Variants` still holds the 8 front sprites and `Fan Variants Back` / `Fan Variants Side` still
+hold their 8 each. A new **`Back Scale Override`** array appears (leave EMPTY = every back fan at
+size 1; fill 8 elements only when tuning). **Then Ctrl+S the scene** — per BUG 1 above, the
+back/side arrays and the renamed fields are not yet on disk.
+
+**How to test:** enter a match. BUG 2 knob — set `Back Scale Override` size 8, put `fanBack1` = 0.75
+and `fanBack3` = 1.15 (rest 1), Play → those two back fans should read closer in size to the seated
+cluster (fanBack1 no longer a giant torso; fanBack3 less tiny, though its halo remains until the art
+is regenerated). Set the array back to empty → identical to before (default all-1). BUG 1 — the side
+stand's fans are correct; if their Inspector names still read `fan9_0`/`fam8left_0`, that's cosmetic.
+
+---
+
+## SESSION LOG — 2026-07-07b (side fans faced OUTWARD: art-direction assumption was backwards; per-stand fan-height fields)
+
+Two changes to `CrowdSpawner.cs` only — nothing else touched.
+
+**BUG — side-stand fans didn't face the pool. ROOT CAUSE = a backwards art-direction assumption,
+NOT a comparison bug.** Investigated before touching code:
+- **Art direction confirmed by eye:** opened `fanSideL1/L3/L7/L8.png` — every side fan is a
+  profile figure that **faces RIGHT** when rendered unflipped. The 2026-07-06b code (and its
+  comment) assumed the side art was **LEFT-facing** ("mirrors the left-facing art to face right").
+  That single wrong assumption inverted the whole flip.
+- **The comparison was NOT the problem — it correctly distinguished the two benches.** Measured
+  from the scene: `PoolWater` centre ≈ **x +0.53** (transform x 0.53, has a SpriteRenderer so
+  `PoolCenterX()` resolves), `bench5` (left side stand) at **x −11.35**, `bench9` (right side
+  stand) at **x +11.87** — they straddle the pool centre cleanly. So `world.center.x < PoolCenterX()`
+  gave bench5 = true, bench9 = false (two different values, per-bench, never overwritten).
+- **Net effect of the old code:** art faces right, bench5 got flipX=**true** → faced LEFT (outward,
+  pool is to its right); bench9 got flipX=**false** → faced RIGHT (outward, pool is to its left).
+  Both stands faced AWAY from the water (opposite directions, both wrong).
+- **FIX (one operator):** `bool mirror = faceThePool && world.center.x > PoolCenterX();` (was `<`) +
+  the comment rewritten to state the art faces right. Now bench5 (left, x<centre) → flipX=false →
+  faces right/inward; bench9 (right, x>centre) → flipX=true → faces left/inward. Both look at the pool.
+- **Debug-log step:** the requested temporary `Debug.Log` of (bench name, center.x, poolCenterX,
+  flipX) was NOT left in the shipped code (kept clean). Diagnosis was done statically from the
+  actual art + scene coordinates, which is conclusive here. Drop-in snippet for the dev to confirm
+  in Play mode is in this session's chat summary; predicted output: `bench5 center.x=-11.35
+  poolCenterX=0.53 flipX=false`, `bench9 center.x=11.87 poolCenterX=0.53 flipX=true` (post-fix).
+
+**SEPARATE — back fans read too small; added PER-STAND base height (so it isn't 8 manual overrides).**
+- Replaced the single shared `fanHeightInRows` (1.5) with three fields: **`frontFanHeightInRows` 1.5**,
+  **`backFanHeightInRows` 1.75** (bumped ~17%), **`sideFanHeightInRows` 1.5**. Front/side behaviour is
+  unchanged (same 1.5); only the back stand grows. Threaded per-tag through `SpawnCrowd`/`SpawnBenchFans`
+  as `heightInRows`.
+- The 2026-07-07 `backScaleOverride` array is UNTOUCHED and still layers on top per-sprite (for the
+  `fanBack1`/`fanBack3` art outliers). So back sizing is now: `backFanHeightInRows` (whole stand) ×
+  `backScaleOverride[i]` (per sprite, default 1).
+
+**Build:** `dotnet build Assembly-CSharp.csproj` → **0 errors** (22 pre-existing warnings, untouched files).
+
+**Slot re-check (CrowdSpawner object in SampleScene_PoolB) — the script was replaced:**
+- Confirm `Fan Variants` (8 front), `Fan Variants Back` (8), `Fan Variants Side` (8) survived, and
+  `Back Scale Override` is still whatever you set (empty by default).
+- The old single **`Fan Height In Rows`** field is GONE; three new fields appear —
+  **`Front Fan Height In Rows` = 1.5**, **`Back Fan Height In Rows` = 1.75**, **`Side Fan Height In Rows`
+  = 1.5**. They take these code defaults automatically (the scene never stored the new names). If the
+  back fans end up too big/small, tune `Back Fan Height In Rows` here.
+- ⚠️ Same standing note as 2026-07-07: the `Fan Variants Back`/`Side` arrays are STILL not saved to
+  `SampleScene_PoolB.unity` on disk (the component there still serialises only the old field set) —
+  **Ctrl+S the scene** so the wiring + new fields persist.
+
+**How to test:** enter a match. (1) FACING — the LEFT side stand's fans now look RIGHT (toward the
+water) and the RIGHT side stand's fans look LEFT (toward the water); the two stands mirror each other
+instead of both facing outward. (2) SIZE — back-stand fans are ~17% taller than before; adjust `Back
+Fan Height In Rows` up/down to taste, with `Back Scale Override` still available for the fanBack1/3
+outliers.
+
+---
+
+## SESSION LOG — 2026-07-07c (crowd polish: per-stand seat line, back position-override, taller back fans, breathing idle)
+
+Four tuning/authoring changes to `CrowdSpawner.cs` only — nothing else touched. All additive or
+Inspector-tunable; front sizing/position untouched.
+
+**TASK 1 — per-stand seat line.** The single `seatLineInRow01` (0.35) is split into
+**`frontSeatLineInRow01` 0.35 / `backSeatLineInRow01` 0.35 / `sideSeatLineInRow01` 0.42**, threaded
+per-tag like the height fields. Front/back keep 0.35 (unchanged); side is raised to 0.42 so side fans
+seat deeper into their row band instead of floating near its edge. Starting point — tune in Inspector.
+
+**TASK 2 — per-fan position nudge for the back stand.** New **`Vector2[] backOffsetOverride`**,
+index-matched to `Fan Variants Back` (element 0 = fanBack1 … 7 = fanBack8), default all (0,0) = no
+change. Applied as an extra local nudge after normal grid placement: `pos += (off.x, off.y) × the
+fan's render scale` on screen X/Y (fans are world-upright), so a value stays proportional if the back
+height is retuned. Same optional/layered pattern as `backScaleOverride`. Intended use: set element 3
+(fanBack4) to something like (0, -0.15) after eyeballing it in-game.
+
+**TASK 3 — back fans taller.** `backFanHeightInRows` default **1.75 → 1.95** (back art frames the
+figure small; still a starting point, Inspector-tunable). `backScaleOverride` + `backOffsetOverride`
+still layer per-sprite on top.
+
+**TASK 4 — FanIdle reads as breathing, not floating.** The old idle was a position-only Y sine bob +
+sway. Now one breath cycle drives BOTH the vertical bob (kept, 1.5% of height) AND a **Y-scale pulse
+(±1.5% of base Y scale)** — the torso lengthening/shortening reads as a chest rising/falling instead of
+levitation. **Desync investigation (as asked):** the per-fan phase was ALREADY fully random (0..2π), so
+phase was never the sync culprit — the crowd read as one collective pulse because every fan did the
+identical position-only motion in a narrow **0.25-0.45 Hz** band. Fix diversifies the *character*: adds
+the scale breath, widens the rate band to **~0.18-0.55 Hz**, and gives the sway its **own** random phase
+(was a fixed +1.3 offset). Neighbours now visibly breathe out of step. Amplitudes stay deliberately
+subtle (a living twitch, not a bounce).
+
+**Build:** `dotnet build Assembly-CSharp.csproj` → **0 errors** (22 pre-existing warnings, untouched files).
+
+**New / changed Inspector fields (CrowdSpawner object in SampleScene_PoolB) — the script was replaced, re-check:**
+- **`Back Fan Height In Rows`** default **1.95** (was 1.75). `Front`/`Side Fan Height In Rows` unchanged at **1.5**.
+- **`Front Seat Line In Row 01`** = **0.35**, **`Back Seat Line In Row 01`** = **0.35**, **`Side Seat Line
+  In Row 01`** = **0.42** (these replace the old single `Seat Line In Row 01`, which is GONE).
+- **`Back Offset Override`** = new `Vector2[]`, **empty by default** (all (0,0)). Fill 8 elements only when
+  nudging a specific back fan (e.g. element 3 = fanBack4).
+- Unchanged and should survive: `Fan Variants` / `Fan Variants Back` / `Fan Variants Side` (8 each),
+  `Back Scale Override`, `Fans Per Bench` 70, `Rows/Columns In Bench Art` 7/20, `Fan Seat Anchor 01` 0.34.
+- All new fields take these code defaults automatically (the scene never serialized the new names).
+- ⚠️ Same standing note: the `Fan Variants Back`/`Side` arrays are STILL not saved to
+  `SampleScene_PoolB.unity` on disk — **Ctrl+S the scene** so the wiring + all the new fields persist.
+
+**How to test:** enter a match. (1) Side fans should sit a touch lower/deeper in their seats (tune
+`Side Seat Line In Row 01`). (2) Back fans are noticeably taller (~1.95). (3) Watch the crowd ~10s — it
+should read as many people breathing (subtle chest rise/fall, out of sync), not a synchronized float; if
+one back fan (e.g. fanBack4) sits wrong, set its `Back Offset Override` element to nudge it. (4) With
+`Back Offset Override` empty and side seat line back at 0.35, behaviour matches the previous session.
+
+---
+
+## SESSION LOG — 2026-07-08 (goal-celebration poses; breathing idle take 2; back-size measurement; two serialization gotchas surfaced)
+
+Big session — one new feature + three fixes, all in `CrowdSpawner.cs`, plus one safe scene-YAML
+float edit. Also surfaced two important truths about scene state (below).
+
+**⚠️ SCENE-STATE TRUTHS found while investigating (read these — they explain a lot):**
+- The dev DID finally save the scene since 2026-07-07c, so `SampleScene_PoolB.unity` now serializes
+  the back/side arrays + all the per-stand fields. Good.
+- BUT the scene serializes **`backFanHeightInRows: 1.75`, NOT the 1.95** I set as the code default in
+  2026-07-07c — the [[serialization gotcha]]: the field was already materialised at 1.75 (from
+  2026-07-07b) in the dev's session, so the 1.95 code default never applied, and the save wrote 1.75.
+  **Last session's height bump effectively never happened** — that's a big part of why back fans "still
+  read too small." To actually get 1.95 (or bigger), set **`Back Fan Height In Rows`** in the Inspector.
+- The back-fan PNGs are **byte-identical to last session** — `fanBack1` was NOT regenerated (still the
+  legless upper-body crop) and `fanBack3` NOT regenerated (still the glow/aura figure). `backScaleOverride`
+  was still `[]`. So the "already-fixed fanBack1/fanBack3" issue was never actually fixed in the art.
+
+**TASK 1 — GOAL CELEBRATION POSES (new feature).** Three new `Sprite[]` arrays —
+`fanVariantsFrontCele` / `fanVariantsBackCele` / `fanVariantsSideCele` (empty; dev drags in the 24
+`*Cele1..8` sprites) — plus `celebrateSeconds` (3.5). Every spawned fan is registered per-stand with
+its seated sprite + its SAME-INDEX cheer sprite. Goal detection is a **poll of
+`ScoreManager.Instance.HomeScore + AwayScore`** each frame (rises = a goal) — chosen over editing
+ScoreManager so the scoring/goal code is untouched and everything stays inside CrowdSpawner. On a goal,
+**each stand independently** flips ~50% of ITS OWN fans (per-fan coin flip) to the same-index cheer
+sprite (identity/colour preserved, only the SpriteRenderer's sprite swaps — flipX/scale/position kept),
+then reverts after `celebrateSeconds` (unscaled time, so the goal-hang freeze can't strand a pose).
+**Overlapping goals = CLEAN RESTART (my choice):** a second goal seats everyone still cheering, re-picks
+a fresh ~half of each stand, and resets the timer — a flurry of goals can never leave fans stuck or
+double-swapped. A stand whose cele array is empty simply never cheers (no crash).
+
+**TASK 2 — breathing idle, take 2 (still floated last time).** Root of the "floating on water" read =
+whole-body vertical translation. Cut it hard and leaned on the scale breath (numbers as asked):
+- **`BobFraction` (position bob) 0.015 → 0.004** (= 26.7% of the old value — bottom of the "25-30%" ask).
+- **`ScalePulseFrac` (Y-scale breath) 0.015 → 0.025** (up 67%, now carries the "alive" read).
+The chest now visibly rises/falls in place while the body barely translates. Sway (0.6°, own random
+phase) and the 0.18-0.55 Hz band are unchanged from 2026-07-07c.
+
+**TASK 3 — back-size outliers, MEASURED (not eyeballed).** Method as before: sub-sprite rect height
+(import) vs the character's alpha-bbox height → fill = charH/rectH = apparent rendered size (the spawner
+normalises every fan to a constant rect height, so fill IS the on-screen size). Current 8:
+
+| fan | canvas | rect h | char h | fill (apparent size) |
+|---|---|---|---|---|
+| fanBack1 | 1254² | 869 | 864 | **0.994 — LARGEST** (legless crop, huge bbox) |
+| fanBack2 | 500² | 500 | 396 | 0.792 |
+| fanBack3 | 1024² | 939 | 648 | **0.690 — smallest** (aura inflates bounds) |
+| fanBack4 | 500² | 499 | 360 | 0.721 |
+| fanBack5 | 500² | 487 | 386 | 0.793 |
+| fanBack6 | 500² | 480 | 400 | 0.833 (cluster top) |
+| fanBack7 | 500² | 488 | 360 | 0.738 |
+| fanBack8 | 500² | 496 | 380 | 0.766 |
+
+**The measurement CONTRADICTS the perception on fanBack1:** it is the BIGGEST by geometry, not too small —
+scaling it up makes a bigger legless torso. Its "reads wrong/small" is the missing-legs framing → needs
+art REGEN, not a scale bump; I left its override at 1.0. Genuinely undersized (below the ~0.78 median,
+excluding the two framing outliers) are **fanBack4, fanBack7, fanBack8**; I set `backScaleOverride` to
+lift them to ~the cluster top (0.833): **fanBack4 → 1.15, fanBack7 → 1.13, fanBack8 → 1.09** (measurement
+flagged fanBack4 too, even though the dev listed it only for position — see Task 4). `fanBack3` left at
+1.0 (scaling the aura'd figure just enlarges the halo → regen). Set in the scene YAML directly
+(`backScaleOverride` is a float array — safe to hand-edit, unlike sprite object-refs).
+
+**TASK 4 — fanBack4 position nudge: LEFT FOR THE DEV (needs eyes I don't have).** `backOffsetOverride`
+stays `[]` (untouched). The dev sets it: CrowdSpawner Inspector → **`Back Offset Override`** → Size **8**
+→ **Element 3** (fanBack4) → try around **(0.1, -0.1)** — POSITIVE X = right, NEGATIVE Y = down/back —
+and tune by eye. (Element 3 also now has a 1.15 size override from Task 3; size and position are
+independent — zero either if you disagree.)
+
+**Build:** `dotnet build Assembly-CSharp.csproj` → **0 errors** (22 pre-existing warnings, untouched files).
+
+**Inspector / scene checklist (CrowdSpawner in SampleScene_PoolB — script replaced, re-check):**
+- **DRAG IN 24 CELEBRATE SPRITES** (empty until you do → fans just don't cheer):
+  - `Fan Variants Front Cele` ← `fanFrontCele1..8` from `Assets/Sprites/Pool/fans/front/celebrate/`
+  - `Fan Variants Back Cele` ← `fanBackCele1..8` from `.../back/celebrate/`
+  - `Fan Variants Side Cele` ← `fanSideLCele1..8` from `.../side/celebrate/`
+  - order MUST match the base arrays (element 0 = the fanFront1/fanBack1/fanSideL1 person).
+- **`Celebrate Seconds`** = 3.5 (new, code default).
+- **`Back Scale Override`** now = `[1, 1, 1, 1.15, 1, 1, 1.13, 1.09]` (set in the scene this session). If
+  your open Unity session shows it EMPTY, reload the scene (File → revert) OR type those 8 values in.
+- **`Back Fan Height In Rows`** currently **1.75** in the scene — NOT the 1.95 intended last session
+  (gotcha above). If the whole back stand still reads small, bump this in the Inspector (~1.95+).
+- **`Back Offset Override`** stays empty — set Element 3 per Task 4.
+- Bob-amplitude change is in code (const), nothing to wire.
+
+**How to test:** (1) CELEBRATION — score a goal: ~half of each stand (front/back/side, independently)
+pops the cheer pose for 3.5s, then sits back down; identity/colour unchanged, side fans still face the
+pool. Score two goals fast → it cleanly restarts (fresh half, no stuck poses). (2) BREATHING — watch a
+stand ~10s: chests rise/fall roughly in place, almost no whole-body float, out of sync. (3) SIZE —
+fanBack4/7/8 read a bit bigger; fanBack1 is unchanged (it needs art regen, not scaling). (4) fanBack4
+position — after you set `Back Offset Override[3]`, it shifts right + down/back.
+
+---
+
+## SESSION LOG — 2026-07-08b (back-size cap ROOT-CAUSED + fixed; energetic celebration anim; subtle ball-tracking tilt)
+
+Three changes, `CrowdSpawner.cs` only. No scene edits this session.
+
+**TASK 1 — WHY raising `Back Fan Height In Rows` did nothing, and the fix. PLAINLY: the width cap was
+eating it.** The spawner sizes each fan to `heightInRows × rowPitch` tall, THEN (from the single-row era)
+clamped the scale so the fan is never wider than one seat cell:
+`if (rowsRunVertical) scale = Mathf.Min(scale, seatPitch / sprite.bounds.size.x)`. `rowsRunVertical` is
+true for BOTH front and back (only side is false), so **the cap applied to the back stand**. The back
+PNGs have ~square sub-sprite bounds (rect aspect ≈ 1.0 — measured last session) sitting in ~square seat
+cells, so "no wider than one cell" ≈ "no taller than one row": the cap silently clamped every back fan
+back down to ~1 row tall NO MATTER what `backFanHeightInRows` was (1.75, 1.95, anything). Front was
+unaffected because front art is TALL (rect aspect ≈ 0.48) so its 1.5× height stays within the one-cell
+width budget. **Fix:** the width cap is now per-stand via a new `capWidth` arg — **true only for FRONT**;
+BACK and SIDE pass false (side already had no cap because its seats run vertically). Back fans now honour
+`backFanHeightInRows` in full. Trade-off (documented, expected): because scale is uniform, a taller back
+fan is also wider, so back fans may now overlap horizontally — reads as a *packed* stand; dial
+`Back Fan Height In Rows` (or `Fans Per Bench`) down if it's too dense. Chose "extend the side exemption
+to back" over a tunable cap knob, per the dev's steer + the repeated "bigger back fans" ask.
+
+**TASK 2 — celebration is now genuinely energetic, not "idle but bigger".** `FanIdle` got a second mood.
+While a fan holds its cheer pose (`celebrating`, set/cleared by CrowdSpawner's PickHalf/RevertActive) it
+switches to ENERGETIC constants and reverts to calm when the window ends:
+| param | calm idle | celebrating |
+|---|---|---|
+| Y-scale bounce | 0.025 | **0.10** |
+| rotation wobble | 0.6° | **7°** |
+| position hop | 0.004 | **0.03** |
+| oscillation rate | ×1 | **×5** |
+Reads as an excited bounce + wobble for the 3.5s, then settles. (Celebration trigger/array wiring
+untouched, as instructed.)
+
+**TASK 3 — subtle ball-tracking tilt (FRONT + BACK only; NOT side).** Each front/back fan adds a small
+Z-tilt LEANING toward the ball's side, layered on top of the idle sway/breath: `dx = ballX − fanX`,
+`tilt = −MaxTiltDeg · dx / sqrt(dx² + TiltRef²)` — a smooth (not hard-clamped) saturation, `MaxTiltDeg
+= 6°` (dev's 5-8° range), `TiltRef = 6u` (a ball ~6u off-centre → ~0.71 of max). Reads as "the crowd
+follows the game," subtle. Side fans set `trackBall = false` (they're ~90°-rotated art — different math,
+out of scope). **Performance (as asked):** the ball position is read from `MatchContext.Instance.BallPosition`
+**once per frame** in `CrowdSpawner.Update` and cached in a static (`sBallX`); the ~700 `FanIdle.Update`
+calls each do just a subtract + one `sqrt` + a couple multiplies off that cached float — no per-fan
+`MatchContext.Instance`, no allocation. Ball X source is the same transform-aware `BallPosition` the
+camera/keeper use (correct while the ball is held, not just simulated).
+
+**Build:** `dotnet build Assembly-CSharp.csproj` → **0 errors** (22 pre-existing warnings, untouched files).
+
+**Inspector / scene:** NO new serialized fields this session — the tuning lives in `FanIdle` consts
+(celebration energy, tilt) and one internal `capWidth` arg. Nothing new to wire. (Still outstanding from
+2026-07-08: drag in the 24 `*Cele` sprites for celebrations to show; `Back Scale Override` =
+`[1,1,1,1.15,1,1,1.13,1.09]`; set `Back Offset Override[3]` for fanBack4.) If the celebration bounce /
+tilt magnitudes want tuning, they're the `Cele*` / `MaxTiltDeg` / `TiltRef` consts in `FanIdle`.
+
+**How to test:** (1) BACK SIZE — with `Back Fan Height In Rows` at 1.95, back fans are now visibly taller
+(they were stuck ~1 row before); raise/lower it and the back stand actually responds. (2) CELEBRATION —
+score: ~half of each stand bounces + wobbles energetically for 3.5s, then calms. (3) TILT — move the ball
+across the pool and watch a front/back stand: fans lean slightly toward the ball's side (max ~6°); side
+stands don't tilt. If the lean direction feels inverted, flip the sign on `MaxTiltDeg` in `FanIdle`.
+
+---
+
+## SESSION LOG — 2026-07-08c (celebration wobble dialled back)
+
+One-line tune per dev feedback: the celebration ROTATION wobble was too much at 7°. **`FanIdle.CeleSwayDegrees`
+7f → 3.5f.** Everything else confirmed-good and untouched — scale bounce (`CeleScalePulseFrac` 0.10),
+position hop (`CeleBobFraction` 0.03), oscillation rate (`CeleRateMult` 5), and the front/back ball-tracking
+tilt (`MaxTiltDeg` 6°) all unchanged.
+
+**Build:** `dotnet build Assembly-CSharp.csproj` → **0 errors** (22 pre-existing warnings, untouched files).
+Nothing to wire (const in `FanIdle`).

@@ -7,6 +7,8 @@ TagManager:
   - Ball
   - FanSeat
   - Cameraman
+  - FanSeatBack
+  - FanSeatSide
   layers:
   - Default
   - TransparentFX
