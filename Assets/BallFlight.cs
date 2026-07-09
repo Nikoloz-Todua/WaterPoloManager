@@ -105,6 +105,19 @@ public class BallFlight : MonoBehaviour
     const float GlowSeconds = 0.2f;
     static readonly Color GlowColor = new Color(1f, 1f, 0.6f, 1f);
 
+    // ---- settle ripples (2026-07-09c): a loose ball flopping to rest on the water ----
+    // Armed while a loose ball moves fast; the moment it slows to a float (nobody has picked
+    // it up, not mid-arc) 3 expanding ring waves radiate once from the contact point — first
+    // wave largest, each following one smaller and fainter. Latched: never re-fires while the
+    // ball just sits there; re-arms only after it moves fast again.
+    const float SettleArmSpeed = 2.5f;     // loose + faster than this = armed
+    const float SettleTriggerSpeed = 1f;   // armed + slower than this = the splash
+    // 2026-07-09d: the first pass drew the waves as WHITE ball-sprites up to 9x the ball's
+    // size — screenshots read them as "an oversized duplicate ball stuck in the net". Now
+    // sub-ball-scale, faint, water-cyan, and suppressed near the goal mouths entirely.
+    const float SettleMaxX = 6f;           // no splash this close to a goal line (net area)
+    static readonly Color SettleTint = new Color(0.75f, 0.95f, 1f); // pale water cyan
+
     // ---- skip bounce ----
     const float SquashSeconds = 0.1f;
     const float BounceScale = 0.9f; // brief UNIFORM impact pulse (never a stretch); was a non-uniform squash
@@ -154,6 +167,8 @@ public class BallFlight : MonoBehaviour
     private float snapStart = -10f;        // release-snap start time (shots only)
 
     private bool passActive; // a plain pass: NO scale change and NO trail (gentle spin only)
+
+    private bool settleArmed; // loose ball moved fast → the next slow-down splashes once
 
     private float baseScale = 1f;    // the ball's authored (uniform) localScale, captured in Awake
     private float scaleFactor = 1f;  // current uniform scale factor (1 = normal); eased every frame
@@ -395,7 +410,57 @@ public class BallFlight : MonoBehaviour
         arc01 = HighBallArc01();
         UpdateSpin();
         UpdateTrail();
+        UpdateSettleRipples();
         ApplyVisuals();
+    }
+
+    // Fire the settle splash exactly once when a fast loose ball slows to a float and nobody
+    // has collected it (a landed shot/pass decelerating in open water). Held / airborne /
+    // physics-off balls disarm or wait; PlayFrozen (goal hang-time, restarts) suppresses it.
+    void UpdateSettleRipples()
+    {
+        bool loose = transform.parent == null && rb != null && rb.simulated;
+        if (!loose) { settleArmed = false; return; }
+        if (highBallActive || (skipActive && !bounced)) return; // airborne — it settles at the landing
+
+        float speed = rb.linearVelocity.magnitude;
+        if (speed > SettleArmSpeed) { settleArmed = true; return; }
+        if (!settleArmed || speed > SettleTriggerSpeed) return;
+
+        settleArmed = false;
+        MatchContext ctx = MatchContext.Instance;
+        if (ctx != null && ctx.PlayFrozen) return; // e.g. the ball dying in the net during hang-time
+        if (Mathf.Abs(transform.position.x) > SettleMaxX) return; // never splash inside the net area
+
+        Vector3 p = transform.position;
+        StartCoroutine(RippleWave(p, 0f,    0.3f,  0.4f, 0.5f));   // first wave: biggest, strongest
+        StartCoroutine(RippleWave(p, 0.18f, 0.2f,  0.3f, 0.45f));  // second: smaller, fainter
+        StartCoroutine(RippleWave(p, 0.36f, 0.13f, 0.2f, 0.4f));   // third: a last soft lap
+    }
+
+    // One expanding, fading ring at a fixed world point (the ball's contact spot), optionally
+    // delayed. World-space like SpawnRipple — it stays where the ball touched down.
+    IEnumerator RippleWave(Vector3 pos, float delay, float maxScale, float alpha, float seconds)
+    {
+        if (delay > 0f) yield return new WaitForSeconds(delay);
+        if (sr == null) yield break;
+
+        GameObject go = new GameObject("SettleRipple");
+        go.transform.position = pos;
+        SpriteRenderer rs = go.AddComponent<SpriteRenderer>();
+        rs.sprite = sr.sprite;
+        rs.sortingOrder = sr.sortingOrder - 1; // under the ball, over the water
+        rs.color = new Color(SettleTint.r, SettleTint.g, SettleTint.b, alpha);
+
+        float t0 = Time.time;
+        while (Time.time - t0 < seconds && go != null)
+        {
+            float t = (Time.time - t0) / seconds;
+            go.transform.localScale = Vector3.one * (maxScale * t);
+            rs.color = new Color(SettleTint.r, SettleTint.g, SettleTint.b, alpha * (1f - t));
+            yield return null;
+        }
+        if (go != null) Destroy(go);
     }
 
     // Normalized arc height this frame: 0 on the water, 1 at the peak, 0 again right at the

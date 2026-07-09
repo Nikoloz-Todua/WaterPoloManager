@@ -13,7 +13,7 @@ public class PlayerMovement : MonoBehaviour
     [Header("Ball")]
     [SerializeField] private Rigidbody2D ball;
     [Tooltip("How close (centre-to-centre) the player must be to collect a loose ball. Kept generous so colliders pushing the ball away can't make your own loose ball unreachable.")]
-    [SerializeField] private float grabDistance = 1.6f;
+    [SerializeField] private float grabDistance = 1f; // aligned to the scene's live value (was 1.6 in code only — the scene always said 1)
     [SerializeField] private float holdOffset = 0.6f;
     [Tooltip("Anchor the held ball snaps to on pickup. Leave empty to parent to this player's root.")]
     [SerializeField] private Transform handPosition;
@@ -84,7 +84,10 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private float passInaccuracyDegrees = 12f;
 
     [Header("Stealing")]
-    [SerializeField] private float stealDistance = 1.2f;
+    // 1.5 (2026-07-09f): measured to the BALL at the carrier's far-side hand, 1.2 forced the
+    // stealer to overlap the carrier's body — real playtest presses landed at 1.33–1.75 and
+    // all whiffed by range. 1.5 matches the touch BLOCK reach + the defend-anim proximity.
+    [SerializeField] private float stealDistance = 1.5f;
     [SerializeField] private float stealChance = 0.4f;
     [SerializeField] private float stealCooldown = 0.6f;
     private const float StealFacingDot = 0.3f; // stealer must be within ~70° of the carrier's front
@@ -603,6 +606,16 @@ public class PlayerMovement : MonoBehaviour
         // loose + past cooldown + not under a shot-clock turnover ban
         if (ctx != null && (!ctx.BallGrabbable || !ctx.CanGrab(ctx.PlayerTeam))) return;
 
+        // 2026-07-09g: the same positional catch rule the AI uses — a slow/settled ball is
+        // picked up inside grabDistance from any side; a ball still FLYING past can only be
+        // caught close-in while roughly facing it. Applies to auto-collect AND the E press.
+        if (ctx != null)
+        {
+            if (WaterPoloBrain.CanCatchLooseBall(ctx, transform.position, lastDirection, grabDistance))
+                GrabBall();
+            return;
+        }
+
         if (Vector2.Distance(transform.position, ball.position) <= grabDistance)
         {
             GrabBall();
@@ -621,10 +634,14 @@ public class PlayerMovement : MonoBehaviour
             MatchContext.Instance.SetPossession(MatchContext.Instance.PlayerTeam);
     }
 
+    // (The 2026-07-09c "steal whiff" puff — a small expanding circle on every silent steal
+    // exit — is REMOVED (2026-07-09f): the dev read it as a random ball appearing/disappearing.
+    // The out-of-range lunge below keeps the snatch ANIMATION, which predates the puff.)
+
     void TrySteal()
     {
         if (isHolding || ball == null) return;
-        if (Time.time - lastStealTime < stealCooldown) return;
+        if (Time.time - lastStealTime < stealCooldown) return; // locked out between attempts
 
         MatchContext ctx = MatchContext.Instance;
         if (ctx == null) return;
@@ -635,6 +652,7 @@ public class PlayerMovement : MonoBehaviour
 
         Transform carrier = ball.transform.parent;
         if (carrier == null) return;
+        if (ctx.IsFoulProtected(carrier)) return; // freshly-fouled carrier is untouchable (2026-07-09f)
         if (ctx.IsProtectedKeeper(carrier)) // a keeper STILL in its safe zone can't be robbed (Task 5)
         {
             // trying inside the protect radius shoves us back out (FixedUpdate drives the push).
@@ -650,7 +668,12 @@ public class PlayerMovement : MonoBehaviour
 
         // ctx.BallPosition, not ball.position: a held ball's rigidbody pose is frozen at the
         // catch point — the live (transform) position is where the carrier actually has it.
-        if (Vector2.Distance(transform.position, ctx.BallPosition) > stealDistance) return;
+        if (Vector2.Distance(transform.position, ctx.BallPosition) > stealDistance)
+        {
+            // lunged at open water — the snatch animation is the whiff feedback
+            if (playerAnimator != null) playerAnimator.TriggerSteal();
+            return;
+        }
 
         // In range = a real attempt: play the snatch animation NOW, before the facing
         // gate or the dice roll, so EVERY attempt is visible (success or not).
@@ -665,7 +688,7 @@ public class PlayerMovement : MonoBehaviour
         if (dirToCarrier.sqrMagnitude > 1e-4f) dirToCarrier.Normalize();
         if (carrierFacing.sqrMagnitude > 1e-4f &&
             Vector2.Dot(carrierFacing.normalized, -dirToCarrier) < StealFacingDot)
-            return;
+            return; // wrong side (anim already fired above)
 
         lastStealTime = Time.time;
 
@@ -703,7 +726,7 @@ public class PlayerMovement : MonoBehaviour
     public void TouchBlockSteal()
     {
         if (isHolding || ball == null) return;
-        if (Time.time - lastStealTime < stealCooldown) return;
+        if (Time.time - lastStealTime < stealCooldown) return; // locked out between attempts
 
         MatchContext ctx = MatchContext.Instance;
         if (ctx == null) return;
@@ -714,6 +737,7 @@ public class PlayerMovement : MonoBehaviour
 
         Transform carrier = ball.transform.parent;
         if (carrier == null) return;
+        if (ctx.IsFoulProtected(carrier)) return; // freshly-fouled carrier is untouchable (2026-07-09f)
         if (ctx.IsProtectedKeeper(carrier)) // a keeper STILL in its safe zone can't be robbed (Task 5)
         {
             // getting too close shoves us back out (same as TrySteal).
@@ -731,7 +755,12 @@ public class PlayerMovement : MonoBehaviour
         // proximity in PlayerAnimator): the enemy carrier must be within 1.5 units.
         // ctx.BallPosition = live position (a held ball's rigidbody pose is frozen).
         const float BlockStealRange = 1.5f;
-        if (Vector2.Distance(transform.position, ctx.BallPosition) > BlockStealRange) return;
+        if (Vector2.Distance(transform.position, ctx.BallPosition) > BlockStealRange)
+        {
+            // lunged at open water — the snatch animation is the whiff feedback
+            if (playerAnimator != null) playerAnimator.TriggerSteal();
+            return;
+        }
 
         // In range = a real attempt → play the snatch animation now (success or not).
         if (playerAnimator != null) playerAnimator.TriggerSteal();
@@ -745,7 +774,7 @@ public class PlayerMovement : MonoBehaviour
         if (dirToCarrier.sqrMagnitude > 1e-4f) dirToCarrier.Normalize();
         if (carrierFacing.sqrMagnitude > 1e-4f &&
             Vector2.Dot(carrierFacing.normalized, -dirToCarrier) < StealFacingDot)
-            return;
+            return; // wrong side (anim already fired above)
 
         lastStealTime = Time.time;
 

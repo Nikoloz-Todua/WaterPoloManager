@@ -461,11 +461,11 @@ MonoBehaviour:
   myTeam: {fileID: 896660540}
   chaseSpeed: 1
   carrySpeed: 1
-  supportSpeed: 0.5
-  grabDistance: 0.5
+  supportSpeed: 1.5
+  grabDistance: 1
   holdOffset: 0.6
   shootRange: 20
-  shootPower: 20
+  shootPower: 12
   stealChance: 0.5
   looseHoldStealBonus: 0.15
   defenseEvalPoll: 0.5
@@ -5371,11 +5371,11 @@ MonoBehaviour:
   myTeam: {fileID: 896660540}
   chaseSpeed: 1
   carrySpeed: 1
-  supportSpeed: 0.5
-  grabDistance: 0.5
+  supportSpeed: 1.5
+  grabDistance: 1
   holdOffset: 0.6
   shootRange: 20
-  shootPower: 20
+  shootPower: 12
   stealChance: 0.5
   looseHoldStealBonus: 0.15
   defenseEvalPoll: 0.5
@@ -7436,7 +7436,7 @@ MonoBehaviour:
   supportWidth: 2.5
   defendDepth: 2.5
   defendWidth: 2.5
-  pressDistance: 1.8
+  pressDistance: 1
   openRadius: 1.6
   passLaneRadius: 0.7
   shotLaneRadius: 0.6
@@ -7996,8 +7996,8 @@ MonoBehaviour:
   passAssistMinDot: 0.5
   passAccuracy: 1
   passInaccuracyDegrees: 12
-  stealDistance: 1.2
-  stealChance: 0.2
+  stealDistance: 1.5
+  stealChance: 0.4
   stealCooldown: 0.6
   aimLine: {fileID: 1366410576}
   aimLineLength: 2.5
@@ -8087,11 +8087,11 @@ MonoBehaviour:
   myTeam: {fileID: 1812404639}
   chaseSpeed: 1
   carrySpeed: 0.5
-  supportSpeed: 1
-  grabDistance: 0.5
+  supportSpeed: 1.5
+  grabDistance: 1
   holdOffset: 0.6
   shootRange: 20
-  shootPower: 20
+  shootPower: 12
   stealChance: 0.5
   looseHoldStealBonus: 0.15
 --- !u!114 &945807560
@@ -8317,11 +8317,11 @@ MonoBehaviour:
   myTeam: {fileID: 1812404639}
   chaseSpeed: 1
   carrySpeed: 0.5
-  supportSpeed: 1
-  grabDistance: 0.5
+  supportSpeed: 1.5
+  grabDistance: 1
   holdOffset: 0.6
   shootRange: 20
-  shootPower: 20
+  shootPower: 12
   stealChance: 0.5
   looseHoldStealBonus: 0.15
 --- !u!114 &965530505
@@ -8368,8 +8368,8 @@ MonoBehaviour:
   passAssistMinDot: 0.5
   passAccuracy: 1
   passInaccuracyDegrees: 12
-  stealDistance: 0.2
-  stealChance: 0.2
+  stealDistance: 1.5
+  stealChance: 0.4
   stealCooldown: 0.6
   aimLine: {fileID: 1572314170}
   aimLineLength: 2.5
@@ -10164,11 +10164,11 @@ MonoBehaviour:
   myTeam: {fileID: 1812404639}
   chaseSpeed: 1
   carrySpeed: 0.5
-  supportSpeed: 1
-  grabDistance: 0.5
+  supportSpeed: 1.5
+  grabDistance: 1
   holdOffset: 0.6
   shootRange: 20
-  shootPower: 20
+  shootPower: 12
   stealChance: 0.5
   looseHoldStealBonus: 0.15
 --- !u!114 &1204470614
@@ -10215,8 +10215,8 @@ MonoBehaviour:
   passAssistMinDot: 0.5
   passAccuracy: 1
   passInaccuracyDegrees: 12
-  stealDistance: 1.2
-  stealChance: 0.2
+  stealDistance: 1.5
+  stealChance: 0.4
   stealCooldown: 0.6
   aimLine: {fileID: 660776515}
   aimLineLength: 2.5
@@ -10465,8 +10465,8 @@ MonoBehaviour:
   passAssistMinDot: 0.5
   passAccuracy: 1
   passInaccuracyDegrees: 12
-  stealDistance: 1.2
-  stealChance: 0.2
+  stealDistance: 1.5
+  stealChance: 0.4
   stealCooldown: 0.6
   aimLine: {fileID: 1917738298}
   aimLineLength: 2.5
@@ -10637,11 +10637,11 @@ MonoBehaviour:
   myTeam: {fileID: 1812404639}
   chaseSpeed: 1
   carrySpeed: 0.5
-  supportSpeed: 1
-  grabDistance: 0.5
+  supportSpeed: 1.5
+  grabDistance: 1
   holdOffset: 0.6
   shootRange: 20
-  shootPower: 20
+  shootPower: 12
   stealChance: 0.5
   looseHoldStealBonus: 0.15
 --- !u!114 &1227050021
@@ -12683,11 +12683,11 @@ MonoBehaviour:
   myTeam: {fileID: 1812404639}
   chaseSpeed: 1
   carrySpeed: 0.5
-  supportSpeed: 1
-  grabDistance: 0.5
+  supportSpeed: 1.5
+  grabDistance: 1
   holdOffset: 0.6
   shootRange: 20
-  shootPower: 20
+  shootPower: 12
   stealChance: 0.5
   looseHoldStealBonus: 0.15
 --- !u!114 &1480314582
@@ -12734,8 +12734,8 @@ MonoBehaviour:
   passAssistMinDot: 0.5
   passAccuracy: 1
   passInaccuracyDegrees: 12
-  stealDistance: 1.2
-  stealChance: 0.2
+  stealDistance: 1.5
+  stealChance: 0.4
   stealCooldown: 0.6
   aimLine: {fileID: 1359018349}
   aimLineLength: 2.5
@@ -13216,11 +13216,11 @@ MonoBehaviour:
   myTeam: {fileID: 896660540}
   chaseSpeed: 1
   carrySpeed: 1
-  supportSpeed: 0.5
-  grabDistance: 0.5
+  supportSpeed: 1.5
+  grabDistance: 1
   holdOffset: 0.6
   shootRange: 20
-  shootPower: 20
+  shootPower: 12
   stealChance: 0.5
   looseHoldStealBonus: 0.15
   defenseEvalPoll: 0.5
@@ -14546,11 +14546,11 @@ MonoBehaviour:
   myTeam: {fileID: 896660540}
   chaseSpeed: 1
   carrySpeed: 1
-  supportSpeed: 0.5
-  grabDistance: 0.5
+  supportSpeed: 1.5
+  grabDistance: 1
   holdOffset: 0.6
   shootRange: 20
-  shootPower: 20
+  shootPower: 12
   stealChance: 0.5
   looseHoldStealBonus: 0.15
   defenseEvalPoll: 0.5
@@ -16260,11 +16260,11 @@ MonoBehaviour:
   myTeam: {fileID: 1812404639}
   chaseSpeed: 1
   carrySpeed: 0.5
-  supportSpeed: 1
-  grabDistance: 0.5
+  supportSpeed: 1.5
+  grabDistance: 1
   holdOffset: 0.6
   shootRange: 20
-  shootPower: 20
+  shootPower: 12
   stealChance: 0.5
   looseHoldStealBonus: 0.15
 --- !u!114 &1804307260
@@ -16311,8 +16311,8 @@ MonoBehaviour:
   passAssistMinDot: 0.5
   passAccuracy: 1
   passInaccuracyDegrees: 12
-  stealDistance: 1.2
-  stealChance: 0.2
+  stealDistance: 1.5
+  stealChance: 0.4
   stealCooldown: 0.6
   aimLine: {fileID: 1298931749}
   aimLineLength: 2.5
@@ -16532,11 +16532,11 @@ MonoBehaviour:
   myTeam: {fileID: 896660540}
   chaseSpeed: 1
   carrySpeed: 1
-  supportSpeed: 0.5
-  grabDistance: 0.5
+  supportSpeed: 1.5
+  grabDistance: 1
   holdOffset: 0.6
   shootRange: 20
-  shootPower: 20
+  shootPower: 12
   stealChance: 0.5
   looseHoldStealBonus: 0.15
   defenseEvalPoll: 0.5
@@ -16960,7 +16960,7 @@ MonoBehaviour:
   supportWidth: 2.5
   defendDepth: 4.5
   defendWidth: 2.5
-  pressDistance: 1.8
+  pressDistance: 1
   openRadius: 1.6
   passLaneRadius: 0.7
   shotLaneRadius: 0.6
@@ -17709,11 +17709,11 @@ MonoBehaviour:
   myTeam: {fileID: 896660540}
   chaseSpeed: 1
   carrySpeed: 1
-  supportSpeed: 0.5
-  grabDistance: 0.5
+  supportSpeed: 1.5
+  grabDistance: 1
   holdOffset: 0.6
   shootRange: 20
-  shootPower: 20
+  shootPower: 12
   stealChance: 0.5
   looseHoldStealBonus: 0.15
   defenseEvalPoll: 0.5
@@ -18013,7 +18013,7 @@ MonoBehaviour:
   rowsInBenchArt: 7
   columnsInBenchArt: 20
   frontFanHeightInRows: 1.5
-  backFanHeightInRows: 1.75
+  backFanHeightInRows: 1.6
   sideFanHeightInRows: 1.5
   frontSeatLineInRow01: 0.35
   backSeatLineInRow01: 0.35

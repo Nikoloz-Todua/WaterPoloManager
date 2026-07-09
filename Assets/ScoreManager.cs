@@ -35,6 +35,14 @@ public class ScoreManager : MonoBehaviour
     private Transform pulseNet;
     private Vector3 pulseScale0, pulsePos0;
 
+    // 2026-07-09d: re-entrancy latch. A goal starts a ~7.5s restart during which the ball is
+    // parked loose in the net (bobbing), reset to centre, handed out — plenty of collider
+    // activity near/inside the goal trigger. BallEnteredGoal previously had NO guard against
+    // firing again mid-restart, so any re-entry of the trigger during that window could stack
+    // spurious goals ("Goal - BOT" lines seconds apart with no play between). One goal at a
+    // time: the latch closes the moment a goal counts and reopens when play actually resumes.
+    private bool restartInProgress;
+
     // public read-only access for other systems (e.g. MatchTimer's win condition)
     public int HomeScore => homeScore;
     public int AwayScore => awayScore;
@@ -52,6 +60,9 @@ public class ScoreManager : MonoBehaviour
     // called by a goal when the ball enters it
     public void BallEnteredGoal(string goalSide, Transform goalNet)
     {
+        // One goal at a time: nothing can score while the previous goal's restart is
+        // still running (hang time / reset / handout) — see restartInProgress above.
+        if (restartInProgress) return;
         // A HELD ball never scores — only a released/loose ball (shot, pass, loose) counts.
         if (MatchContext.Instance != null && !MatchContext.Instance.BallIsLoose) return;
         if (ball == null) return;
@@ -142,6 +153,7 @@ public class ScoreManager : MonoBehaviour
     // pause, then play resumes naturally with that team in possession.
     void RestartAfterGoal(TeamSide concedingTeam)
     {
+        restartInProgress = true; // cleared at the end of ResumeAfterGoal (Phase 4)
         MatchContext ctx = MatchContext.Instance;
 
         if (ctx != null)
@@ -216,6 +228,7 @@ public class ScoreManager : MonoBehaviour
         }
         if (TouchControls.Instance != null) TouchControls.Instance.SetGameplayVisible(true);
         if (ShotClock.Instance != null) ShotClock.Instance.ResetClock();
+        restartInProgress = false; // play is live again — the goal trigger may score again
     }
 
     // Gentle in-net buoyancy during the goal hang (Task 3). The ball floats around where it

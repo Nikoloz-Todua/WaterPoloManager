@@ -165,6 +165,27 @@ public class MatchContext : MonoBehaviour
         FreeThrowCarrier = null;
     }
 
+    // ---- post-foul protection (2026-07-09f) ----
+    // After an ordinary foul the fouled carrier gets a real-time window in which NOBODY may
+    // steal from them (real water polo's uncontested free-throw beat). Deliberately separate
+    // from FreeThrowActive, which ends the instant the carrier acts/moves — this window
+    // persists so the fouled player genuinely gets time to hold or pass. It lapses early the
+    // moment they release the ball: IsFoulProtected requires them to STILL be the carrier,
+    // so protection never transfers to a receiver and never shields a re-stolen ball.
+    public Transform FoulProtectedCarrier { get; private set; }
+    public float FoulProtectionUntil { get; private set; }
+
+    public void StartFoulProtection(Transform carrier, float seconds)
+    {
+        FoulProtectedCarrier = carrier;
+        FoulProtectionUntil = Time.time + Mathf.Max(0f, seconds);
+    }
+
+    public bool IsFoulProtected(Transform carrier)
+        => carrier != null && carrier == FoulProtectedCarrier &&
+           Time.time < FoulProtectionUntil &&
+           ball != null && ball.transform.parent == carrier;
+
     // ---- keeper hold (Part 1) ----
     public void SetKeeperHold(TeamSide team) { KeeperHolding = true; KeeperHoldTeam = team; }
     public void ClearKeeperHold() { KeeperHolding = false; KeeperHoldTeam = null; }

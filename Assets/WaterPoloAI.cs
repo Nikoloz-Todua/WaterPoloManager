@@ -85,7 +85,15 @@ public static class WaterPoloBrain
     const float MarkSwitchCooldown = 0.35f; // min time before a defender may switch its man (was 0.6 — react faster to a beaten man)
     const float KickoffPassSettle = 0.4f;  // AI carrier settles this long before the kickoff pass
     const float KeeperProtectRadius = 2.5f; // a presser can't crowd a ball-holding keeper
-    const float MinTeammateSeparation = 1.2f; // teammates never pack tighter than this (lower priority yields)
+    const float MinTeammateSeparation = 1.5f; // teammates never pack tighter than this (lower priority yields; 1.2 → 1.5, 2026-07-09g anti-cluster)
+
+    // ---- catching a MOVING ball needs real positioning (2026-07-09g) ----
+    // A ball still flying through the water (above FastBallSpeed) can only be caught
+    // close-in AND roughly in front of the receiver; a slow/settled ball keeps the old
+    // omnidirectional pickup at the full grab radius so play never stalls on a floater.
+    const float FastBallSpeed = 2.5f;   // u/s — above this the ball is "in flight", not settled
+    const float FastCatchRadius = 0.6f; // reach for catching a flying ball (vs GrabDistance 1.0 settled)
+    const float CatchFacingDot = 0.1f;  // must roughly face the incoming ball (~±84°)
     const float TeammateSprintFollowMult = 1.2f; // player-team mates hustle to keep shape while the human sprints (Task 4)
 
     // ---- drives (Feature 1) ----
@@ -137,17 +145,41 @@ public static class WaterPoloBrain
         // Collect a genuinely loose ball within reach (cooldown stops snatch-backs;
         // CanGrab enforces the shot-clock turnover ban on the violating team). A HIGH
         // ball overhead is untouchable outright — BallGrabbable is false mid-flight.
+        // 2026-07-09g: CanCatchLooseBall replaces the flat GrabDistance check — a FLYING
+        // ball needs the catcher close AND facing it; a settled ball keeps the old radius.
         if (ctx.BallGrabbable && ctx.CanGrab(a.Team) &&
-            Vector2.Distance(a.Body.position, ctx.BallPosition) <= a.GrabDistance &&
+            CanCatchLooseBall(ctx, a.Body.position, a.LastDirection, a.GrabDistance) &&
             !HumanTeammateCloserToBall(a, ctx) &&
             TryCollectLoose(a, ctx))
             return;
 
         TeamSide enemy = ctx.EnemyOf(a.Team);
 
-        if (ctx.TeamHasBall(a.Team))
+        // POSITIONING possession (2026-07-09g, the anti-cluster core): the instant any pass or
+        // shot released, PossessingTeam went null and every off-ball agent on BOTH teams flipped
+        // into the DEFENSIVE branch — the attacking team collapsed toward its own goal on every
+        // single pass flight and never held an attacking shape (play read as one clump following
+        // the ball). For POSITIONING ONLY, a loose ball still "belongs" to the team that last
+        // touched it (LastTouchTeam covers releases AND loose-ball deflections), so shapes
+        // persist through pass flights and rebounds. Grabs/steals/turnovers keep reading the
+        // real possession gates — a genuine turnover flips everyone the moment the other team
+        // takes the ball.
+        bool weAttack = ctx.TeamHasBall(a.Team) ||
+                        (ctx.PossessingTeam == null && ctx.LastTouchTeam == a.Team);
+
+        if (weAttack)
         {
             a.CurrentMark = null; // we attack → drop any defensive assignment
+
+            // Loose ball we still "own" (our pass in flight / just landed): the CLOSEST
+            // teammate goes to meet it — everyone else holds the attacking shape below
+            // (previously the whole team flipped defensive here).
+            if (ctx.PossessingTeam == null &&
+                a.Team.ClosestMemberTo(ctx.BallPosition) == a.Tf)
+            {
+                ChaseBall(a, ctx);
+                return;
+            }
 
             // COUNTERATTACK: designated advanced runners sprint at the enemy goal.
             if (ctx.CounterActiveFor(a.Team) &&
@@ -179,15 +211,26 @@ public static class WaterPoloBrain
         // Not attacking → any screen state is stale.
         a.IsSettingScreen = false;
 
-        // ---- sanctioned free-throw gate (Task 2): respect the enemy's free throw ----
-        // We're in the defensive branch, so the free-throw taker is on the enemy team.
-        bool enemyFreeThrow = ctx.FreeThrowActive && ctx.FreeThrowCarrier != null;
-        if (enemyFreeThrow)
+        // ---- sanctioned free-throw / post-foul stand-off (Task 2 + 2026-07-09f) ----
+        // We're in the defensive branch, so the shielded carrier is on the enemy team. BOTH a
+        // live free-throw taker AND a freshly-fouled protected carrier (the ~5s
+        // MatchContext.IsFoulProtected window) get uncontested water: anyone inside the
+        // clearance backs straight off, and the presser stands down entirely below.
+        Transform shieldedCarrier = null;
+        if (ctx.FreeThrowActive && ctx.FreeThrowCarrier != null)
+            shieldedCarrier = ctx.FreeThrowCarrier;
+        else
         {
-            Vector2 cpos = ctx.FreeThrowCarrier.position;
+            Transform cur = ctx.Ball.transform.parent;
+            if (cur != null && ctx.IsFoulProtected(cur)) shieldedCarrier = cur;
+        }
+        bool enemyShielded = shieldedCarrier != null;
+        if (enemyShielded)
+        {
+            Vector2 cpos = shieldedCarrier.position;
             if (Vector2.Distance(a.Body.position, cpos) < a.Team.freeThrowClearance)
             {
-                // too close to the taker → back straight off to the respect distance
+                // too close to the protected carrier → back straight off to the respect distance
                 Vector2 away = a.Body.position - cpos;
                 if (away.sqrMagnitude < 1e-4f) away = Vector2.down;
                 MoveTo(a, cpos + away.normalized * a.Team.freeThrowClearance, a.SupportSpeed);
@@ -215,12 +258,12 @@ public static class WaterPoloBrain
         if (manDown)
         {
             a.CurrentMark = null;
-            if (presser == a.Tf && !enemyFreeThrow) ChaseBall(a, ctx);
+            if (presser == a.Tf && !enemyShielded) ChaseBall(a, ctx);
             else MoveTo(a, a.Team.ManDownSpot(a.Tf, ctx.BallPosition), a.SupportSpeed);
             return;
         }
 
-        if (presser == a.Tf && !enemyFreeThrow) // no pressing/chasing/stealing during a free throw
+        if (presser == a.Tf && !enemyShielded) // no pressing/chasing/stealing during a free throw or foul protection
         {
             if (TryStealAI(a, ctx, enemy)) return;
             // A ball-holding keeper in its safe zone can't be pressed — hold a standoff spot just
@@ -401,6 +444,26 @@ public static class WaterPoloBrain
         if (t == null || team == null || team.members == null) return false;
         foreach (Transform m in team.members) if (m == t) return true;
         return false;
+    }
+
+    // Shared positional-catch rule (2026-07-09g), used by the AI collect gate AND the human's
+    // TryGrabBall so both obey the same physics: a slow/settled loose ball is picked up inside
+    // `slowRadius` from any side (the old behavior); a ball still FLYING (a zipped pass or
+    // deflected shot passing by) is only caught within FastCatchRadius AND while the catcher
+    // roughly faces it — swimmers no longer vacuum fast balls out of the water at full grab
+    // range as they zip past. Legality gates (BallGrabbable / CanGrab / grab bans) stay with
+    // the callers; this is geometry only.
+    public static bool CanCatchLooseBall(MatchContext ctx, Vector2 myPos, Vector2 facing, float slowRadius)
+    {
+        if (ctx == null || ctx.Ball == null) return false;
+        Vector2 ballPos = ctx.BallPosition;
+        float dist = Vector2.Distance(myPos, ballPos);
+        float ballSpeed = ctx.Ball.simulated ? ctx.Ball.linearVelocity.magnitude : 0f;
+        if (ballSpeed <= FastBallSpeed) return dist <= slowRadius; // settled/slow → old pickup
+        if (dist > FastCatchRadius) return false;                  // flying → must be right on it...
+        Vector2 toBall = ballPos - myPos;
+        if (toBall.sqrMagnitude < 1e-4f || facing.sqrMagnitude < 1e-4f) return true;
+        return Vector2.Dot(facing.normalized, toBall.normalized) >= CatchFacingDot; // ...and facing it
     }
 
     // Keep a swimmer inside the play area — can't cross the goal line. Called from each
@@ -846,6 +909,7 @@ public static class WaterPoloBrain
         if (Time.time < a.NextStealTime) return false;
         Transform carrier = ctx.Ball.transform.parent;
         if (carrier == null) return false;
+        if (ctx.IsFoulProtected(carrier)) return false; // freshly-fouled carrier is untouchable (2026-07-09f)
         if (ctx.IsProtectedKeeper(carrier)) // a keeper STILL in its safe zone can't be robbed (Task 5)
         {
             // inside the protect radius we get pushed straight back out at chase speed

@@ -1,7 +1,8 @@
 using UnityEngine;
 using TMPro;
 
-// 30-second shot clock (plan B16.5). Separate from MatchTimer because it has its own
+// Shot clock (plan B16.5): DISPLAYS 30 counting down, expires after shotClockRealSeconds
+// (15) of real play — a CompressedTimer. Separate from MatchTimer because it has its own
 // per-possession lifecycle and must be reset by several systems (goal, possession
 // change, defensive exclusion). Singleton so those systems can call ResetClock().
 //
@@ -14,8 +15,9 @@ public class ShotClock : MonoBehaviour
     public static ShotClock Instance { get; private set; }
 
     [Header("Settings")]
-    [SerializeField] private float shotClockSeconds = 30f;
-    [SerializeField] private float warningThreshold = 5f; // text turns red at/below this
+    [SerializeField] private float shotClockSeconds = 30f;     // what the HUD counts down from (display scale)
+    [SerializeField] private float shotClockRealSeconds = 15f; // REAL seconds until the turnover fires
+    [SerializeField] private float warningThreshold = 5f; // text turns red at/below this (display scale)
 
     [Header("References")]
     [SerializeField] private MatchTimer matchTimer;   // to pause when the match is over
@@ -25,13 +27,15 @@ public class ShotClock : MonoBehaviour
     [SerializeField] private Color normalColor = Color.white;
     [SerializeField] private Color warningColor = Color.red;
 
-    private float timeLeft;
+    // Compressed clock (2026-07-09): the turnover logic runs on shotClockRealSeconds of REAL
+    // time; the HUD prints shotClockSeconds scaled onto them (shows "30" draining in 15s real).
+    private CompressedTimer clock;
     private TeamSide lastTeam; // last team that held possession (persists through loose periods)
 
     void Awake()
     {
         Instance = this;
-        timeLeft = shotClockSeconds;
+        clock = new CompressedTimer(shotClockSeconds, shotClockRealSeconds);
     }
 
     void Start() { UpdateDisplay(); }
@@ -61,9 +65,9 @@ public class ShotClock : MonoBehaviour
         // Loose ball → pause (no tick); keep lastTeam so a same-team recovery resumes.
         if (cur == null) { UpdateDisplay(); return; }
 
-        // Possessing team → tick down.
-        timeLeft -= Time.deltaTime;
-        if (timeLeft <= 0f)
+        // Possessing team → tick down (real time; the display conversion happens on print).
+        clock.Tick(Time.deltaTime);
+        if (clock.IsComplete)
             Turnover(ctx);
 
         UpdateDisplay();
@@ -72,7 +76,7 @@ public class ShotClock : MonoBehaviour
     // Reset to full. Called on possession change (internally), goal, and defensive exclusion.
     public void ResetClock()
     {
-        timeLeft = shotClockSeconds;
+        clock.Reset();
         UpdateDisplay();
     }
 
@@ -85,14 +89,14 @@ public class ShotClock : MonoBehaviour
         ctx.ForceDropHeldBall();             // reuse the shared drop/release path; ball goes loose
         if (violator != null) ctx.SetGrabBan(violator);
         if (EventFeed.Instance != null) EventFeed.Instance.AddEvent("Shot clock - turnover");
-        timeLeft = shotClockSeconds;         // ball is now loose → next frame pauses until re-grabbed
+        clock.Reset();                       // ball is now loose → next frame pauses until re-grabbed
     }
 
     void UpdateDisplay()
     {
         if (shotClockText == null) return;
-        int secs = Mathf.CeilToInt(Mathf.Max(0f, timeLeft));
-        shotClockText.text = secs.ToString();
-        shotClockText.color = (timeLeft <= warningThreshold) ? warningColor : normalColor;
+        float disp = clock.DisplayValue;     // compressed scale: "30" drains over 15 real seconds
+        shotClockText.text = Mathf.CeilToInt(disp).ToString();
+        shotClockText.color = (disp <= warningThreshold) ? warningColor : normalColor;
     }
 }

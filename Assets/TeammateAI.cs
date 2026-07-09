@@ -14,7 +14,7 @@ public class TeammateAI : MonoBehaviour, IAgentBody
     [SerializeField] private float grabDistance = 1.2f;
     [SerializeField] private float holdOffset = 0.6f;
     [SerializeField] private float shootRange = 4f;
-    [SerializeField] private float shootPower = 11f;
+    [SerializeField] private float shootPower = 12f; // 2026-07-09g: aligned with the scene (was 11 code / 20 scene — bots fired lasers)
     [SerializeField] private float stealChance = 0.2f;
     [SerializeField] private float looseHoldStealBonus = 0.15f; // extra chance vs a sprinting (loose-hold) carrier
 

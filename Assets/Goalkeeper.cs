@@ -606,6 +606,7 @@ public class Goalkeeper : MonoBehaviour
         Transform carrier = ball.transform.parent;
         if (carrier == null || carrier == transform) return false;
         if (carrier.GetComponent<Goalkeeper>() != null) return false; // not from another keeper
+        if (ctx.IsFoulProtected(carrier)) return false; // freshly-fouled carrier is untouchable (2026-07-09f)
         if (Vector2.Distance(rb.position, carrier.position) > keeperSnatchDistance) return false;
 
         // clear the carrier's hold, then take it ourselves (becomes a keeper hold)

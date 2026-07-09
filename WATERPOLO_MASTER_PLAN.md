@@ -59,22 +59,22 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 
 | File | Role |
 |---|---|
-| `PlayerMovement.cs` | Human control of the active player: move, grab (E), **charged shoot** (hold Space; time-based `shotChargeTime` 0.7s, min-speed floor so a tap never drops), aim chevron + **power bar** (world-unit `powerBarWidth` 1.2 — >2× the keeper bar, grows left→right), **directional charged pass** (hold B — fires where the facing triangle/joystick points with a tunable `passAssist`, NOT auto-homed; `FindPassAssistTarget` scores teammates by dot with `lastDirection`). **Shot height** (`shotHeight` 0..1, charges in lock-step with power: low 0–0.3 / mid / high 0.7–1; read by Goalkeeper + GoalkeeperAnimator for the dive tier; **charge >0.7 releases as the untouchable ASYMMETRIC shot arc** landing 1.5u before the aimed goal line — `HighShotLandPoint`, raw aim, no assist). **Shots ×1.35 code-side speed** (`ShotSpeedMult` — shots always outpace passes; serialized `maxShootPower` 12 untouched). **Skip shot** (hold Q while charging Space → fast LOW bounce shot via `BallFlight`). **Every B pass arcs** (`ArcKind.Pass` small hop to the assist target, else a charge-scaled 3.5–6.5u spot along the aim); **F+B = the big high LOB** (`ArcKind.Lob`, ×0.7 speed) — both untouchable mid-flight (nobody intercepts an airborne ball; contests happen at the landing). **Charge bar reads shot-vs-pass:** pass = cool blue→cyan; shot = green→yellow→red strobing white past 0.7 (the high-shot zone). Ball held via **parenting**; reports possession to MatchContext. `TakeOverHeldBall()` for clean control transfer; `TouchBlockSteal()` (Block button — half steal chance, 50% foul-on-miss). **Stamina hooks** (`StaminaSpeedMult`/`StaminaSprintMult`/`StaminaSprintBlocked`/`StaminaStealMult`/`StaminaPercent01`, neutral 1 by default). |
+| `PlayerMovement.cs` | Human control of the active player: move, grab (E), **charged shoot** (hold Space; time-based `shotChargeTime` 0.7s, min-speed floor so a tap never drops), aim chevron + **power bar** (world-unit `powerBarWidth` 1.2 — >2× the keeper bar, grows left→right), **directional charged pass** (hold B — fires where the facing triangle/joystick points with a tunable `passAssist`, NOT auto-homed; `FindPassAssistTarget` scores teammates by dot with `lastDirection`). **Shot height** (`shotHeight` 0..1, charges in lock-step with power: low 0–0.3 / mid / high 0.7–1; read by Goalkeeper + GoalkeeperAnimator for the dive tier; **charge >0.7 releases as the untouchable ASYMMETRIC shot arc** landing 1.5u before the aimed goal line — `HighShotLandPoint`, raw aim, no assist). **Shots ×1.35 code-side speed** (`ShotSpeedMult` — shots always outpace passes; serialized `maxShootPower` 12 untouched). **Skip shot** (hold Q while charging Space → fast LOW bounce shot via `BallFlight`). **Every B pass arcs** (`ArcKind.Pass` small hop to the assist target, else a charge-scaled 3.5–6.5u spot along the aim); **F+B = the big high LOB** (`ArcKind.Lob`, ×0.7 speed) — both untouchable mid-flight (nobody intercepts an airborne ball; contests happen at the landing). **Charge bar reads shot-vs-pass:** pass = cool blue→cyan; shot = green→yellow→red strobing white past 0.7 (the high-shot zone). Ball held via **parenting**; reports possession to MatchContext. `TakeOverHeldBall()` for clean control transfer; `TouchBlockSteal()` (Block button — half steal chance, 50% foul-on-miss). **Stamina hooks** (`StaminaSpeedMult`/`StaminaSprintMult`/`StaminaSprintBlocked`/`StaminaStealMult`/`StaminaPercent01`, neutral 1 by default). **Steal feedback (2026-07-09f):** the 09c whiff puff is REMOVED (dev read it as a phantom ball) — an out-of-range Space/BLOCK press keeps only the pre-existing snatch-anim lunge; in-range attempts still always play the snatch anim before the roll. `stealDistance` **1.5** / `stealChance` **0.4** (scene + code aligned; the scene's serialized 1.2/0.2 were why real presses whiffed by range and misses dominated). Both steal paths skip a **`MatchContext.IsFoulProtected`** carrier (the 5s post-foul shield). |
 | `TeammateAI.cs` | Thin component on each player. When NOT human-controlled, runs the shared `WaterPoloBrain`. Implements `IAgentBody`. |
 | `BotMovement.cs` | Thin component on each bot. Always runs `WaterPoloBrain`. Implements `IAgentBody`. |
-| `WaterPoloAI.cs` | **The shared brain** + `IAgentBody` interface. All AI decisions live here once: carrier (shoot/pass/**drive**/dribble), support (get open), presser (nearest chases), defender (hold shape). 🟡 New: **drives** (beaten marker + clear lane → burst to 2m, shoot/kick-out/abort) and **picks/screens** (nominated screener plants on the carrier's marker; rubbing past = short "beaten" boost). Works, needs tuning. **This is C# state-machine AI — NOT an LLM.** |
-| `TeamSide.cs` | One per team. Holds goals + roster (`members`), formation math (auto-spreads ANY number of players), passing/positioning logic, **attacking-spacing + tactics tunables (center-feed, counter, shot-quality threshold, free-throw clearance), shot-quality + pass-risk scoring, and 4 defense modes — Press/Zone/Drop/MPress — incl. man-up 4-2 umbrella + man-down zone shapes**. 🟡 New: **dynamic Centre** (fights for inside water goal-side of its guard at 2m), wider lanes + weak-side wing drift, receiver-shot-quality pass bonus, drive/screen helpers (`DrivePoint`, `GetScreenSpot`, `FindScreenerForCarrier`), and **bot adaptive defense** (`EvaluateDefenseMode`, auto-detected `isAI`: Drop when man-down / protecting a late lead / Centre conceded 2+; Press otherwise). Scales 2v2 → 6v6 with no code change. |
-| `MatchContext.cs` | Singleton "match truth": ball position, possession + last toucher (`NoteTouch` for deflections), post-release grab cooldown (`releaseGrabDelay` 0.5s), freeze flag, shot-clock grab-ban, kickoff-pass flag, **free-throw state, keeper-hold flag, counterattack window, player goal-line clamp (`playerLimitX`)**, halftime `SwapEnds()`, `GiveBallTo()` / `ForceDropHeldBall()`, `EnemyOf()`, **`IsProtectedKeeper(carrier)`** (the keeper-steal safe-zone rule — true while a keeper carries the ball inside its safe zone, Task 5). |
+| `WaterPoloAI.cs` | **The shared brain** + `IAgentBody` interface. All AI decisions live here once: carrier (shoot/pass/**drive**/dribble), support (get open), presser (nearest chases), defender (hold shape). 🟡 New: **drives** (beaten marker + clear lane → burst to 2m, shoot/kick-out/abort) and **picks/screens** (nominated screener plants on the carrier's marker; rubbing past = short "beaten" boost). Works, needs tuning. **This is C# state-machine AI — NOT an LLM.** **2026-07-09g:** positioning RETENTION (for shape only, a loose ball still "belongs" to `LastTouchTeam` — the attacking team holds its spread through pass flights while its closest member chases the reception; no more whole-team defensive collapse on every pass) + shared positional catch rule **`CanCatchLooseBall`** (flying ball >2.5 u/s → 0.6u reach + must face it; settled ball keeps the full grab radius) + `MinTeammateSeparation` 1.5. |
+| `TeamSide.cs` | One per team. Holds goals + roster (`members`), formation math (auto-spreads ANY number of players), passing/positioning logic, **attacking-spacing + tactics tunables (center-feed, counter, shot-quality threshold, free-throw clearance), shot-quality + pass-risk scoring, and 4 defense modes — Press/Zone/Drop/MPress — incl. man-up 4-2 umbrella + man-down zone shapes**. 🟡 New: **dynamic Centre** (fights for inside water goal-side of its guard at 2m), wider lanes + weak-side wing drift, receiver-shot-quality pass bonus, drive/screen helpers (`DrivePoint`, `GetScreenSpot`, `FindScreenerForCarrier`), and **bot adaptive defense** (`EvaluateDefenseMode`, auto-detected `isAI`: Drop when man-down / protecting a late lead / Centre conceded 2+; Press otherwise). Scales 2v2 → 6v6 with no code change. **2026-07-09g:** `BestPassTarget` gains a PRESSURED least-bad-outlet fallback — with nobody formally open, the carrier offloads to the most-open clear-lane mate instead of dribbling into the press. |
+| `MatchContext.cs` | Singleton "match truth": ball position, possession + last toucher (`NoteTouch` for deflections), post-release grab cooldown (`releaseGrabDelay` 0.5s), freeze flag, shot-clock grab-ban, kickoff-pass flag, **free-throw state, keeper-hold flag, counterattack window, player goal-line clamp (`playerLimitX`)**, halftime `SwapEnds()`, `GiveBallTo()` / `ForceDropHeldBall()`, `EnemyOf()`, **`IsProtectedKeeper(carrier)`** (the keeper-steal safe-zone rule — true while a keeper carries the ball inside its safe zone, Task 5), **`StartFoulProtection`/`IsFoulProtected(carrier)`** (2026-07-09f: 5s post-foul steal shield on the fouled carrier; lapses early the moment they release the ball; honoured by TrySteal / TouchBlockSteal / TryStealAI / keeper snatch + the AI stand-off). |
 | `TeamManager.cs` | On `GameManager`. Auto-switches control to the ball-holder after `autoSwitchDelay` (0.5s — so you keep control to chase your own loose ball); manual **C** / touch SWITCH (skips excluded); **Z** cycles defense (Press/Zone/Drop/MPress); never auto-activates excluded players. Exposes static **`ActivePlayer`** + **`ActivePlayerIndex`** (read by `CameraFollow` and the stamina HUD). |
 | `Goalkeeper.cs` | Kinematic keeper sliding along its physical goal line tracking ball Y (stays on its goal after the halftime swap). **Save % system:** a fast shot reaching its hands rolls `baseSaveChance` 0.65 minus penalties for HIGH (height >0.7), POWER (>9 u/s) and SKIP shots, plus a stamina penalty when tired; a slow ball is auto-collected. **Snatch:** an enemy carrier within `keeperSnatchDistance` (0.8u) is stripped with 100% success, no roll (`TrySnatchFromCarrier`; respects free throws, not vs another keeper). **Player keeper = full control:** while your own keeper holds the ball it plays like a field swimmer — free **2D movement** at `keeperMoveSpeed` (4), sprint, a charged shot fired in the **joystick/aim** direction (never auto-aimed at goal), and a **directional pass** (`FindKeeperPassTarget` scores ALL teammates by dot(aim,dir)−dist×0.05, no cone; reads the live `TouchControls.Instance` joystick, else `lastDir`). **No auto-pass** — fully manual; it SWIMS back to its line (never teleports) after you shoot/pass. **Safe zone (Task 5):** within `KeeperSafeZoneRadius` (1.5u) of the goal line the carrying keeper is unstealable; carry it OUTSIDE and `keeperLeftSafeZone` latches → enemies steal normally (exposed via `MatchContext.IsProtectedKeeper`; `OnBallStolen()` clears the hold on a successful strip). **Organic idle** (not holding, ball far): small random X drift 0.1–0.3u every 2–4s (≤0.4u off the line) + a subtle ±0.05u Y sine micro-bob. **Bot keeper** auto-distributes after `keeperHoldSeconds` (0.8s) OR immediately if crowded within `keeperPanicDistance` (2.5u) — UNCHANGED. **Stamina-aware** (tired = worse saves, no sprint at 0%). A keeper hold is NOT a possession change — the shot clock keeps ticking until the pass-out. **Distribution arcs (2026-07-04b):** `PassOut` throws the same untouchable BallFlight arc as every other pass (`ArcKind.Pass`; the forced DEEP outlet = the big `Lob`); point-blank falls back flat. **Freeze gate:** the keeper now fully freezes during `PlayFrozen` like every swimmer (needed so it can't fish the dead ball out of its own net during the goal hang-time). |
 | `Goal.cs` | Trigger on each net; reports `goalSide` ("Left"/"Right") + its own transform (for the net-pulse reaction) to ScoreManager. |
 | `ScoreManager.cs` | Team-based score (credits the team attacking that net → survives the halftime swap) shown on **separate `playerScoreText` + `botScoreText`** TMP fields; **ignores held-ball goals**; exposes `HomeScore`/`AwayScore` (read by the camera's goal-shake). **FRAME-ACCURACY GATE (2026-07-04b):** touching the goal trigger is NOT a goal — the ball's real velocity is projected onto the goal line and the crossing must land inside the mouth (|y| ≤ 1.5, moving INTO the net; consts mirror GoalLineOut) → skims/corner-clips/sideways drifts no longer score, badly-aimed shots miss. **NET REACTION:** on every goal the net sprite gets a damped-spring squash/bulge pulse (0.45s, scale + outward nudge, originals restored) + an expanding white impact ring at the ball. **Goal restart (NOT a quarter start → NO sprint duel):** 5 phases — (0) **HANG TIME (`goalHangSeconds` 3.5, NEW):** play freezes THE INSTANT the ball hits the net; ball stays IN the net (velocity cut ×0.15, fully stopped after 0.15s), everyone holds position, camera keeps following the action + goal shake — the reset only starts after this hold; (1) ball loose at exact (0,0), touch UI hidden + `ctx.ResetBallTouch()` (camera → overview), a `goalFreezeSeconds` (1s) celebration; (2) both teams snap into the **natural restart spread** (`TeamSide.SnapToRestartFormation(hasBall)`), the **conceding team** is given the ball at exact centre (`ctx.GiveBallTo`) + `ctx.ResetBallTouch()` again; (3) a **`postGoalPauseSeconds` (3s) silent pause**; (4) `Unfreeze` + `SetKickoffPass(conceding)` + `ctx.MarkBallTouched()` + restore UI + reset shot clock. |
-| `MatchTimer.cs` | Quarters (90s) + win/lose/draw; pauses the clock during freezes; triggers the sprint duel each quarter; halftime swap; `ForfeitMatch()`. At full time / forfeit it calls `MatchResultUI.Show()` (falls back to the bare `resultText` if no MatchResultUI in the scene). |
-| `ShotClock.cs` | 30s per-possession clock (singleton): resets on possession change / goal / defensive exclusion; turnover + grab-ban at 0; pauses when frozen, **during a free throw**, or match over; **a keeper hold does NOT reset it (keeps ticking until the keeper distributes)**. |
-| `ExclusionManager.cs` | Fouls + exclusions (singleton): failed steal = foul → **free throw** to the fouled team; 2 fouls in 10s → 5s exclusion (roster slot nulled → AI auto-adapts) **or a PENALTY if the victim was in the 2m zone**; 3rd → removal; forfeit < 4 players; HUD countdowns. 🟡 New: **virtual foul** when the victim is an inside-water Centre (Centres draw exclusions/penalties faster; toggle `centerFoulBoost` — may be too hot, watch in testing). |
+| `MatchTimer.cs` | Quarters (**displays 8:00 draining over 90s real** — `CompressedTimer`, 2026-07-09) + win/lose/draw; pauses the clock during freezes; triggers the sprint duel each quarter; halftime swap; `ForfeitMatch()`. At full time / forfeit it calls `MatchResultUI.Show()` (falls back to the bare `resultText` if no MatchResultUI in the scene). |
+| `ShotClock.cs` | Per-possession clock (**displays 30 draining over 15s real** — `CompressedTimer`, 2026-07-09; singleton): resets on possession change / goal / defensive exclusion; turnover + grab-ban at 0; pauses when frozen, **during a free throw**, or match over; **a keeper hold does NOT reset it (keeps ticking until the keeper distributes)**. |
+| `ExclusionManager.cs` | Fouls + exclusions (singleton): failed steal = foul → **free throw** to the fouled team; 2 fouls in 10s → exclusion (**HUD displays 20 draining over 7.5s of real live play** — `CompressedTimer`, 2026-07-09; roster slot nulled → AI auto-adapts) **or a PENALTY if the victim was in the 2m zone**; 3rd → removal; forfeit < 4 players; HUD countdowns. 🟡 **virtual foul** when the victim is an inside-water Centre (Centres draw exclusions/penalties faster; toggle `centerFoulBoost` — may be too hot, watch in testing). **2026-07-09f — fouls are now VISIBLE:** ordinary foul = 0.7s referee-whistle freeze (`foulWhistleFreezeSeconds`) + floating world-space **"FOUL!"** popup at the victim + a **`foulProtectSeconds` (5s real) steal-proof window** on the fouled carrier (`MatchContext.StartFoulProtection`; AI defenders stand off `freeThrowClearance` the whole window, presser stands down). Excluded players **dim to 45% alpha** at the pen (visibly benched, not a corner defender) and un-dim on return; **re-entry drops onto a live `DefendSpot` again** (the 07-05 behavior — the 07-06 pen-clamp drop-in left returners looking stuck at the pen) + clears stale AI intent (mark/drive/screen). Pen sides verified NOT mirrored: each team's pen = its **defending-half** corner (real WP re-entry corner), matched by x-sign so it survives `SwapEnds`. |
 | `SprintDuel.cs` | Quarter-start duel (singleton), fully rebuilt. Builds its OWN screen-space UI in code (no wiring): a big centred **"5 → 4 → 3 → 2 → 1 → GO!" countdown** (1s each, scale-pulse per number; `countdownStart` 5) + a "TAP SPACE / TAP SPRINT FOR SPEED" hint, then a tall **vertical SPEED bar on the left** (red→orange→green, fills with the human's speed) under a pulsing "TAP FASTER!". Ball is pinned to EXACT (0,0,0) with physics OFF during the countdown, goes live at GO. At GO! the two sprinters race (bot fixed speed; human base speed + each **Space / LeftShift tap OR a tap anywhere on screen** boosts toward a cap, decays) AND **every other swimmer immediately jogs into formation at ~60% speed** (`formationMoveSpeed`, both teams alike — `RestartFormationSpot`, position-based so it ignores the freeze; no statues, no waiting for possession). The designated sprinter starts slightly ahead of its line (`sprinterForwardOffset`) so it's clearly the sprinter, not the keeper, and is made the **active player**. Runs at **quarter starts ONLY** (Q1 via `MatchTimer.Start`, Q2–Q4 via `AdvanceToNextQuarter`) — **never after goals/penalties/turnovers** (a goal restart is a separate, duel-free system in `ScoreManager`). `StartDuel` calls `ctx.ResetBallTouch()` so the camera holds the wide overview until a sprinter grabs. First within grabDistance wins → grabs → un-freeze → kickoff pass; the rest transition straight into normal AI from wherever they jogged to. **Hides the gameplay touch UI** (`TouchControls.SetGameplayVisible(false)`) for the duel's duration and restores it on finish. The TAP-for-speed mechanic lives ONLY here — regular play is hold-to-sprint. |
 | `EventFeed.cs` | Rolling last-5 event log (singleton): goals, exclusions, turnovers, out-of-bounds, forfeit, halftime. |
-| `BallOutOfBounds.cs` | Top/bottom-wall out rule: a loose ball at the edge → possession to the nearest player of the team that didn't touch it last. |
+| `BallOutOfBounds.cs` | Top/bottom-wall out rule: a loose ball at the edge → possession to the nearest player of the team that didn't touch it last. **Full-escape recovery (2026-07-09c):** a ball past the walls entirely (|x|>8.2 / |y|>4.7 — previously it just sat outside forever) bounces/settles on the deck, pauses ~0.8s, then the awarded (defending) team's KEEPER restarts play — ball dropped at the keeper, its normal collect logic takes it; enemy grab-banned for the beat. |
 | `PenaltyManager.cs` | Penalty shot (singleton, B16.11): on an exclusion-level foul inside the 2m zone, freezes play, puts the fouled shooter on the penalty spot (|x|≈2.47) facing the open corner, lines everyone else up **behind the shooter**. Human charges with **Space** within an aim cone; AI auto-fires after a delay (with a miss chance). The freeze lifts on the shot; a goal flows through the normal `Goal` path. |
 | `GoalLineOut.cs` | Goal-line out rule (B16.11): a LOOSE ball crossing a goal line outside the mouth → re-enter just inside, nearest opponent gets it; a CARRIER pressing the end line → **corner restart** (ball + receiver placed at that corner). Awards to the team that didn't touch it last (deflection-aware via `LastTouchTeam`). |
 | `BallTouchTracker.cs` | Sits on the **Ball**. Records the last team to physically touch a LOOSE ball, so a shot/pass that deflects off an opponent and goes out is awarded correctly. Ignores keeper touches and held-ball contacts. |
@@ -98,7 +98,7 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 | `PauseMenuUI.cs` | Pause system, built in code: 70x70 pause button top-right at (-20,-45) (sprite `Resources/Sprites/pause-button`; pulled down to clear the scoreboard), click → `Time.timeScale = 0` + centered 400x350 rounded panel with PAUSED + RESUME / QUIT / TEAM MANAGEMENT. QUIT opens a confirmation sub-panel ("If you quit, this match counts as a loss.") with YES QUIT (→ MainMenu) / CANCEL. TEAM MANAGEMENT is a placeholder (no functionality yet). Ignores clicks after full time (result screen owns the freeze). Works with mouse + touch. |
 | `CameraFollow.cs` | **FIFA-style follow camera** on **Main Camera** — self-contained, no Inspector wiring (pulls `TeamManager.ActivePlayer` + `MatchContext`). **Start/post-goal overview (Task 1):** until the ball is first touched after any reset (game start, after a goal, between quarters — `MatchContext.BallTouchedSinceReset`) it holds the wide pool overview centred on (0,0) at **maxSize 5.0**, no following; the first grab eases it smoothly into the normal follow. Tracks a weighted point between the active player (60%) and the ball (40%) — 70/30 when the ball is loose — via `SmoothDamp` (speeds up to `switchSpeed` 8 for 0.5s on a player switch). **Dynamic orthographic zoom** (`Mathf.Lerp`): 4.2 base → 5.0 (player/ball far) → 4.5 (`SprintHeld`) → 3.8 (you control the keeper). HARD pool-boundary clamps on the camera centre (X ±5.5, Y ±3.2); Z locked −10. **Screen shake** (additive): goal 0.15/0.4s (polls `ScoreManager` total), powerful shot (ball >10 u/s) 0.05/0.15s. Managers missing → parks at (0,0,−10) size 5, no errors. All tunables serialized. |
 | `StaminaSystem.cs` | FIFA-style stamina on every field swimmer + keeper. **Auto-installs at runtime** (`RuntimeInitializeOnLoadMethod`) onto any `PlayerMovement`/`IAgentBody`/`Goalkeeper` lacking one → 14 objects (6 players, 6 bots, 2 keepers), zero wiring (the 2 keepers keep a hand-tuned copy). **Field drain/recovery per sec:** idle +8% (×2 after 5s rest), swim −3%, hold+move −5%, sprint −12% (−18% after 3s fatigue), excluded +15%; **second wind** at 0% (ease off sprint 2s → +15% burst). **Effects:** <40% speed ×0.8; <20% speed ×0.6 + steal ×0.8; 0% sprint disabled. **Keeper:** track −2%, hold −1%, idle +10%; tired = worse saves, no sprint at 0%. Writes only neutral hooks (deleting it leaves the game identical); HUD lives in `TouchControls`. |
-| `BallFlight.cs` | Ball VFX + **the airborne-arc system**, **auto-added to the Ball at runtime** by `PlayerMovement` (no wiring), singleton. **ALL passes and HIGH shots fly as arcs** (`LaunchHighBall(landPos, speed, height01, ArcKind)`): the rigidbody flies a straight zero-damping constant-speed line with **colliders OFF** (players/keepers/walls/goal trigger can't touch it) while a sprite copy (`BallAirSprite`, sorted over swimmers) rides the height curve above a shrinking oval water shadow; the root sprite hides mid-flight. **Untouchable mid-air:** `MatchContext.BallGrabbable` is false while `HighBallActive` — grabs/steals/keeper saves all wait for the landing (exact at landPos; landings clamped into open water; overlapped swimmers collision-ignored until separated). **Three ArcKinds:** `Pass` (B / every bot pass — small quick SYMMETRIC hop, peak ≈ dist×0.055 clamped 0.18–0.5, swell 1.08, no spin), `Lob` (F+B / bot long-or-blocked ball — the big floaty parabola, peak ≈ dist×0.14 clamped 0.45–1.25, swell 1.2), `Shot` (charge >0.7 — **ASYMMETRIC** hand-built curve: easeOutQuad rise into a peak at 35% of the flight, easeInQuad fall that hangs near the top then drops; peak ≈ dist×0.10 clamped 0.35–0.9, swell 1.15; glows + keeps FULL speed on landing — passes land with a 25% roll). **Release SNAP (shots only, incl. bot/keeper):** raw un-eased squash 0.84 → pop 1.12 → settle over 0.12s at the instant of release. Plus: speed-gated **TrailRenderer** (>5 u/s, suppressed mid-arc); **flat point-blank high-shot** swell+glow fallback; **skip-shot** bounce 1.5u before the goal (Y jitter, squash + water ripple, 35% `KeeperFooled`); **spin** (shots 54°/s, fast loose 18°/s, arcs 9°/s — none on skip or any Pass, only >6 u/s, snaps upright on catch). All scaling uniform, recomputed from a clean base each frame. Exposes `ShotHeight`, `SkipActive`/`SkipBounced`, `HighBallActive`, `KeeperFooled`. |
+| `BallFlight.cs` | Ball VFX + **the airborne-arc system**, **auto-added to the Ball at runtime** by `PlayerMovement` (no wiring), singleton. **ALL passes and HIGH shots fly as arcs** (`LaunchHighBall(landPos, speed, height01, ArcKind)`): the rigidbody flies a straight zero-damping constant-speed line with **colliders OFF** (players/keepers/walls/goal trigger can't touch it) while a sprite copy (`BallAirSprite`, sorted over swimmers) rides the height curve above a shrinking oval water shadow; the root sprite hides mid-flight. **Untouchable mid-air:** `MatchContext.BallGrabbable` is false while `HighBallActive` — grabs/steals/keeper saves all wait for the landing (exact at landPos; landings clamped into open water; overlapped swimmers collision-ignored until separated). **Three ArcKinds:** `Pass` (B / every bot pass — small quick SYMMETRIC hop, peak ≈ dist×0.055 clamped 0.18–0.5, swell 1.08, no spin), `Lob` (F+B / bot long-or-blocked ball — the big floaty parabola, peak ≈ dist×0.14 clamped 0.45–1.25, swell 1.2), `Shot` (charge >0.7 — **ASYMMETRIC** hand-built curve: easeOutQuad rise into a peak at 35% of the flight, easeInQuad fall that hangs near the top then drops; peak ≈ dist×0.10 clamped 0.35–0.9, swell 1.15; glows + keeps FULL speed on landing — passes land with a 25% roll). **Release SNAP (shots only, incl. bot/keeper):** raw un-eased squash 0.84 → pop 1.12 → settle over 0.12s at the instant of release. Plus: speed-gated **TrailRenderer** (>5 u/s, suppressed mid-arc); **flat point-blank high-shot** swell+glow fallback; **skip-shot** bounce 1.5u before the goal (Y jitter, squash + water ripple, 35% `KeeperFooled`); **spin** (shots 54°/s, fast loose 18°/s, arcs 9°/s — none on skip or any Pass, only >6 u/s, snaps upright on catch). All scaling uniform, recomputed from a clean base each frame. Exposes `ShotHeight`, `SkipActive`/`SkipBounced`, `HighBallActive`, `KeeperFooled`. **Settle ripples (2026-07-09c):** a fast loose ball slowing below 1 u/s with nobody collecting it splashes ONCE — 3 staggered expanding rings at the contact point, first largest, each fainter (latched via arm-at->2.5 u/s; suppressed while held/airborne/frozen). |
 | `GoalColliderFixer.cs` | Editor tool (**Tools → Fix Goal Colliders**). Resizes GoalRight/GoalLeft Box Collider 2D to the visual goal mouth (size (4,15) → world ≈0.8×3.0u at scale 0.2). Idempotent; marks the scene dirty (Ctrl+S to save). |
 | `PlayerLabel.cs` | ⬜ **NOT YET BUILT** (planned). Future: world-space player-number labels floating above each swimmer. |
 | `LeagueSeason.cs` | Static session-persistent **tournament** state, one per competition. 16 teams in 2 groups of 8 (player = team 0, Group A); 7-round group round-robin (circle method), each player match also simulates that round in both groups; top 4 per group → single-elim knockout (QF: A1vB4/A2vB3/B1vA4/B2vA3 → SF → Final, no draws — sudden-death goal). Player eliminated → rest of bracket simulates instantly. Phase enum (GroupStage/Quarterfinal/Semifinal/Final/Completed), per-group P/W/D/L/GF/GA/Pts, `KnockoutMatch` bracket, 30-club name pool (15 opponents drawn per division). Champion → NavigationManager persists the next-division unlock (PlayerPrefs div1_won/pl_won/cc_won/wcl_won). |
@@ -114,6 +114,8 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 | `LeaderboardManager.cs` | **(NEW 2026-07)** League leaderboard: plain C# singleton + `RankingUI` (hub RANKING button). HONESTLY SIMULATED — 24 deterministic fake rivals per season (gamer-tag pool); only the PLAYER's points are real (+20 win / +5 loss from the EndMatch hook). 5-tier ladder IRON→DIAMOND; at season rollover (SeasonPassManager epoch) top 5 promote, rank 20+ demotes, prev result stored for "LAST WEEK". Player row always pinned at the bottom. Elite/World/Friends/Country tabs = locked COMING SOON stubs (need real accounts — NOT fake data). Own JSON (leaderboard.json). |
 | `SeasonPassManager.cs` | **(NEW 2026-07)** THE canonical season: 14-day epoch in seasonpass.json drives the hub "SEASON ENDS IN" countdown (now real + tappable → this screen), Global Cup mission scope, league rollover, and the shop EVENT badges. 16 tiers × 100 XP; XP from matches (+25 win / +10 loss, EndMatch hook) + mission claims (+10). `SeasonPassUI`: Gold Pass card (ACTIVATE = 500 gems PLACEHOLDER price, via SpendDiamonds), tier/XP progress, horizontal 16-tier track — free row always collectible, gold row padlocked until activated, COLLECT grants via the shared reward funnel. Free Pass "card" is just a note — the free row IS the free pass (no duplicate track). |
 | `ClubCustomizationUI.cs` | **(NEW 2026-07)** The "My Club" screen (code-built, hosted in NavigationManager's club overlay; opened from the hub avatar/name). Crest picker (8 PROCEDURAL shapes — real crest art still needed), primary/secondary color swatches (10 preset), country picker (12 text chips, colored-dot placeholder until flag art exists), TMP_InputField rename (max 16 chars), live preview, APPLY → `RosterManager.Club`/`SaveClub()` + `nav.RefreshClubProfile()`. Statics shared with the hub: `CrestSprite(id)`, `ParseHex`, `CountryColor`. |
+
+| `CompressedTimer.cs` | **(NEW 2026-07-09)** Shared compressed-countdown struct: the DISPLAYED number counts down from `displayDuration` while only `realDuration` real seconds pass (FIFA-style fast-ticking big clock). Gameplay reads the REAL scale (`Tick`/`RealRemaining`/`IsComplete`); only printed text uses `DisplayValue`/`DisplayElapsed`. Used by MatchTimer (8:00 / 90s real), ShotClock (30 / 15s real), ExclusionManager (20 / 7.5s real). |
 
 | `PoolTheme.cs` | **(NEW 2026-07)** Data-driven pool theming: `PoolTheme` (id, background sprite path, water tint, ambient-layer defs) + static `PoolThemes` catalog (CardPack-style registry; `Get(id)` / `ForDivision(competitionIndex)`) + `PoolThemeApplier` (self-bootstrapping like StaminaSystem: on scene load, finds "PoolWater" and applies overrides; hub scenes no-op). ONE real theme ("classic") = the current art expressed as no-overrides, all 4 divisions map to it. Future themed pools = register an entry + map the division; ambient ANIMATION plugs into the spawned "PoolThemeAmbient" group later. |
 
@@ -151,8 +153,8 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 **Managers — all components on ONE `GameManager` GameObject:**
 - `MatchContext`: **Ball = Ball, Player Team = PlayerTeam, Bot Team = BotTeam**, Release Grab Delay 0.5 (was 0.35 — gives passes/drops time to travel), Free Throw AI Hold 3, Player Limit X 6.9, Counter Window 4.
 - `TeamManager`: **Players = [Player1..6]**, **Teammate AIs = [Player1..6] (SAME ORDER)**, **Player Team = PlayerTeam**, **Defense Mode Text = DefenseModeText**.
-- `MatchTimer`: **Score Manager = ScoreManager, Timer Text = TimerText, Quarter Text = QuarterText, Result Text = ResultText**, Quarter Length 90, Total Quarters 4.
-- `ShotClock`: **Match Timer = (this GameManager's MatchTimer), Shot Clock Text = ShotClockText**, Shot Clock Seconds 30.
+- `MatchTimer`: **Score Manager = ScoreManager, Timer Text = TimerText, Quarter Text = QuarterText, Result Text = ResultText**, Quarter Length 90 (real), Display Quarter Length 480 (the 8:00 shown), Total Quarters 4.
+- `ShotClock`: **Match Timer = (this GameManager's MatchTimer), Shot Clock Text = ShotClockText**, Shot Clock Seconds 30 (displayed), Shot Clock Real Seconds 15.
 - `EventFeed`: **Feed Text = EventFeedText, Match Timer = MatchTimer**, Max Lines 5.
 - `SprintDuel`: no required refs (pulls teams/ball from MatchContext); optional **Duel Text**; speed/timing tunables.
 - `BallOutOfBounds`: no refs (pulls from MatchContext); Out Y Threshold 4.2, Reentry Inset 0.5.
@@ -163,7 +165,7 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 - **PlayerTeam** — `TeamSide`: Name "Player", **Attack Goal = GoalRight, Defend Goal = GoalLeft**, **Members = [Player1..6]**, formation + AI tunables, plus **attacking-spacing** (Teammate Spacing 2, Support Pass Range 5, Support Blend 0.5, Pass Openness Weight 1.5) and **tactics** (Center Feed Weight 3, Counter Runners 2, Drop Sag 0.5, Shot Quality Threshold 0.30, Free Throw Clearance 2.2) fields. (Defense mode is runtime-only, defaults Press.)
 - **BotTeam** — `TeamSide`: Name "Bot", **Attack Goal = GoalLeft, Defend Goal = GoalRight**, **Members = [Bot1..6]**.
 - **ScoreManager** — `ScoreManager`: **Ball = Ball, Player Score Text = PlayerScoreText, Bot Score Text = BotScoreText, Player Team = PlayerTeam, Bot Team = BotTeam**, Goal Freeze Seconds 1.
-- **ExclusionManager** — `ExclusionManager`: **Match Timer = MatchTimer, Exclusion Text = ExclusionText**; Foul Window 10, Fouls For Exclusion 2, Exclusion 5, Max Exclusions 3, Min Players 4, Foul Steal Lockout 1.5, Penalty Zone X 4.28.
+- **ExclusionManager** — `ExclusionManager`: **Match Timer = MatchTimer, Exclusion Text = ExclusionText**; Foul Window 10, Fouls For Exclusion 2, Exclusion Display 20 / Exclusion Real 7.5, Max Exclusions 3, Min Players 4, Foul Steal Lockout 1.5, Penalty Zone X 4.28.
 
 **UI — Canvas (TextMeshPro), + EventSystem (auto)**
 - **ScoreboardBG** (Raw Image, `score-tab.png`) holding **PlayerScoreText** + **BotScoreText** (separate score fields) and **PlayerNameText** + **BotNameText**; **TimerText** ("1:30"), **QuarterText** ("Q1"), **ResultText** (hidden until full time), **DefenseModeText** ("DEFENSE: PRESS/ZONE"), **ExclusionText** (exclusion countdowns), **ShotClockText** ("30"), **EventFeedText** (last 5 events), **PenaltyText** ("PENALTY!", hidden until a penalty; wired into `PenaltyManager.Penalty Text`). The **stamina HUD panel** (P#/GK + bar) is built at runtime inside `TouchControls` — not a Canvas object.
@@ -2201,3 +2203,417 @@ tilt (`MaxTiltDeg` 6°) all unchanged.
 
 **Build:** `dotnet build Assembly-CSharp.csproj` → **0 errors** (22 pre-existing warnings, untouched files).
 Nothing to wire (const in `FanIdle`).
+
+---
+
+## SESSION LOG — 2026-07-09 (foul visibility root causes fixed; compressed FIFA-style clocks)
+
+Follows the 2026-07-08/09 diagnosis: fouls/exclusions were NOT broken — the trigger chain was intact
+but steal attempts were structurally near-impossible in normal play. Two targeted gameplay fixes +
+one new shared display utility.
+
+**TASK 1 — Player3 steal reach fixed (scene YAML):** Player3's `PlayerMovement.stealDistance` was
+serialized at **0.2** in `SampleScene_PoolB.unity` (every other player: 1.2) — its Space-steals
+silently whiffed by range. Now **1.2**, matching the rest. (Latent quirk, predated the "fouls
+missing" report; found during the diagnosis.)
+
+**TASK 2 — `pressDistance` 1.8 → 1.0 (the structural fix):** an AI carrier passes the moment any
+enemy is within `TeamSide.pressDistance` (`WaterPoloAI.Carry`, "pressured"). At 1.8u that is FARTHER
+than every steal reach (bots `grabDistance` 1.0, players `stealDistance` 1.2), so a carrier dumped
+the ball **before a legal steal attempt was even possible** — failed steals are the ONLY foul source,
+so fouls/exclusions were starved regardless of `stealChance`. **Chose 1.0**: exactly AT the bots'
+steal reach and inside the players' 1.2, so pressers enter legal steal range at the same moment the
+carrier starts reacting — steals become possible, carriers still pass under real pressure (that
+branch is unchanged). Changed in BOTH places (the serialized-default gotcha): `TeamSide.cs` default
+AND the two serialized `pressDistance` values in `SampleScene_PoolB.unity` (PlayerTeam + BotTeam).
+Side note: `pressDistance` also feeds `TeamSide.ShotQuality`'s pressure term, so AI shooters now
+count themselves "pressured" only inside 1.0u — slightly more willing to shoot with a defender at
+1.0–1.8u; watch in testing. NOT touched (confirmed correct in diagnosis): `stealChance`,
+`foulWindowSeconds`, `foulsForExclusion`, `maxExclusionsPerPlayer`, escalation/penalty logic.
+(Retired `SampleScene.unity` still carries the old 1.8/0.2 values — nothing loads it.)
+
+**TASK 3 — compressed clocks (`CompressedTimer.cs`, NEW in `Assets/`):** one shared struct — the
+HUD counts down `displayDuration` while only `realDuration` real seconds pass. Gameplay keys off the
+REAL scale (`Tick`/`RealRemaining`/`IsComplete`); only printed text uses `DisplayValue`/`DisplayElapsed`.
+All three timers now run through it (no hand-rolled scale factors):
+- **Quarter clock (`MatchTimer`):** displays **8:00 → 0:00 over 90 real seconds** (real quarter
+  length UNCHANGED — new `displayQuarterLength` 480). `RemainingSeconds()` (bot late-lead defense)
+  stays REAL. `MatchTimeStamp()` (event-feed stamps) now uses the DISPLAY scale so feed times agree
+  with the on-screen clock.
+- **Shot clock (`ShotClock`):** displays **30 → 0 over 15 real seconds** (new `shotClockRealSeconds`
+  15; `shotClockSeconds` 30 is now explicitly the displayed number). Real possession length is
+  therefore HALVED, as specified. Turnover-at-zero logic untouched; `warningThreshold` 5 is
+  display-scale (red for the last 2.5 real seconds).
+- **Exclusion timer (`ExclusionManager`):** displays **20 → 0 over 7.5 real seconds** of live play
+  (new `exclusionDisplaySeconds` 20 / `exclusionRealSeconds` 7.5 — task's 7–8s range). ⚠️ **Premise
+  correction:** the exclusion was NOT "20s real" before — it was `exclusionSeconds` **5s** (code +
+  scene). Real sit-out time therefore got LONGER, 5 → 7.5s (a stronger man-up, and easier to actually
+  see). The old `exclusionSeconds` field is deleted; the scene's orphaned `exclusionSeconds: 5` line
+  is ignored by Unity and will drop on the next scene save. Freeze-pausing (2026-07-05 fix) preserved:
+  the timer still only ticks during live play.
+
+**Build:** `dotnet build Assembly-CSharp.csproj` → **0 errors** (22 pre-existing warnings, untouched files).
+
+**Slot re-check (scripts edited in place, but per the standing rule):** GameManager → **MatchTimer**
+(Score Manager / Timer / Quarter / Result Text), **ShotClock** (Match Timer / Shot Clock Text),
+**ExclusionManager** (Match Timer / Exclusion Text) slots should all still be filled. New Inspector
+fields appear with correct code defaults (nothing to wire): MatchTimer **Display Quarter Length 480**,
+ShotClock **Shot Clock Real Seconds 15**, ExclusionManager **Exclusion Display Seconds 20 / Exclusion
+Real Seconds 7.5**. ⚠️ Serialized-default gotcha: once the scene is saved in Unity these bake into the
+YAML — future re-tuning must happen in the Inspector/scene, not just in code defaults.
+
+**How to test:** (1) FOULS — play normally; when a bot presser reaches you (or your presser reaches a
+bot carrier) steal attempts now actually roll: expect "Foul - free throw YOU/BOT" feed lines within a
+possession or two, and an exclusion (player parked at the pen, HUD "EXC: 20.0" counting fast) when the
+same offender fouls twice in 10s. Player3 Space-steals now work like everyone else's. (2) QUARTER
+CLOCK — shows 8:00 and drains to 0:00 in 90 real seconds (~5.3 displayed seconds per real second);
+quarter/halftime flow unchanged. (3) SHOT CLOCK — shows 30, hits 0 (turnover) after 15 real seconds
+of possession; red at displayed 5. (4) EXCLUSION — HUD counts 20 → 0 while the player sits out 7.5
+real seconds of LIVE play (still pauses through goal celebrations). (5) Event-feed timestamps march
+in step with the big clock.
+
+---
+
+## SESSION LOG — 2026-07-09c (steal whiff cue; loose-ball settle splash; escaped-ball keeper restart)
+
+Three independent additions. Touched: `PlayerMovement.cs`, `BallFlight.cs`, `BallOutOfBounds.cs`.
+Untouched by explicit instruction: the shot clock's pause-during-loose-ball design, `stealDistance`,
+`pressDistance`, all foul/exclusion values.
+
+**TASK 1 — whiff feedback on silent steal exits (`PlayerMovement`).** Space (and the touch BLOCK)
+used to exit with zero feedback on the three "legal press, no attempt" gates — a dead-feeling key
+(diagnosed 2026-07-09b). Each now plays a cheap cue via a new `StealWhiff(bool playAnimation)`:
+- **Out of range** (carrier beyond `stealDistance` / `BlockStealRange`) → the snatch ANIMATION (a
+  lunge at open water) + a small water-swipe puff.
+- **Wrong side** (failed the ~70° front-facing gate; the snatch anim already fires before that gate)
+  → puff only.
+- **Cooldown** (0.6s between attempts / 1.5s post-foul lockout) → puff only, no anim spam.
+The puff = a short-lived world-space sprite (the ball's own circle drawn white) expanding 0.15→0.45
+and fading over 0.25s at the hand (`lastDirection` × 0.45u), sorted just above the player, throttled
+to one per 0.15s so mashing can't stack them. Purely visual — no gameplay branch changed, input never
+consumed/blocked, and the always-loud outcomes (real roll → steal or foul) are untouched. The other
+silent exits (ball loose / mid-arc / free throw / protected keeper) intentionally stay silent — those
+are "there is nothing to steal" states, not whiffs.
+
+**TASK 2 — settle splash for a loose floating ball (`BallFlight`).** New `UpdateSettleRipples()` +
+`RippleWave(pos, delay, maxScale, alpha, seconds)` (a parameterised sibling of the skip-shot ripple):
+when a LOOSE, simulated ball that was recently moving fast (armed at >2.5 u/s) decelerates below
+1 u/s with nobody having collected it, **three staggered expanding rings** radiate once from the
+contact point — (0s, 0.9 scale, 0.6 alpha), (0.18s, 0.6, 0.45), (0.36s, 0.38, 0.3): first wave
+largest, each successive one smaller/fainter. Latched (`settleArmed`): fires ONCE per settle, never
+re-triggers while the ball sits there, re-arms only after it moves fast again. Suppressed while held,
+mid-arc (it settles at the landing instead), during a pre-bounce skip shot, and while `PlayFrozen`
+(no splash from the ball dying in the net during goal hang-time).
+
+**TASK 3 — escaped-ball recovery → keeper restart (`BallOutOfBounds`).** The dev-reported "a very
+hard shot leaves the pool and just disappears": nothing owned a ball fully OUTSIDE the walls (the
+y-rule stops at the wall face, `GoalLineOut` owns the goal lines, and a violent ball can jump past
+both between physics steps). Extended the existing out-rule owner — no parallel system:
+- **Detection (FixedUpdate, checked BEFORE the wall rule):** a LOOSE ball at |x| > 8.2 or |y| > 4.7
+  (beyond the ±8 / ±4.5 walls; both serialized) = escaped. Skipped while a `HighBallActive` arc flies
+  (its rigidbody line is always in-pool and its landing is clamped).
+- **Sequence (`RecoverEscapedBall` coroutine):** physics OFF; possession is claimed for the awarded
+  team (the team that did NOT touch it last — same ruling as the wall rule) which fences the parked
+  ball off from every other rule (they all early-out on a non-loose ball) and from all grabs; feed
+  line "Out - keeper ball YOU/BOT"; **two decaying deck hops** (~0.6s total, sliding ~0.6u further
+  out, capped near the pool so the clamped camera still shows it); a **0.8s dead-ball pause**; then
+  the ball is dropped 0.5u in FRONT of the awarded team's keeper, physics back ON, possession
+  cleared, and the ENEMY team grab-banned — the keeper's own save/collect logic picks it up within
+  its normal release-cooldown beat and distributes exactly as it always does (bot: auto pass-out;
+  your team: full keeper control). The grab ban lifts automatically when the keeper takes possession
+  (`SetPossession` clears it). Shot clock reset on the award.
+- **Abort-safety:** every phase (incl. mid-hop) checks `Claimed()` — ball re-parented, re-simulated,
+  or `PlayFrozen` (quarter break → sprint duel pins the ball with physics off) → the sequence stands
+  down instantly and defers to the claiming system.
+- Keeper lookup = x-sign of the awarded team's `defendGoal` vs each `Goalkeeper`'s half (the same
+  rule `Goalkeeper.KeeperTeam` uses), so it survives the halftime `SwapEnds`.
+
+**Build:** `dotnet build Assembly-CSharp.csproj` → **0 errors** (22 pre-existing warnings; the new
+code adds none).
+
+**Slot re-check (scripts edited in place; per the standing rule):** GameManager → **BallOutOfBounds**
+has NEW Inspector fields (Escape X/Y Threshold 8.2/4.7, Settle Seconds 0.6, Throw In Delay 0.8 — code
+defaults apply, nothing to wire) and its existing Out Y Threshold 4.2 / Reentry Inset 0.5 should still
+read those values. `PlayerMovement`/`BallFlight` gained no serialized fields. Usual check that
+Player1–6 → Player Movement still has **Ball + Aim Line** wired.
+
+**⚠️ NEEDS DEV VERIFICATION (Task 3 — the keeper handoff rides existing AI logic):**
+1. Force a ball out (easiest: from your own half, aim a full-charge HIGH shot at the top wall corner,
+   or nudge the Ball's position past x=8.3 in the Inspector during Play). Confirm: feed shows
+   "Out - keeper ball …", the ball hops/settles on the deck, pauses, then appears at the correct
+   (defending) keeper and is collected within ~1s.
+2. Confirm the BOT keeper then passes out normally (its `keeperHoldSeconds` 0.8 auto-distribute), and
+   — separately — that when YOUR keeper is awarded, you get normal player-keeper control (Task 5 flow).
+3. Watch the shot clock across the restart: reset on the award, keeps ticking through the keeper hold
+   (keeper hold ≠ possession change — unchanged design).
+4. Edge: let a quarter expire while the ball is parked on the deck — the quarter break/sprint duel
+   must take the ball cleanly (the recovery aborts itself; nothing should teleport mid-duel).
+5. Cosmetic: during the ~2s recovery the enemy presser may swim to the wall nearest the dead ball
+   (it reads "possession = awarded team, no carrier" and presses the spot) — looks like fetching the
+   ball; flag if it reads wrong.
+
+---
+
+## SESSION LOG — 2026-07-09d (REGRESSION FIX for 09c: goal-spam guards; whiff/splash visuals de-ball-ified)
+
+Regression report after 09c: (1) spurious repeated "Goal - BOT" feed lines + an "oversized/duplicate
+ball sprite stuck in the goal net" (screenshot), (2) Space while defending "triggers a goal-score
+animation", (3) no fouls at all any more. Investigated, root-caused, fixed. Touched:
+`PlayerMovement.cs`, `BallFlight.cs`, `BallOutOfBounds.cs`, `ScoreManager.cs`. Nothing new added.
+
+**Investigation answers (as asked):**
+- The whiff puff IS a fully separate cosmetic object — `new GameObject` with only a SpriteRenderer,
+  untagged, NO collider, NO rigidbody; it never references, moves or clones the real Ball object.
+  `Goal.OnTriggerEnter2D` requires a collider AND the "Ball" tag, so the puff/ripples physically
+  CANNOT fire the goal trigger.
+- `TrySteal`'s control flow is intact: the 09c whiffs only replaced three previously-SILENT
+  `return`s (cooldown / out-of-range / wrong-facing). The traced path for Space against an in-range,
+  correctly-facing carrier still reaches `lastStealTime = …` → the `stealChance` roll →
+  `ExclusionManager.ReportFoul` on a miss, unchanged. Bots' `TryStealAI` was never touched.
+
+**What actually broke, plainly:**
+1. **The 09c visuals were ball look-alikes.** Both the whiff puff and the settle ripples drew the
+   ball's OWN sprite in white at fixed world scales (puff to 0.45, ripples to 0.9) — the ball itself
+   is authored at ~0.1 scale, so they rendered as **4.5x–9x "giant white balls"**, visually identical
+   to ScoreManager's goal impact ring (`NetRipple`: same sprite, white, ~1.1). Symptom 2 = the puff
+   (Space on defense) being read as the goal animation; the screenshot's "oversized duplicate ball in
+   the net" = settle ripples firing where a saved/slowed shot dies at the goal mouth. **Fix:** both
+   effects are now sub-ball-scale (puff 0.08→0.22, waves 0.3/0.2/0.13), fainter (alpha 0.35 /
+   0.4-0.2), tinted **pale water-cyan** (never ball-white), and settle ripples are suppressed
+   entirely within 6u of a goal line (`SettleMaxX`) — nothing splashy ever renders in the net again.
+2. **The 09c escape rule could misfire on parked balls.** `BallOutOfBounds.FixedUpdate` read
+   `ctx.Ball.position` — the **stale rigidbody pose** ([[waterpolo-rb-frozen-pose]]) — with **no
+   `PlayFrozen` and no `simulated` guard**. Any physics-off loose-ball state (sprint-duel pin, goal
+   hang-time/restart, its own recovery) leaves rb.position frozen at wherever play last was; if that
+   stale pose sat past a threshold the rule fired repeatedly mid-freeze — claiming possession during
+   restarts, spamming the feed, and fighting the restart systems for the ball (the "no real play
+   between events" chaos). **Fix:** both rules now bail while `PlayFrozen`, bail when the ball is
+   not `simulated` (physics-off = some system is managing it), and read the transform-aware
+   `ctx.BallPosition`.
+3. **`ScoreManager.BallEnteredGoal` had NO re-entrancy guard.** During the ~7.5s goal restart the
+   ball is parked loose IN the net (bobbing), reset, handed out — and nothing stopped the goal
+   trigger from scoring AGAIN mid-restart. **Fix:** a `restartInProgress` latch — set the moment a
+   goal counts, cleared when Phase 4 actually resumes play; `BallEnteredGoal` early-outs while set.
+   One goal per restart, guaranteed, whatever re-enters the trigger.
+4. **"No fouls at all" was a consequence, not a separate break:** with the game spending most of its
+   time frozen inside stacked goal restarts (7.5s each), live play — the only place steal rolls
+   happen — barely existed. The steal/foul path itself is verified unchanged (see above).
+
+**Build:** `dotnet build Assembly-CSharp.csproj` → **0 errors, 22 warnings** (exact pre-existing
+baseline — the 2 warnings 09c had added are also gone).
+
+**Slot re-check:** no new serialized fields this session (consts only); the usual GameManager
+(ScoreManager refs, BallOutOfBounds thresholds from 09c) and Player1–6 slots should be untouched —
+in-place edits, not full replaces.
+
+**How to test:** (1) Play a full quarter: goals only appear in the feed for real shots, one per
+restart, never stacked seconds apart; nothing large/white ever sits in a net. (2) Mash Space on
+defense: a small faint CYAN swipe puff at the hand — clearly not the goal ring; out-of-range presses
+also lunge. (3) Fouls are back: press a carrier from the front → "Foul - free throw" lines,
+exclusions on repeat offenders (the 2026-07-09 tuning — pressDistance 1.0 — is what makes them
+possible; it was never the problem). (4) A pass/shot dying in OPEN water still gives the 3 small
+fading rings; a ball dying at the goal mouth gives none. (5) Quarter break with a loose ball: no
+"Out - keeper ball" spam during the duel (the stale-pose misfire is gone).
+
+---
+
+## SESSION LOG — 2026-07-09f (EMPIRICAL steal diagnosis from a real playtest log; foul visibility overhaul; whiff removed; exclusion pen verified + re-entry fixed)
+
+Method change after two wrong static-trace sessions: temporary `[STEAL-DBG]` Debug.Logs were added
+at every TrySteal/TryStealAI gate + roll + ReportFoul, the dev played ~60s attempting steals, and
+the diagnosis below comes from the **676 captured log lines** (read from Editor.log), not from code
+reading. All debug logs are removed again. Touched: `PlayerMovement.cs`, `WaterPoloAI.cs`,
+`ExclusionManager.cs`, `MatchContext.cs`, `Goalkeeper.cs`, `SampleScene_PoolB.unity`.
+
+**WHAT THE LOG ACTUALLY SHOWED (diagnosis):**
+1. **The foul→exclusion chain WORKS end-to-end.** The playtest produced ~10 `ReportFoul`s, several
+   successful steals, and TWO escalations (both by the dev's own team — the "YOU EXC" screenshot was
+   the dev's own player serving one). "Zero fouls/exclusions" was a rate + visibility problem, never
+   a broken trigger chain.
+2. **Human Space-steals DID roll — 6 times** (5 miss → foul, 1 success). The "only the puff happens"
+   perception had three real causes: (a) genuine in-close presses measured **1.33–1.75u to the ball**
+   (it sits at the carrier's far-side hand) vs `stealDistance` **1.2** → OUT OF RANGE whiffs; (b) many
+   presses landed while the ball was mid-flight between bots (possession=none — correctly nothing to
+   steal); (c) the scene's serialized `stealChance` **0.2** (code default 0.4 — the gotcha) made 4 of
+   5 rolls a self-foul, so "nothing visible" was often a silent-looking foul.
+3. **The REAL starvation bug (bots + AI teammates): scene `grabDistance` 0.5.** Dozens of
+   "presser close but OUT OF REACH: dist=1.0x > reach=0.50" lines. The 2026-07-09 fix set
+   `pressDistance` 1.0 against an ASSUMED steal reach of 1.0 — but the scene serialized **0.5** on
+   all 12 TeammateAI/BotMovement components (code default 1.2). Pressers therefore parked at 1.0
+   and never legally reached the carrier; the only bot steals in the log came vs a sprinting
+   (loose-hold) carrier, where reach doubles to exactly 1.0. **The serialized-default gotcha, third
+   strike.**
+
+**FIXES (this session):**
+- **Scene tuning (YAML edited directly):** `grabDistance` 0.5 → **1** (×12 AI agents — restores the
+  09 design: press range == steal reach); `stealDistance` 1.2 → **1.5** (×6 players + code default;
+  matches the touch-BLOCK reach 1.5 and the 1.5 defend-anim proximity); `stealChance` 0.2 → **0.4**
+  (×6 players; code default was already 0.4).
+- **(Item 1) Exclusion pen sides — VERIFIED, NOT SWAPPED, unchanged.** Evidence: bots pressed/stole
+  from KeeperLeft → bots attack GoalLeft; scene YAML: Player `defendGoal`=GoalLeft (1781417090),
+  Bot `defendGoal`=GoalRight (773787453); markers at (−7.2,−4.1)/(7.2,−4.1). `PenFor` parks each
+  team at its **defending-half** corner = real water polo's re-entry corner (own goal line). What
+  made it READ mirrored: a full-opacity benched player parked exactly where the enemy man-up plays.
+  Fix = presentation, not sides: **excluded players dim to 45% alpha** while benched, restored on
+  return. (If the pen is WANTED on the attacking side as a design choice, it's a one-line sign flip
+  in `PenFor` — deliberately not done.)
+- **(Item 2) Post-exclusion reintegration.** Found a quiet regression: the 07-06 pen-marker session
+  replaced the 07-05 "re-enter onto a live DefendSpot" with "pen position clamped 0.8u inside" —
+  the returner re-entered basically AT the pen and the whole rejoin depended on the brain, reading
+  as "sat inert, never came back" (its own header comment still promised the DefendSpot behavior).
+  **Restored:** `ReturnToPlay` drops the returner onto `team.DefendSpot(...)` (pen-clamp kept only
+  as the no-team fallback), clears stale AI intent (`CurrentMark`/`IsDriving`/`IsSettingScreen`),
+  un-dims, zeroes velocity. Roster-slot restore + excludedNow removal unchanged (verified correct;
+  no exceptions in the playtest log).
+- **(Item 3) Ordinary fouls are now VISIBLE (they used to be an event-feed line only):**
+  `ExclusionManager.FreeThrow` now (a) fires a **0.7s referee-whistle freeze**
+  (`foulWhistleFreezeSeconds`; safe: steal rolls only happen in live play, so no other freeze owner
+  can be active/started during it), (b) spawns a rising/fading world-space **"FOUL!"** TextMesh at
+  the victim, and (c) starts **`foulProtectSeconds` = 5 REAL seconds** of `MatchContext`
+  **foul protection**: `StartFoulProtection`/`IsFoulProtected(carrier)` — nobody may steal from the
+  fouled carrier (gated in `TrySteal`, `TouchBlockSteal`, `TryStealAI`, and the keeper snatch), and
+  the AI stand-off that used to end the instant the carrier moved now holds for the whole window
+  (brain: `enemyFreeThrow` → `enemyShielded`, covering free throw OR protection; presser stands
+  down, defenders keep `freeThrowClearance`). Protection lapses EARLY the moment the carrier
+  releases the ball (it checks they still carry), so it never shields a receiver. Shot clock: paused
+  during the whistle freeze + free throw as before; it RUNS during the remaining protection window
+  (protected but burning clock — flag if it feels wrong).
+- **(Item 4) Whiff puff REMOVED everywhere** (dev: "random ball appearing/disappearing"). The 09c/09d
+  `StealWhiff`/`WhiffRoutine` + consts are deleted; cooldown and wrong-side exits are silent again;
+  the out-of-range lunge keeps ONLY the pre-existing snatch animation. `System.Collections` using
+  dropped from PlayerMovement (no coroutines left there).
+
+**Build:** `dotnet build Assembly-CSharp.csproj` → **0 errors, 22 warnings** (exact pre-existing baseline).
+
+**Slot re-check (in-place edits, no full script replaces — slots should be intact):** GameManager →
+ExclusionManager gets NEW Inspector fields **Foul Protect Seconds 5 / Foul Whistle Freeze Seconds
+0.7** (code defaults apply, nothing to wire). Scene YAML was edited directly — in Unity, if
+SampleScene_PoolB is open, use File → Open Scene to reload it (do NOT save an open stale copy over
+the fix). ⚠️ Serialized-default gotcha note for the future: the live tuning values are now scene
+`grabDistance 1` / `stealDistance 1.5` / `stealChance 0.4` — retune in the Inspector, not in code.
+
+**⚠️ VERIFICATION PENDING (same 60s playtest, dev must CONFIRM before this is called done):**
+1. Press a bot carrier from the front and mash Space: visible snatch lunges, and within a few
+   attempts a **whistle pause + "FOUL!" popup** + feed line; defenders (and you) can't touch the
+   fouled carrier for ~5s (watch the bots visibly back off).
+2. Foul twice quickly with the same player → exclusion: the benched player is **dimmed** at the
+   defending-corner pen, HUD counts down, and at 0 it **pops back onto the defensive line at full
+   opacity and plays on** (the previous "sat inert at the pen" must not recur).
+3. Bot pressers now reach YOU: expect occasional bot fouls (whistle + protection in your favor) and
+   bot exclusions on repeat offenders.
+4. No small cyan puffs anywhere — the only steal visual is the snatch animation.
+
+---
+
+## SESSION LOG — 2026-07-09g (gameplay-feel overhaul: positional catching; anti-cluster positioning retention; bot shot power; pass-outlet fallback; replay feasibility)
+
+Large tuning/behavior session driven by MEASUREMENT of the scene's live serialized values against
+code defaults (the gotcha's 4th/5th/6th strikes — see the table below) plus a full read of the
+brain/positioning architecture. Touched: `WaterPoloAI.cs`, `TeamSide.cs`, `PlayerMovement.cs`,
+`TeammateAI.cs`, `BotMovement.cs`, `SampleScene_PoolB.unity`. **The 2026-07-09f
+foul/steal/exclusion/protection system was NOT touched** (verified: TrySteal / TouchBlockSteal /
+TryStealAI / ReportFoul / pen logic all unedited; steal reach `grabDistance` 1.0 preserved).
+
+**MEASURED SCENE-vs-CODE DIVERGENCES found this session (scene = the live truth):**
+| field | code default | scene (live) | consequence |
+|---|---|---|---|
+| TeammateAI/BotMovement `shootPower` (×12) | 11 | **20** | bots fired 20 u/s lasers (the 2026-06-15 "calmer bots" 13→11 never reached the scene) |
+| TeammateAI/BotMovement `supportSpeed` (×12) | 2.5 | **0.5 / 1** | off-ball swimmers crawl — shapes 3–6u away are unreachable between possession flips |
+| PlayerMovement `maxShootPower` | 12 (docs say 12) | **30** | human full-charge = 30 × 1.35 ≈ **40 u/s** — dev-tuned, liked, UNTOUCHED |
+| PlayerMovement `grabDistance` | 1.6 | **1** | code default now aligned to 1 (scene wins; no runtime change) |
+| bot `chaseSpeed`/`carrySpeed` (×12) | 3 / 1.8 | **1 / 0.5–1** | dev's deliberate difficulty tuning — left alone |
+
+**TASK 1 — positional catching (`WaterPoloBrain.CanCatchLooseBall`, shared by AI + human):**
+- The catch and the steal both rode `GrabDistance` — and the 09f steal fix (0.5 → 1.0) had
+  silently DOUBLED every AI catch radius too. Instead of re-splitting the serialized field
+  (which would re-touch the frozen foul system), catching got its own GEOMETRY rule on top:
+  - **Slow/settled ball (≤ `FastBallSpeed` 2.5 u/s):** unchanged omnidirectional pickup at the
+    full grab radius (AI 1.0 / player 1.0) — floaters never stall play.
+  - **Flying ball (> 2.5 u/s):** catchable only within **`FastCatchRadius` 0.6u** AND while the
+    catcher roughly FACES it (**`CatchFacingDot` 0.1** ≈ ±84° cone) — nobody vacuums a pass out
+    of the water at full reach as it zips past; receivers must be positioned and looking.
+- Wired into BOTH catch sites: the brain's collect gate and `PlayerMovement.TryGrabBall`
+  (auto-collect AND the E press — one rule, no human/AI asymmetry). The KEEPER's catch/save
+  system is untouched (it already rolls saves; its own grab distance stays 1.2).
+- Pass landings still work: an arc lands at 25% speed (≈1.2–2.75 u/s) and decays fast under the
+  ball's 2.5 linear damping, so a positioned receiver collects within a beat; a laser passing a
+  mid-lane teammate is no longer auto-caught. All three tunables are consts in `WaterPoloAI.cs`
+  (promote to Inspector fields later if per-player catching skill is wanted).
+
+**TASK 2 — anti-cluster positioning (the core of this session):**
+- **ROOT CAUSE A (churn):** the instant ANY pass/shot released, `PossessingTeam` went null and
+  every off-ball agent on BOTH teams flipped into the DEFENSIVE branch — the attacking team
+  collapsed toward its own goal on every single pass flight, re-expanded on the catch, collapsed
+  again on the next pass. No shape could ever be held; play read as one clump following the ball.
+  **FIX — positioning retention:** for POSITIONING ONLY, a loose ball still "belongs" to
+  `MatchContext.LastTouchTeam` (already deflection-aware via BallTouchTracker): that team keeps
+  its ATTACKING shape through the flight while its CLOSEST member goes to meet the ball
+  (reception), and the other team keeps DEFENDING. Every legality gate (grabs, steals, bans,
+  free throws) still reads real possession — a genuine turnover flips everyone the moment the
+  other team takes the ball. Bonus fixes for free: counter runners no longer stop mid-outlet-pass,
+  and a shooting team now holds its shape for the rebound instead of retreating.
+- **ROOT CAUSE B (mobility):** scene `supportSpeed` 0.5 (bots) / 1 (player-team AI) meant off-ball
+  swimmers covered <1u per possession phase — the spread targets existed (role lanes ±3.8u wide,
+  anchors 0.7/1.5 verified sane) but were mathematically unreachable. **Scene → 1.5 on all 12**
+  (sprint ×1.7 beyond 2u ⇒ ~2.55 peak; still below the human, near presser parity; `chaseSpeed`/
+  `carrySpeed` difficulty tuning untouched).
+- **Separation:** `MinTeammateSeparation` 1.2 → **1.5** (brain const) — teammates yield earlier,
+  matching the 2.0 `teammateSpacing` target-level push.
+- NOT changed (verified adequate, tune in Inspector if wanted): role-lane widths
+  (`wideLateralMult` 1.2 ⇒ wings ±3.78u of a ±4 clamp), formation anchors, defend shapes
+  (Zone/man-down are compact BY DESIGN; Press marking spreads with the now-spread attackers).
+
+**TASK 3 — bot shot power → parity:** scene `shootPower` **20 → 12** on all 12 agents (+ code
+defaults 11 → 12 so everything agrees). Grounding: the keeper's power save-penalty is BINARY above
+9 u/s (`FastShotSpeed`), so 20 vs 12 had IDENTICAL save odds — 20 only made shots unreadable and
+deflections violent. 12 sits at the low end of the human's charge band (tap ≈ min-floor ×1.35 up to
+40.5 full charge with the scene's `maxShootPower` 30) — bots stay dangerous (still > the 9 penalty
+threshold) but no longer out-shoot the player. Player shooting untouched, per instruction.
+
+**TASK 4 — pass-target audit + least-bad outlet:** `BestPassTarget` ALREADY scores real openness
+(distance-to-nearest-defender × `passOpennessWeight` 1.5, hard `openRadius` 1.6 gate), pass-lane
+risk that widens with distance, receiver shot quality, and the Centre-feed bonuses — decision
+quality mostly needed Task 2's spacing so those scores have spread targets to find. ONE real gap
+fixed: under pressure with NOBODY clearing the openness gate the carrier returned null and dribbled
+into the press until the 1.8s force-shot. New **pressured fallback**: pick the MOST-open teammate
+with a clear lane even if formally covered (the least-bad outlet a real player makes); the keeper
+last-resort and null-only-when-smothered behavior stay beneath it.
+**Still simplistic (documented for a future session):** pass scoring evaluates receivers' CURRENT
+positions (no lead-the-swimmer passes, no anticipating a defender closing on the landing); no pass
+fakes/look-offs; `ThreatScore` is distance+carrier+openness only; Zone defense doesn't shift
+ball-side; drives/screens tuning untouched from their first pass.
+
+**TASK 5 — post-goal instant replay: FEASIBILITY REPORT ONLY (not built, per the brief).**
+Verdict: **moderate scope, one dedicated session — do NOT bolt on quickly.** Needs: (1) a rolling
+ring-buffer recorder (~20Hz × ~6s × 16 transforms — memory trivial, a simple component); (2) a
+playback mode re-posing swimmers+ball along recorded frames inside a freeze, with a camera zoom on
+the goal and a skip tap; (3) careful integration into ScoreManager's 5-phase goal restart — the
+EXACT machinery that regressed twice (09c/09d goal-spam, frozen-pose gotchas, `restartInProgress`
+latch). Recommended v1: position-only "ghost" playback during the existing hang-time (no animator
+state capture — bodies glide), inserted as an optional phase-0b. Deferred.
+
+**Build:** `dotnet build Assembly-CSharp.csproj` → **0 errors, 22 warnings** (exact pre-existing baseline).
+
+**Inspector / scene checklist (NO new serialized fields anywhere — new tunables are consts):**
+- Scene (already edited in the YAML — reload the scene, don't re-save a stale open copy):
+  all 12 AI agents now `Support Speed` **1.5**, `Shoot Power` **12**. Everything else per-agent
+  (chase/carry/steal/grab) untouched.
+- Consts to find later if tuning is wanted: `WaterPoloAI.cs` → `FastBallSpeed` 2.5 /
+  `FastCatchRadius` 0.6 / `CatchFacingDot` 0.1 / `MinTeammateSeparation` 1.5.
+- Standard slot re-check after script edits (in-place, nothing should have emptied): Player1–6
+  PlayerMovement **Ball + Aim Line**; PlayerTeam/BotTeam TeamSide goals + members; GameManager rows.
+
+**How to test (dev, in one match — plus the STILL-PENDING 09f foul checklist above):**
+1. **Spacing:** watch a full possession — the attacking team should HOLD a wide spread (wings near
+   the sidelines, Centre inside, CB back) while ONLY the receiver moves to a pass landing; nobody
+   else should drift ballward during flights. On a turnover the shapes should swap sides cleanly.
+2. **Catching:** throw a hard pass PAST a teammate (aim wide) — it should zip by unless someone is
+   right on the line facing it; a soft pass to a stationed teammate still sticks. Your own player
+   no longer hoovers fast balls from a body-length behind/beside.
+3. **Bot shots:** bot shots should read as throws you can react to, not instant lasers; bots should
+   still score on good looks.
+4. **Pass choice:** a pressured bot carrier should now offload to SOMEBODY (watch for the outlet
+   pass under press) instead of dribbling into the crowd and force-shooting.
+5. **Regression watch:** fouls/whistle/protection/exclusions must still behave per the 09f list;
+   pass receptions must not stall (if a landed ball ever sits uncollected with everyone ignoring
+   it, report it — the retention chase should prevent exactly that).

@@ -15,10 +15,14 @@ public class MatchTimer : MonoBehaviour
     [SerializeField] private TMP_Text resultText;  // hidden until match ends, then shows winner
 
     [Header("Match settings")]
-    [SerializeField] private float quarterLength = 90f; // seconds per quarter
+    [SerializeField] private float quarterLength = 90f; // REAL seconds per quarter (gameplay, unchanged)
+    [SerializeField] private float displayQuarterLength = 480f; // the clock SHOWS this draining (8:00, FIFA-style)
+
     [SerializeField] private int totalQuarters = 4;
 
-    private float timeLeft;     // seconds remaining in the current quarter
+    // Compressed quarter clock: gameplay runs on quarterLength REAL seconds; the HUD prints
+    // displayQuarterLength scaled onto them (8:00 → 0:00 over 90 real seconds).
+    private CompressedTimer quarter;
     private int currentQuarter; // 1..totalQuarters
     private bool matchOver;
     private bool awaitingResume; // a quarter-break panel is up; the clock waits for RESUME
@@ -30,7 +34,7 @@ public class MatchTimer : MonoBehaviour
     // Used by the bot's adaptive defense ("protect a late lead").
     public float RemainingSeconds()
         => matchOver ? 0f
-                     : Mathf.Max(0f, timeLeft) + Mathf.Max(0, totalQuarters - currentQuarter) * quarterLength;
+                     : quarter.RealRemaining + Mathf.Max(0, totalQuarters - currentQuarter) * quarterLength;
 
     void Awake() { Instance = this; }
 
@@ -38,7 +42,7 @@ public class MatchTimer : MonoBehaviour
     {
         Time.timeScale = 1f;    // un-freeze in case a previous match ended frozen
         currentQuarter = 1;
-        timeLeft = quarterLength;
+        quarter = new CompressedTimer(displayQuarterLength, quarterLength);
         matchOver = false;
 
         if (resultText != null) resultText.gameObject.SetActive(false);
@@ -59,11 +63,10 @@ public class MatchTimer : MonoBehaviour
         MatchContext ctx = MatchContext.Instance;
         if (ctx != null && ctx.PlayFrozen) { UpdateTimerText(); return; }
 
-        timeLeft -= Time.deltaTime;
+        quarter.Tick(Time.deltaTime);
 
-        if (timeLeft <= 0f)
+        if (quarter.IsComplete)
         {
-            timeLeft = 0f;
             UpdateTimerText();
 
             // last quarter just ran out → final whistle
@@ -101,7 +104,7 @@ public class MatchTimer : MonoBehaviour
     void AdvanceToNextQuarter()
     {
         currentQuarter++;
-        timeLeft = quarterLength;
+        quarter.Reset();
         UpdateQuarterText();
 
         // halftime (after the middle quarter): swap ends so both attack the other way
@@ -183,10 +186,10 @@ public class MatchTimer : MonoBehaviour
     void UpdateTimerText()
     {
         if (timerText == null) return;
-        float t = Mathf.Max(0f, timeLeft);
+        float t = quarter.DisplayValue; // compressed scale: prints 8:00 → 0:00 over 90 real seconds
         int minutes = Mathf.FloorToInt(t / 60f);
         int seconds = Mathf.FloorToInt(t % 60f);
-        timerText.text = minutes + ":" + seconds.ToString("00"); // "0:23"
+        timerText.text = minutes + ":" + seconds.ToString("00"); // "7:23"
     }
 
     void UpdateQuarterText()
@@ -195,10 +198,11 @@ public class MatchTimer : MonoBehaviour
             quarterText.text = "Q" + currentQuarter;
     }
 
-    // Elapsed match time as "MM:SS" (across quarters), used by the event feed.
+    // Elapsed match time as "MM:SS" (across quarters), used by the event feed. DISPLAY scale,
+    // so feed timestamps agree with the on-screen quarter clock, not with real seconds.
     public string MatchTimeStamp()
     {
-        float elapsed = Mathf.Max(0f, (currentQuarter - 1) * quarterLength + (quarterLength - timeLeft));
+        float elapsed = Mathf.Max(0f, (currentQuarter - 1) * displayQuarterLength + quarter.DisplayElapsed);
         int m = Mathf.FloorToInt(elapsed / 60f);
         int s = Mathf.FloorToInt(elapsed % 60f);
         return m.ToString("00") + ":" + s.ToString("00");

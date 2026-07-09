@@ -21,7 +21,10 @@ public class TeamSide : MonoBehaviour
     public float supportWidth = 2.5f;    // lateral spread of supporting players
     public float defendDepth = 2.5f;     // how far off our own goal defenders sit
     public float defendWidth = 2.5f;     // lateral spread of defenders
-    public float pressDistance = 1.8f;   // the carrier feels "pressured" with an enemy this close
+    public float pressDistance = 1.0f;   // the carrier feels "pressured" with an enemy this close.
+                                         // Kept AT steal reach (bots grab 1.0, players 1.2; was 1.8):
+                                         // any wider and an AI carrier dumps the ball BEFORE a legal
+                                         // steal attempt is even possible — fouls could never happen.
     public float openRadius = 1.6f;      // a teammate is "open" if no enemy is within this
     public float passLaneRadius = 0.7f;  // a pass lane is blocked if an enemy is this close to it
     public float shotLaneRadius = 0.6f;  // a shot lane is blocked if an enemy is this close to it
@@ -537,6 +540,27 @@ public class TeamSide : MonoBehaviour
                 score += centerFeedWeight * 2f;
 
             if (score > bestScore) { bestScore = score; best = mate; }
+        }
+
+        // PRESSURED FALLBACK (2026-07-09g): under real pressure with nobody formally open
+        // (nobody cleared the openRadius gate above), a pro still makes the least-bad outlet
+        // pass instead of dribbling into the press and eating the force-shot. Pick the MOST
+        // open teammate whose lane is clear, even if he's inside openRadius. Falls through
+        // to the keeper outlet / null only when every lane is smothered too.
+        if (best == null && pressured)
+        {
+            float bestOpen = 0f;
+            foreach (Transform mate in members)
+            {
+                if (mate == null || mate == carrier) continue;
+                float openness = NearestDistance(mate.position, enemy);
+                if (openness <= bestOpen) continue;
+                float passDist = Vector2.Distance(carrier.position, mate.position);
+                if (!LaneClear(carrier.position, mate.position, enemy, passLaneRadius + passDist * 0.05f)) continue;
+                bestOpen = openness;
+                best = mate;
+            }
+            if (best != null) return best;
         }
 
         // GOALKEEPER as a heavily-penalised LAST RESORT (Task 4): only when EVERY field
