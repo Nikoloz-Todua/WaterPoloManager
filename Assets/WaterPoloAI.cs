@@ -70,6 +70,7 @@ public static class WaterPoloBrain
     const float CloseShootDistance = 3.5f; // within this of goal, prefer shooting over dribbling (was 4 — drive closer)
     const float MaxShootDistance = 3.5f;   // hard cap on a NON-forced shot: bots had ShootRange 20 and fired from anywhere
     const float PassSettleDelay = 0.35f;   // a bot holds the ball at least this long before relaying (calms ping-pong passing)
+    const float MinPassControlDelay = 0.3f;// every pass path: briefly control a new possession before release
     const float SprintMult = 1.7f;         // speed burst when chasing the ball / covering ground (bots actually sprint now)
     const float SprintDistance = 2f;       // MoveTo sprints when its target is further than this
     const float StealCooldown = 0.6f;   // min time between steal attempts
@@ -211,21 +212,13 @@ public static class WaterPoloBrain
         // Not attacking → any screen state is stale.
         a.IsSettingScreen = false;
 
-        // ---- sanctioned free-throw / post-foul stand-off (Task 2 + 2026-07-09f) ----
-        // We're in the defensive branch, so the shielded carrier is on the enemy team. BOTH a
-        // live free-throw taker AND a freshly-fouled protected carrier (the ~5s
-        // MatchContext.IsFoulProtected window) get uncontested water: anyone inside the
-        // clearance backs straight off, and the presser stands down entirely below.
+        // Clearance belongs only to the live free throw. The longer post-foul protection
+        // blocks steals from one carrier but does not alter anybody's movement or marking.
         Transform shieldedCarrier = null;
         if (ctx.FreeThrowActive && ctx.FreeThrowCarrier != null)
             shieldedCarrier = ctx.FreeThrowCarrier;
-        else
-        {
-            Transform cur = ctx.Ball.transform.parent;
-            if (cur != null && ctx.IsFoulProtected(cur)) shieldedCarrier = cur;
-        }
-        bool enemyShielded = shieldedCarrier != null;
-        if (enemyShielded)
+        bool enemyFreeThrow = shieldedCarrier != null;
+        if (enemyFreeThrow)
         {
             Vector2 cpos = shieldedCarrier.position;
             if (Vector2.Distance(a.Body.position, cpos) < a.Team.freeThrowClearance)
@@ -258,12 +251,12 @@ public static class WaterPoloBrain
         if (manDown)
         {
             a.CurrentMark = null;
-            if (presser == a.Tf && !enemyShielded) ChaseBall(a, ctx);
+            if (presser == a.Tf && !enemyFreeThrow) ChaseBall(a, ctx);
             else MoveTo(a, a.Team.ManDownSpot(a.Tf, ctx.BallPosition), a.SupportSpeed);
             return;
         }
 
-        if (presser == a.Tf && !enemyShielded) // no pressing/chasing/stealing during a free throw or foul protection
+        if (presser == a.Tf && !enemyFreeThrow) // the presser only stands down for the active free throw
         {
             if (TryStealAI(a, ctx, enemy)) return;
             // A ball-holding keeper in its safe zone can't be pressed — hold a standoff spot just
@@ -930,8 +923,8 @@ public static class WaterPoloBrain
         // and a flat success bonus (PlayerMovement.IsLooseHold).
         PlayerMovement carrierPm = carrier.GetComponent<PlayerMovement>();
         bool looseHold = carrierPm != null && carrierPm.IsLooseHold;
-        float reach = looseHold ? a.GrabDistance * 2f : a.GrabDistance;
-        if (Vector2.Distance(a.Body.position, ctx.BallPosition) > reach) return false;
+        float reach = a.GrabDistance;
+        if (Vector2.Distance(a.Body.position, carrier.position) > reach) return false;
 
         // Must come at the carrier from the front, not from behind.
         Vector2 dirToCarrier = (Vector2)carrier.position - a.Body.position;
@@ -957,7 +950,7 @@ public static class WaterPoloBrain
         {
             // failed steal = ordinary foul (carrier keeps the ball; offender locked out longer)
             if (ExclusionManager.Instance != null)
-                ExclusionManager.Instance.ReportFoul(a.Tf, a.Team, carrier);
+                ExclusionManager.Instance.ReportFoul(a.Tf, a.Team, carrier, true);
             return false;
         }
         IAgentBody holder = carrier.GetComponent<IAgentBody>();
@@ -1017,6 +1010,16 @@ public static class WaterPoloBrain
 
     static void Pass(IAgentBody a, MatchContext ctx, Transform target)
     {
+        // Pressure used to bypass PassSettleDelay in Carry(), so a receiver could relay
+        // on the exact physics tick it gained possession.  Keep all target/spacing logic
+        // intact, but make this shared release path enforce a short human-looking control
+        // touch for normal, pressured, drive-kickout and kickoff calls alike.
+        if (Time.time - a.HoldStartTime < MinPassControlDelay)
+        {
+            a.Body.linearVelocity = Vector2.zero;
+            return;
+        }
+
         Vector2 dir = ((Vector2)target.position - a.Body.position).normalized;
         float dist = Vector2.Distance(a.Body.position, target.position);
         a.LastDirection = dir;

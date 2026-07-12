@@ -2617,3 +2617,141 @@ state capture — bodies glide), inserted as an optional phase-0b. Deferred.
 5. **Regression watch:** fouls/whistle/protection/exclusions must still behave per the 09f list;
    pass receptions must not stall (if a landed ball ever sits uncollected with everyone ignoring
    it, report it — the retention chase should prevent exactly that).
+
+---
+
+## SESSION LOG — 2026-07-12 (waterline visuals; pass assist removal; OOB recovery; foul scope/stun; goal containment; steal range; crowd inset; HUD restore)
+
+This session was completed against the live scene and the current serialized values, with isolated Unity verification runs where practical. The final blocking scene merge error was a duplicated `PlayerScoreText` block in `Assets/Scenes/SampleScene_PoolB.unity` that produced duplicate identifiers `1468651118` and `1468651119`; I removed the duplicate block, fixed a stray patch marker, and also removed stale `SessionVerification*` project entries that were still pointing at deleted temp harness files.
+
+**TASK 1 — lane lines read as partially submerged**
+- Result: lane-line visuals now blend into the water with a subtle submerged look instead of sitting flat on top.
+- Root cause: purely visual. The existing line sprites were rendered with no waterline treatment, so they read as floating.
+- Verification: checked in an isolated Unity pass that the lines still render and the added refracted layer stays translucent.
+- Live manual check still recommended: confirm the effect reads softly in motion, not muddy or over-distorted.
+
+**TASK 2 — pass auto-aim/assist removed**
+- Result: pass direction now follows the aimed direction exactly, with no teammate snapping, auto-correction, or homing toward a receiver.
+- Root cause: pass logic was still using assist-style target selection/spread behavior, which biased even careless input toward a teammate.
+- Verification: isolated Unity test showed the ball traveling on the aimed vector with zero measurable correction toward a nearby teammate.
+- Live manual check still recommended: aim at open water beside a teammate and confirm the ball stays on the exact intended line at low and full power.
+
+**TASK 3 — out-of-bounds recovery fixed**
+- Result: balls that leave the playable pool edge now trigger the existing recovery sequence instead of bouncing back into play from the wall.
+- Root cause: the playable inner wall boundary was not being caught by the prior threshold logic, so the wall collider could bounce the ball before recovery engaged.
+- Verification: isolated Unity test showed the ball being captured before the bounce, pausing correctly, and awarding to the proper side.
+- Live manual check still recommended: hard-shot both the wall-adjacent edge and the corner edge to confirm the settle/pause/award sequence looks right.
+
+**TASK 4 — foul protection scope narrowed**
+- Result: the whistle still causes the brief universal freeze, but the longer protection window no longer freezes the whole match; other players keep moving and only the fouled matchup stays protected from steals.
+- Root cause: the protection window was being treated too much like a global defensive hold, so the non-involved players backed off instead of playing on.
+- Verification: isolated Unity test confirmed the short freeze ends, movement continues, and idle protection expires early if the fouled carrier does nothing.
+- Live manual check still recommended: watch a real foul and make sure the rest of the field keeps repositioning while only the fouled carrier remains protected.
+
+**TASK 5 — goal scoring smoothed and goal containment locked**
+- Result: scoring now resolves cleanly without the old hitchy feel, and once the ball is truly inside the goal area it stays contained until the scoring sequence finishes.
+- Root cause: after a goal the ball was still retaining enough motion to drift/rebound back out before the scoring sequence completed, and the goal-frame work was happening on the scoring frame.
+- Verification: isolated Unity test measured the callback as fast enough for a clean score moment and confirmed the ball did not re-exit after entering the goal.
+- Live manual check still recommended: shoot hard at both goals and confirm posts can still deflect, but a ball that is already inside the net never escapes.
+
+**TASK 6 — steal range balanced, plus new stun on aggressive foul**
+- Result: both player and AI steals now require genuinely close proximity, and aggressive foul outcomes can briefly stun the fouled player with a short disoriented state.
+- Root cause: the live scene had inconsistent serialized steal values, and the player/AI steal checks were not measuring the same thing; the player was being checked against the held ball position while AI behavior felt looser.
+- Verification: isolated Unity tests confirmed the close-range thresholds and the new stun drop/recovery behavior, including the visual stars state and action lockout.
+- Live manual check still recommended: verify close-range steals feel symmetric in an actual match, and confirm the stun chance feels rare enough not to dominate fouls.
+
+**TASK 7 — crowd spawner matches new bench art**
+- Result: crowd placement now respects the 6x18 bench art and excludes the border margin so fans do not spawn in the wall/rail band.
+- Root cause: the art changed but the spawn box still covered the full sprite, so fans could land in the unseated border area.
+- Verification: isolated Unity test confirmed the measured anchors stay inside the seat area and do not violate the lower border band.
+- Live manual check still recommended: flip the bench orientation and make sure the inset still tracks correctly from every side.
+
+**TASK 8 — HUD restored**
+- Result: the missing quarter/timer/scoreboard HUD elements are back in `SampleScene_PoolB`, and their manager references are rewired.
+- Root cause: these objects were genuinely missing from the scene, not just disabled or mispositioned, and the scene also picked up a merge artifact that duplicated `PlayerScoreText`.
+- Verification: the scene file now loads without duplicate identifiers, and the restored objects are present with their expected parent and UI wiring.
+- Live manual check still recommended: open `SampleScene_PoolB` in Unity and confirm the HUD is visible, positioned correctly, and updating in play mode.
+
+**Build**
+- `dotnet build Assembly-CSharp.csproj` → `0` errors, `22` warnings.
+- The warning count matches the existing baseline; there are no new compile errors after removing the temporary verification harness references.
+
+**Manual verification priority**
+1. Task 3: hard shots into the wall-adjacent boundary and corner edge should leave play and award correctly.
+2. Task 5: hard goal shots should score smoothly, and balls already inside the net must not escape.
+3. Task 2: pass at open water near a teammate and confirm there is no auto-aim or snap assist.
+4. Task 4: foul one matchup and confirm only that matchup stays protected while the rest of the field continues moving.
+5. Task 6: confirm steal range is close on both player and AI, then check the new stun is rare, short, and visually readable.
+6. Task 8: verify the restored HUD is visible and wired in live play.
+7. Task 7: check the new bench art inset from both bench orientations so no fan spawns in the border band.
+8. Task 1: visually tune the submerged lane-line effect in motion so it reads subtle and intentional.
+
+**Not fully live-playtest verified**
+- Task 1, Task 4, Task 5, Task 6, Task 7, and Task 8 still need a human visual/gamefeel pass in the running game, even though the code and isolated Unity checks are in place.
+
+---
+
+## SESSION LOG — 2026-07-12b (goal-net visual scope; charge-scaled pass distance; speed-gated OOB bounce/recovery; AI possession delay)
+
+Four ordered gameplay-polish tasks, verified in the live `SampleScene_PoolB` Play mode with measured
+runtime values. Touched only `PoolLineFloat.cs`, `PlayerMovement.cs`, `BallOutOfBounds.cs`, and
+`WaterPoloAI.cs`. The confirmed-good foul protection / steal range / stun systems and
+`CrowdSpawner.cs` were not changed.
+
+**TASK 1 — goal nets excluded from the submerged lane-line treatment (`PoolLineFloat.cs`).**
+- **Root cause:** `GoalRight` and `GoalLeft` intentionally already had `PoolLineFloat` for their
+  legacy subtle motion. The 2026-07-12 submerged setup ran unconditionally on every component, so it
+  also tinted/faded each whole goal and created a `SubmergedRefraction` copy below it.
+- **Fix:** submerged tint/refraction setup now runs only for actual line art (a `PoolLines` parent or
+  the current `horizontal-line_*` / `vertical-line_*` names), with an explicit `Goal` component veto.
+  Goal motion is preserved; goal sprite colour/opacity and geometry are never modified.
+- **Play verification:** captured and visually inspected both goals. Both nets rendered fully normal;
+  runtime assertions found no refraction child on either goal and one on every divider (`8/8`).
+
+**TASK 2 — pass charge now controls real travel distance (`PlayerMovement.cs`).**
+- **Root cause:** the old landing range was a narrow linear **3.5 → 6.5u**, so even a zero-charge tap
+  received more than half of full-pass range before BallFlight's 25% landing roll was added. Charge
+  therefore changed pace/arc much more noticeably than total distance.
+- **Fix:** normal passes now use a convex charge curve (`charge^1.5`) over **1.5 → 7.0u**; lobs use
+  the same curve over **2.5 → 9.0u**. Live scene pass-speed values were confirmed as 6/13 and the
+  code defaults were aligned to them; direction remains exactly manual with no assist.
+- **Measured Play result (including landing roll):** charge 0.0 = **2.04u**, charge 0.5 = **4.35u**,
+  charge 1.0 = **8.30u**. The weak/medium/full bands are now materially distinct.
+
+**TASK 3 — soft wall contacts stay in play; hard exits use the existing recovery (`BallOutOfBounds.cs`).**
+- **Root cause A:** last session's collider-face prediction had no speed threshold, so it claimed
+  every projected top/bottom contact before wall physics could respond.
+- **Root cause B:** the live horizontal wall colliders have no bouncy PhysicsMaterial, so merely
+  declining recovery made a soft ball stop dead at the edge instead of reflecting inward.
+- **Fix:** outward normal speed must reach **12u/s** to start `RecoverEscapedBall`; lower-speed
+  contacts are repositioned just inside and reflected inward with **75%** speed retention. A ball
+  genuinely past the full-escape safety thresholds still uses the same existing recovery owner.
+- **Measured Play result:** a **10u/s** top-edge contact reflected inward, never entered recovery,
+  and stayed below y=3.67; an **18u/s** contact started recovery, switched physics off for the
+  settle/pause, then completed the keeper-restart handoff with physics restored.
+
+**TASK 4 — AI pass release has a realistic control touch (`WaterPoloAI.cs`).**
+- **Root cause:** `PassSettleDelay` existed, but the pressured branch explicitly bypassed it. A newly
+  receiving bot is commonly pressured, so it could release on the exact physics tick it caught the
+  ball despite the nominal delay.
+- **Fix:** the shared `Pass(...)` release path enforces a universal **0.30s** minimum possession age.
+  Target selection, lane checks, spacing, drive decisions, and the existing 0.35s unpressured settle
+  rule are unchanged.
+- **Measured Play result:** the bot still held at 0ms and 150ms, then released at **0.32s**.
+
+**Build:** `dotnet build Assembly-CSharp.csproj` → **0 errors, 22 warnings**. Warning count matches the
+pre-existing baseline. Temporary verification scripts/project references were removed after testing.
+
+**Manual verification priority (dev):**
+1. **Task 3:** aim a routine/tap shot at BOTH top and bottom wall-adjacent edges — it must visibly
+   deflect inward with no whistle/recovery; then full-charge the same aim — it must leave, settle,
+   pause, and award the correct keeper/team.
+2. **Task 2:** from one stationary spot, throw low/half/full B charges into empty water. Expect roughly
+   short (~2u), medium (~4.3u), and long (~8.3u) total travel; confirm the exact-aim/no-assist behavior
+   from 2026-07-12 is unchanged.
+3. **Task 4:** watch several bot receptions, especially under immediate pressure. The receiver should
+   visibly control the ball for about 0.3s before passing, without holding long enough to invite the
+   old pressure/steal problem.
+4. **Task 1:** inspect GoalLeft and GoalRight while the water animates. Both complete net/frame sprites
+   must stay fully opaque and stable-looking, while only the lane/divider lines retain the subtle
+   submerged/refraction treatment.

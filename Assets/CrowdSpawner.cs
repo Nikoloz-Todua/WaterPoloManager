@@ -4,7 +4,7 @@ using UnityEngine;
 // Fills the stands (B-vision "living poolside"). At scene Start every GameObject tagged
 // "FanSeat" (front stands), "FanSeatBack" (bottom stands, rotated 180°) or "FanSeatSide"
 // (left/right stands, rotated ±90°) is treated as one grandstand BENCH painted with the same
-// 7-row × 20-column seat art. Each bench gets `fansPerBench` fans on randomly-chosen seat
+// 6-row × 18-column seat art. Each bench gets `fansPerBench` fans on randomly-chosen seat
 // cells (a partially-full stand, never a rigid sell-out), each with a barely-perceptible
 // breathing idle (random phase + speed per fan — the PackCardFX phase-randomization pattern).
 // On a goal (detected by polling ScoreManager, no ScoreManager edit) ~half of EACH stand
@@ -52,8 +52,15 @@ public class CrowdSpawner : MonoBehaviour
 
     [Header("Crowd layout (normalized — derived from each bench sprite's bounds at runtime)")]
     [SerializeField] private int fansPerBench = 70;        // seat cells filled per bench, out of rows × columns (clamped)
-    [SerializeField] private int rowsInBenchArt = 7;       // seat rows painted in the bench art (bench.jpg = 7)
-    [SerializeField] private int columnsInBenchArt = 20;   // seats per row painted in the bench art (bench.jpg = 20)
+    [SerializeField] private int rowsInBenchArt = 6;
+    [SerializeField] private int columnsInBenchArt = 18;
+    [Header("Bench-art seat-area inset (normalized in the sprite's local orientation)")]
+    [Tooltip("Excludes the thin non-seat border at the left/right/top of the art before the 18x6 grid is built.")]
+    [Range(0f, 0.45f)] [SerializeField] private float seatInsetLeft01 = 0.005f;
+    [Range(0f, 0.45f)] [SerializeField] private float seatInsetRight01 = 0.005f;
+    [Range(0f, 0.45f)] [SerializeField] private float seatInsetTop01 = 0.005f;
+    [Tooltip("The new bench art's lower ~24% is the solid front wall/rail, not seats. This removes it from the grid regardless of bench rotation.")]
+    [Range(0f, 0.45f)] [SerializeField] private float seatInsetBottom01 = 0.24f;
     [Tooltip("Fan height as a multiple of one seat-row's pitch, PER STAND. Front/side keep the " +
              "original 1.5; back is bumped to ~1.95 because its source art frames the figure smaller " +
              "and reads too small at 1.5. Tune per stand here; backScaleOverride still layers on top " +
@@ -276,8 +283,19 @@ public class CrowdSpawner : MonoBehaviour
         // seat point goes through the bench transform, so rotation/scale/flip are respected.
         Transform bt = benchSr.transform;
         Bounds art = benchSr.sprite.bounds;
-        float cellW = art.size.x / cols;
-        float rowH = art.size.y / rows;
+        float left = Mathf.Clamp01(seatInsetLeft01);
+        float right = Mathf.Clamp01(seatInsetRight01);
+        float bottom = Mathf.Clamp01(seatInsetBottom01);
+        float top = Mathf.Clamp01(seatInsetTop01);
+        if (left + right >= 0.95f) { left = 0f; right = 0f; }
+        if (bottom + top >= 0.95f) { bottom = 0f; top = 0f; }
+
+        float gridMinX = art.min.x + art.size.x * left;
+        float gridMaxX = art.max.x - art.size.x * right;
+        float gridMinY = art.min.y + art.size.y * bottom;
+        float gridMaxY = art.max.y - art.size.y * top;
+        float cellW = (gridMaxX - gridMinX) / cols;
+        float rowH = (gridMaxY - gridMinY) / rows;
 
         Vector3 rowStep = bt.TransformVector(0f, rowH, 0f);   // one row's offset in world space
         Vector3 seatStep = bt.TransformVector(cellW, 0f, 0f); // one seat's offset in world space
@@ -333,8 +351,8 @@ public class CrowdSpawner : MonoBehaviour
 
             // This cell's seat point: its slot along the row (jittered inside the slot) on its
             // own row's painted seat line — computed in art space, then pushed to world.
-            float lx = art.min.x + (col + 0.5f + Random.Range(-XJitterFrac, XJitterFrac)) * cellW;
-            float ly = art.min.y + (row + Mathf.Clamp01(seatLine) + Random.Range(-YJitterFrac, YJitterFrac)) * rowH;
+            float lx = gridMinX + (col + 0.5f + Random.Range(-XJitterFrac, XJitterFrac)) * cellW;
+            float ly = gridMinY + (row + Mathf.Clamp01(seatLine) + Random.Range(-YJitterFrac, YJitterFrac)) * rowH;
             Vector3 seat = bt.TransformPoint(lx, ly, 0f);
 
             // Fans stay world-upright (the art set carries the facing); the butt anchor lands

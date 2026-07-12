@@ -30,10 +30,19 @@ public class ExclusionManager : MonoBehaviour
     [SerializeField] private bool centerFoulBoost = true;     // fouls on an inside-water Centre escalate faster
 
     [Header("Ordinary-foul presentation (2026-07-09f)")]
-    [Tooltip("REAL seconds after an ordinary foul during which nobody may steal from the fouled carrier and AI defenders stand off (MatchContext.IsFoulProtected). Lapses early if they release the ball.")]
+    [Tooltip("REAL seconds after an ordinary foul during which nobody may steal from the fouled carrier. Other players keep moving and marking normally. Lapses early if they release the ball.")]
     [SerializeField] private float foulProtectSeconds = 5f;
+    [Tooltip("If the protected carrier neither moves nor releases the ball, protection lapses after this many seconds instead of lasting the full window.")]
+    [SerializeField] private float foulIdleProtectSeconds = 2.5f;
     [Tooltip("Brief referee-whistle pause on an ordinary foul: play freezes this long so the foul visibly registers. 0 = no pause.")]
     [SerializeField] private float foulWhistleFreezeSeconds = 0.7f;
+
+    [Header("Aggressive-foul stun")]
+    [Tooltip("Chance that a failed full-risk steal which remains an ordinary foul stuns the victim. Safer Block steals never roll this.")]
+    [SerializeField, Range(0f, 1f)] private float aggressiveFoulStunChance = 0.35f;
+    [SerializeField, Range(1f, 1.5f)] private float aggressiveFoulStunSeconds = 1.4f;
+    [Tooltip("A victim cannot be repeatedly stunned more often than this.")]
+    [SerializeField] private float aggressiveFoulStunCooldown = 6f;
 
     [Header("References")]
     [SerializeField] private MatchTimer matchTimer;           // to end the match on a forfeit
@@ -62,6 +71,7 @@ public class ExclusionManager : MonoBehaviour
     private readonly List<Exclusion> activeExclusions = new List<Exclusion>();
     private readonly Dictionary<Transform, List<float>> foulTimes = new Dictionary<Transform, List<float>>();
     private readonly Dictionary<Transform, int> exclusionCount = new Dictionary<Transform, int>();
+    private readonly Dictionary<Transform, float> nextStunTime = new Dictionary<Transform, float>();
     private readonly HashSet<Transform> excludedNow = new HashSet<Transform>();    // temporarily out
     private readonly HashSet<Transform> permanentlyOut = new HashSet<Transform>(); // gone for good
     private readonly Dictionary<TeamSide, Transform[]> originalRoster = new Dictionary<TeamSide, Transform[]>();
@@ -259,7 +269,7 @@ public class ExclusionManager : MonoBehaviour
     // Called on EVERY failed steal. `victim` = the carrier that was fouled. Carrier keeps
     // the ball; offender is locked out. An ordinary foul gives the victim a FREE THROW;
     // enough fouls escalate to an exclusion — or a PENALTY if the victim was in the 2m zone.
-    public void ReportFoul(Transform offender, TeamSide team, Transform victim)
+    public void ReportFoul(Transform offender, TeamSide team, Transform victim, bool aggressive = false)
     {
         if (offender == null) return;
 
@@ -289,7 +299,32 @@ public class ExclusionManager : MonoBehaviour
         if (times.Count >= foulsForExclusion)
             Escalate(offender, team, victim); // exclusion, or penalty if in the 2m zone
         else
+        {
             FreeThrow(team, victim);           // ordinary foul
+            TryAggressiveFoulStun(team, victim, aggressive);
+        }
+    }
+
+    void TryAggressiveFoulStun(TeamSide offenderTeam, Transform victim, bool aggressive)
+    {
+        if (!aggressive || victim == null || aggressiveFoulStunChance <= 0f) return;
+        if (nextStunTime.TryGetValue(victim, out float next) && Time.time < next) return;
+        if (Random.value > aggressiveFoulStunChance) return;
+
+        nextStunTime[victim] = Time.time + Mathf.Max(0f, aggressiveFoulStunCooldown);
+        MatchContext ctx = MatchContext.Instance;
+        if (ctx != null && ctx.Ball != null && ctx.Ball.transform.parent == victim)
+        {
+            Goalkeeper keeper = victim.GetComponent<Goalkeeper>();
+            if (keeper != null) keeper.OnBallStolen();
+            ctx.ForceDropHeldBall();
+        }
+
+        FoulStun.Apply(victim, aggressiveFoulStunSeconds);
+
+        TeamSide victimTeam = ctx != null ? ctx.EnemyOf(offenderTeam) : null;
+        if (EventFeed.Instance != null)
+            EventFeed.Instance.AddEvent("Stunned - " + (victimTeam == playerTeam ? "YOU" : "BOT"));
     }
 
     // Ordinary foul → free throw to the fouled (victim's) team: shot clock pauses and the
@@ -306,7 +341,7 @@ public class ExclusionManager : MonoBehaviour
         if (ctx != null && victim != null)
         {
             ctx.StartFreeThrow(victim);
-            ctx.StartFoulProtection(victim, foulProtectSeconds);
+            ctx.StartFoulProtection(victim, foulProtectSeconds, foulIdleProtectSeconds);
             SpawnFoulPopup(victim.position);
             if (!ctx.PlayFrozen && foulWhistleFreezeSeconds > 0f)
                 StartCoroutine(FoulWhistleRoutine(ctx));
@@ -552,5 +587,102 @@ public class ExclusionManager : MonoBehaviour
 
         exclusionText.enabled = true;
         exclusionText.text = s;
+    }
+}
+
+// Short visual/action lock applied by an aggressive ordinary foul. Kept in this file so
+// the feature stays owned by the existing foul system and needs no scene component/wiring.
+sealed class FoulStun : MonoBehaviour
+{
+    private float stunnedUntil;
+    private float startedAt;
+    private Transform stars;
+    private static Material starMaterial;
+
+    public static bool IsStunned(Transform target)
+    {
+        if (target == null) return false;
+        FoulStun stun = target.GetComponent<FoulStun>();
+        return stun != null && stun.enabled && Time.time < stun.stunnedUntil;
+    }
+
+    public static void Apply(Transform target, float seconds)
+    {
+        if (target == null) return;
+        FoulStun stun = target.GetComponent<FoulStun>();
+        if (stun == null) stun = target.gameObject.AddComponent<FoulStun>();
+        stun.Begin(seconds);
+    }
+
+    void Begin(float seconds)
+    {
+        startedAt = Time.time;
+        stunnedUntil = Mathf.Max(stunnedUntil, Time.time + Mathf.Max(0f, seconds));
+        if (stars == null) BuildStars();
+        if (stars != null) stars.gameObject.SetActive(true);
+        enabled = true;
+    }
+
+    void Update()
+    {
+        if (Time.time >= stunnedUntil)
+        {
+            if (stars != null) stars.gameObject.SetActive(false);
+            enabled = false;
+            return;
+        }
+
+        if (stars == null) return;
+        float t = Time.time - startedAt;
+        stars.localPosition = new Vector3(Mathf.Sin(t * 9f) * 0.07f,
+                                          0.78f + Mathf.Sin(t * 6f) * 0.04f, 0f);
+        stars.localRotation = Quaternion.Euler(0f, 0f, t * 220f);
+        float pulse = 1f + Mathf.Sin(t * 12f) * 0.12f;
+        stars.localScale = new Vector3(pulse, pulse, 1f);
+    }
+
+    void OnDisable()
+    {
+        if (stars != null) stars.gameObject.SetActive(false);
+    }
+
+    void BuildStars()
+    {
+        GameObject root = new GameObject("FoulStunStars");
+        root.hideFlags = HideFlags.DontSave;
+        root.transform.SetParent(transform, false);
+        stars = root.transform;
+
+        if (starMaterial == null)
+        {
+            starMaterial = new Material(Shader.Find("Sprites/Default"));
+            starMaterial.hideFlags = HideFlags.DontSave;
+        }
+
+        for (int i = 0; i < 3; i++)
+        {
+            float angle = i * Mathf.PI * 2f / 3f;
+            GameObject star = new GameObject("Star" + (i + 1));
+            star.hideFlags = HideFlags.DontSave;
+            star.transform.SetParent(stars, false);
+            star.transform.localPosition = new Vector3(Mathf.Cos(angle) * 0.34f,
+                                                       Mathf.Sin(angle) * 0.12f, 0f);
+
+            LineRenderer line = star.AddComponent<LineRenderer>();
+            line.useWorldSpace = false;
+            line.loop = true;
+            line.positionCount = 10;
+            line.startWidth = line.endWidth = 0.025f;
+            line.material = starMaterial;
+            line.sortingOrder = 95;
+            line.startColor = new Color(1f, 0.9f, 0.15f, 1f);
+            line.endColor = new Color(1f, 0.55f, 0.05f, 1f);
+            for (int p = 0; p < 10; p++)
+            {
+                float a = Mathf.PI * 0.5f + p * Mathf.PI / 5f;
+                float r = (p & 1) == 0 ? 0.105f : 0.045f;
+                line.SetPosition(p, new Vector3(Mathf.Cos(a) * r, Mathf.Sin(a) * r, 0f));
+            }
+        }
     }
 }

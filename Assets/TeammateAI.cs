@@ -11,11 +11,11 @@ public class TeammateAI : MonoBehaviour, IAgentBody
     [SerializeField] private float chaseSpeed = 3f;
     [SerializeField] private float carrySpeed = 1.8f;
     [SerializeField] private float supportSpeed = 2.5f;
-    [SerializeField] private float grabDistance = 1.2f;
+    [SerializeField] private float grabDistance = 1f;
     [SerializeField] private float holdOffset = 0.6f;
     [SerializeField] private float shootRange = 4f;
     [SerializeField] private float shootPower = 12f; // 2026-07-09g: aligned with the scene (was 11 code / 20 scene — bots fired lasers)
-    [SerializeField] private float stealChance = 0.2f;
+    [SerializeField] private float stealChance = 0.4f;
     [SerializeField] private float looseHoldStealBonus = 0.15f; // extra chance vs a sprinting (loose-hold) carrier
 
     private Rigidbody2D rb;
@@ -51,6 +51,9 @@ public class TeammateAI : MonoBehaviour, IAgentBody
 
         // Excluded → fully inert (frozen in the corner), brain does not run.
         if (ExclusionManager.Instance != null && ExclusionManager.Instance.IsExcluded(transform))
+        { rb.linearVelocity = Vector2.zero; return; }
+
+        if (FoulStun.IsStunned(transform))
         { rb.linearVelocity = Vector2.zero; return; }
 
         WaterPoloBrain.Tick(this, ctx);

@@ -34,6 +34,8 @@ public class ScoreManager : MonoBehaviour
     // net-pulse bookkeeping: originals restored even if a pulse is ever cut short
     private Transform pulseNet;
     private Vector3 pulseScale0, pulsePos0;
+    private Transform netRippleTransform;
+    private SpriteRenderer netRippleRenderer;
 
     // 2026-07-09d: re-entrancy latch. A goal starts a ~7.5s restart during which the ball is
     // parked loose in the net (bobbing), reset to centre, handed out — plenty of collider
@@ -47,7 +49,11 @@ public class ScoreManager : MonoBehaviour
     public int HomeScore => homeScore;
     public int AwayScore => awayScore;
 
-    void Awake() { Instance = this; }
+    void Awake()
+    {
+        Instance = this;
+        PrepareNetRipple();
+    }
 
     void Start()
     {
@@ -82,6 +88,11 @@ public class ScoreManager : MonoBehaviour
         float yAtLine = ball.position.y + ball.linearVelocity.y * steps; // negative for a fast ball
         if (Mathf.Abs(yAtLine) > GoalMouthHalfHeight) return;       // caught just past it — still exact)
 
+        Collider2D goalCol = goalNet != null ? goalNet.GetComponent<Collider2D>() : null;
+        Vector2 impactWorld = new Vector2(netSign * GoalLineX, yAtLine);
+        Vector2 impactNorm = NormalizedImpact(goalCol, impactWorld);
+        float goalHeight = goalCol != null ? goalCol.bounds.size.y : GoalMouthHalfHeight * 2f;
+
         // Credit the team ATTACKING that physical net (so scoring survives the halftime
         // side-swap — no hardcoded Right=YOU assumption).
         TeamSide scorer = TeamAttacking(netSign);
@@ -104,7 +115,10 @@ public class ScoreManager : MonoBehaviour
             scorer.Contains(shooter) && scorer.RoleOf(shooter) == TeamSide.Role.Center)
             conceding.goalsConcededFromCenter++;
 
-        RestartAfterGoal(conceding);
+        Vector2 hangAnchor = new Vector2(netSign * (GoalLineX + 0.22f),
+                                         Mathf.Clamp(yAtLine, -GoalMouthHalfHeight + 0.08f,
+                                                                 GoalMouthHalfHeight - 0.08f));
+        RestartAfterGoal(conceding, hangAnchor);
 
         // WHERE the ball actually crossed the goal line (x = the line, y = the projected
         // crossing height from the frame-accuracy gate above) → the true impact point, and its
@@ -112,11 +126,6 @@ public class ScoreManager : MonoBehaviour
         // bottom→top). Everything the net reaction does is driven off this, so a top-corner goal
         // reacts differently from a bottom-corner or centre goal — and it survives an art/collider
         // swap because nothing is a hardcoded pixel/world position.
-        Collider2D goalCol = goalNet != null ? goalNet.GetComponent<Collider2D>() : null;
-        Vector2 impactWorld = new Vector2(netSign * GoalLineX, yAtLine);
-        Vector2 impactNorm = NormalizedImpact(goalCol, impactWorld);
-        float goalHeight = goalCol != null ? goalCol.bounds.size.y : GoalMouthHalfHeight * 2f;
-
         // Net reaction AFTER RestartAfterGoal — its StopAllCoroutines would kill a pulse
         // started any earlier. Plays over the hang-time hold.
         PlayNetReaction(goalNet, netSign, impactNorm, impactWorld, goalHeight);
@@ -151,7 +160,7 @@ public class ScoreManager : MonoBehaviour
     // where they stand); only then does the original reset sequence run in ResumeAfterGoal:
     // ball to centre + overview camera, the CONCEDING team set up with the ball, a silent
     // pause, then play resumes naturally with that team in possession.
-    void RestartAfterGoal(TeamSide concedingTeam)
+    void RestartAfterGoal(TeamSide concedingTeam, Vector2 hangAnchor)
     {
         restartInProgress = true; // cleared at the end of ResumeAfterGoal (Phase 4)
         MatchContext ctx = MatchContext.Instance;
@@ -162,9 +171,17 @@ public class ScoreManager : MonoBehaviour
             ctx.ClearGrabBan();
             ctx.FreezeAll();                      // Phase 0: everyone holds where they stand
         }
-        // The net "catches" the ball: kill most of its pace instantly so it can't ricochet
-        // around behind the goal; the coroutine stops it fully a beat later.
-        if (ball != null) ball.linearVelocity *= 0.15f;
+        // A counted goal is already fully inside the net. Take it out of physics on this
+        // exact frame and anchor it behind the goal line so no hard shot can rebound back
+        // into the border/play area before the scoring sequence completes.
+        if (ball != null)
+        {
+            ball.transform.SetParent(null);
+            ball.linearVelocity = Vector2.zero;
+            ball.angularVelocity = 0f;
+            ball.simulated = false;
+            SetBallPose(hangAnchor);
+        }
 
         if (TouchControls.Instance != null) TouchControls.Instance.SetGameplayVisible(false); // no UI during the restart
         StopAllCoroutines();
@@ -182,15 +199,13 @@ public class ScoreManager : MonoBehaviour
     {
         MatchContext ctx = MatchContext.Instance;
 
-        // Phase 0 — hang time. The ball stays in the net (fully stopped after a short
-        // settle so the net visibly absorbs it), everyone stays put, the camera keeps its
+        // Phase 0 — hang time. The ball stays physics-off inside the net, everyone stays put,
+        // the camera keeps its
         // normal follow + goal shake on the net instead of cutting straight to the overview.
-        yield return new WaitForSeconds(0.15f);
-        if (ball != null) { ball.linearVelocity = Vector2.zero; ball.angularVelocity = 0f; }
-        // The ball settles into the net but keeps a subtle buoyancy bob for the rest of the hang
+        // The ball keeps a subtle buoyancy bob for the whole hang
         // (Task 3) — a light float, not a frozen screenshot. Everything else about the hang time
         // (duration, player freeze, camera hold, net squash) is unchanged.
-        yield return StartCoroutine(BallNetBob(Mathf.Max(0f, goalHangSeconds - 0.15f)));
+        yield return StartCoroutine(BallNetBob(Mathf.Max(0f, goalHangSeconds)));
 
         // ---- the original reset sequence begins only now ----
         ResetBall();                              // ball loose at exact (0,0)
@@ -243,7 +258,7 @@ public class ScoreManager : MonoBehaviour
             if (duration > 0f) yield return new WaitForSeconds(duration);
             yield break;
         }
-        Vector2 rest = ball.position;
+        Vector2 rest = ball.transform.position;
         float phase = Random.value * Mathf.PI * 2f;   // random phase so it never looks mechanical
         float t0 = Time.time;
         while (Time.time - t0 < duration)
@@ -252,10 +267,18 @@ public class ScoreManager : MonoBehaviour
             float ease = Mathf.Lerp(1.25f, 0.85f, Mathf.Clamp01(t / Mathf.Max(duration, 0.01f)));
             float y = Mathf.Sin(t * NetBobRate + phase) * NetBobAmpY * ease;
             float x = Mathf.Sin(t * NetBobRate * 0.55f + phase) * NetBobAmpX * ease;
-            ball.position = rest + new Vector2(x, y);
+            SetBallPose(rest + new Vector2(x, y));
             yield return null;
         }
-        if (ball != null) ball.position = rest;
+        if (ball != null) SetBallPose(rest);
+    }
+
+    void SetBallPose(Vector2 position)
+    {
+        if (ball == null) return;
+        ball.position = position;
+        Vector3 p = ball.transform.position;
+        ball.transform.position = new Vector3(position.x, position.y, p.z);
     }
 
     Transform FirstMember(TeamSide team)
@@ -357,19 +380,31 @@ public class ScoreManager : MonoBehaviour
     // Expanding, fading white ring at the EXACT point the ball crossed the net (the projected
     // line-crossing, not just the ball's current pose) — same trick as the skip-shot's water
     // ripple in BallFlight. World-space, self-destroys.
-    void SpawnNetRipple(Vector2 impactWorld)
+    void PrepareNetRipple()
     {
         if (ball == null) return;
         SpriteRenderer ballSr = ball.GetComponent<SpriteRenderer>();
         if (ballSr == null || ballSr.sprite == null) return;
 
         GameObject go = new GameObject("NetRipple");
-        go.transform.position = new Vector3(impactWorld.x, impactWorld.y, ball.transform.position.z);
-        SpriteRenderer rs = go.AddComponent<SpriteRenderer>();
-        rs.sprite = ballSr.sprite;
-        rs.sortingOrder = ballSr.sortingOrder + 1; // over the net art
-        rs.color = Color.white;
-        StartCoroutine(NetRippleRoutine(go.transform, rs));
+        go.transform.SetParent(transform, false);
+        netRippleTransform = go.transform;
+        netRippleRenderer = go.AddComponent<SpriteRenderer>();
+        netRippleRenderer.sprite = ballSr.sprite;
+        netRippleRenderer.sortingOrder = ballSr.sortingOrder + 1;
+        go.SetActive(false);
+    }
+
+    void SpawnNetRipple(Vector2 impactWorld)
+    {
+        if (netRippleTransform == null || netRippleRenderer == null) PrepareNetRipple();
+        if (netRippleTransform == null || netRippleRenderer == null) return;
+
+        netRippleTransform.gameObject.SetActive(true);
+        netRippleTransform.position = new Vector3(impactWorld.x, impactWorld.y, ball.transform.position.z);
+        netRippleTransform.localScale = Vector3.zero;
+        netRippleRenderer.color = Color.white;
+        StartCoroutine(NetRippleRoutine(netRippleTransform, netRippleRenderer));
     }
 
     IEnumerator NetRippleRoutine(Transform ring, SpriteRenderer rs)
@@ -383,7 +418,7 @@ public class ScoreManager : MonoBehaviour
             rs.color = new Color(1f, 1f, 1f, 1f - t);       // fade out
             yield return null;
         }
-        if (ring != null) Destroy(ring.gameObject);
+        if (ring != null) ring.gameObject.SetActive(false);
     }
 
     void UpdateText()

@@ -56,6 +56,8 @@ public class Goalkeeper : MonoBehaviour
 
     const float KeeperRoamY = 4f;          // Task 4: how far up/down the pool a ball-carrying keeper may roam (field height)
     const float KeeperMinShootSpeed = 8f;  // a keeper shot tap still travels (never a limp drop)
+    const float KeeperPassRangeMin = 4f;   // manual pass landing distance at minimum charge
+    const float KeeperPassRangeMax = 9f;   // manual pass landing distance at full charge
 
     const float KeeperIdleRoamX = 0.4f;      // Task 6: NOT holding — keeper drifts at most this far off its goal line
     const float KeeperIdleBobY  = 0.05f;     // Task 6: NOT holding — subtle living Y micro-bob amplitude
@@ -164,6 +166,15 @@ public class Goalkeeper : MonoBehaviour
 
     void Update()
     {
+        if (FoulStun.IsStunned(transform))
+        {
+            chargingShot = false; currentPower = 0f;
+            chargingPass = false; passPower = 0f;
+            ClearKeeperTouch();
+            UpdateKeeperHud();
+            return;
+        }
+
         // Full player control while OUR keeper holds the ball (Task 5): aim with WASD / stick,
         // B or the PASS button distributes, Space or the SHOOT button charges then fires.
         // Movement itself is applied in FixedUpdate (HoldTick).
@@ -227,6 +238,7 @@ public class Goalkeeper : MonoBehaviour
         // HANG TIME leaves the dead ball sitting in its net, and it would fish it straight
         // back out mid-celebration (stale keeper-hold state through the restart).
         if (ctx != null && ctx.PlayFrozen) return;
+        if (FoulStun.IsStunned(transform)) { rb.linearVelocity = Vector2.zero; return; }
 
         if (holding) { HoldTick(ctx); return; }
 
@@ -644,22 +656,20 @@ public class Goalkeeper : MonoBehaviour
 
         TeamSide team = KeeperTeam();
         Vector2 from = transform.position;
+        bool manualPlayerPass = IsPlayerKeeper() && !forceDeep;
 
         // TARGET SELECTION:
         //  • forceDeep (bot keeper crowded past maxKeeperHoldSeconds): the DEEP outlet — a long
         //    ball over/past the pressure, never a short pass into the crowder's arms.
-        //  • PLAYER keeper (manual pass, Task 3): PURELY directional — pick the teammate best
-        //    aligned with the human's aim (live joystick, else WASD/last facing); NO cone. Falls
-        //    back to BestPassTarget only when the keeper has no available teammate at all.
+        //  • PLAYER keeper: fully manual — aim and charge define the ray and landing distance;
+        //    teammate positions never change either one.
         //  • BOT keeper: unchanged — most-open advanced teammate, else the safe deep outlet.
         Transform target = null;
-        if (team != null)
+        if (team != null && !manualPlayerPass)
         {
             if (forceDeep)
                 target = team.DeepestMember(transform);
-            if (target == null && IsPlayerKeeper())
-                target = FindKeeperPassTarget(team, KeeperAimDir());
-            if (target == null) // bot keeper, or the player keeper had no available teammate → fall back
+            if (target == null)
             {
                 target = team.BestPassTarget(transform, ctx != null ? ctx.EnemyOf(team) : null, false);
                 if (target == null) target = team.DeepestMember(transform);
@@ -668,7 +678,12 @@ public class Goalkeeper : MonoBehaviour
 
         Vector2 dir;
         float dist;
-        if (target != null) { dir = ((Vector2)target.position - from).normalized; dist = Vector2.Distance(from, target.position); }
+        if (manualPlayerPass)
+        {
+            dir = KeeperAimDir();
+            dist = Mathf.Lerp(KeeperPassRangeMin, KeeperPassRangeMax, Mathf.Clamp01(charge));
+        }
+        else if (target != null) { dir = ((Vector2)target.position - from).normalized; dist = Vector2.Distance(from, target.position); }
         else if (team != null && team.attackGoal != null) { dir = ((Vector2)team.attackGoal.position - from).normalized; dist = 6f; }
         else { dir = Vector2.right; dist = 6f; }
 
@@ -706,30 +721,6 @@ public class Goalkeeper : MonoBehaviour
         if (stick.magnitude >= 0.1f) return stick.normalized;                  // touch: live joystick
         if (lastDir.sqrMagnitude > 1e-4f) return lastDir.normalized;           // keyboard / last facing
         return new Vector2(transform.position.x >= 0f ? -1f : 1f, 0f);         // default: toward the field
-    }
-
-    // The teammate the player keeper is aiming at (Task 3): PURELY directional, NO cone. Every
-    // teammate is scored by alignment with the aim minus a small distance penalty (dot − dist×0.05);
-    // the best-scoring one wins. Returns null only when there is no available teammate (excluded
-    // slots are null) — the caller then falls back to BestPassTarget.
-    Transform FindKeeperPassTarget(TeamSide team, Vector2 aimDir)
-    {
-        if (team == null || team.members == null) return null;
-        Vector2 myPos = transform.position;
-        Transform best = null;
-        float bestScore = float.NegativeInfinity;
-
-        foreach (Transform m in team.members)
-        {
-            if (m == null || m == transform) continue; // excluded slots are null; never aim at self
-            Vector2 to = (Vector2)m.position - myPos;
-            float dist = to.magnitude;
-            if (dist < 1e-4f) continue;
-
-            float score = Vector2.Dot(aimDir, to / dist) - dist * 0.05f; // aligned + nearer wins, no cone
-            if (score > bestScore) { bestScore = score; best = m; }
-        }
-        return best;
     }
 
     // Task 5: called by a stealer (player or bot) that successfully rips the ball off this keeper

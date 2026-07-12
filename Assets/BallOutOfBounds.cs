@@ -20,15 +20,24 @@ using UnityEngine;
 public class BallOutOfBounds : MonoBehaviour
 {
     [SerializeField] private float outYThreshold = 4.2f; // |ball.y| at/above this = at the top/bottom wall
-    [SerializeField] private float reentryInset = 0.5f;  // push the ball this far back inside the pool
-
     [Header("Full-escape recovery (2026-07-09c)")]
     [SerializeField] private float escapeXThreshold = 8.2f; // past the left/right walls (±8) = out of the pool
     [SerializeField] private float escapeYThreshold = 4.7f; // past the top/bottom walls (±4.5) = out of the pool
     [SerializeField] private float settleSeconds = 0.6f;    // the two deck bounces take about this long
     [SerializeField] private float throwInDelay = 0.8f;     // dead-ball pause before the keeper restart
+    [Tooltip("Minimum velocity directly into a top/bottom wall required to leave play. Softer balls are reflected back into the pool.")]
+    [SerializeField] private float minimumExitSpeed = 12f;
+    [Tooltip("Fraction of outward speed retained by a soft in-play wall deflection.")]
+    [SerializeField, Range(0.1f, 1f)] private float softBounceRetention = 0.75f;
 
     private bool recovering; // a full-escape sequence is running — all rules stand down
+    private BoxCollider2D topWall;
+    private BoxCollider2D bottomWall;
+
+    void Start()
+    {
+        FindPlayableEdgeColliders();
+    }
 
     void FixedUpdate()
     {
@@ -64,36 +73,78 @@ public class BallOutOfBounds : MonoBehaviour
             return;
         }
 
-        if (Mathf.Abs(pos.y) >= outYThreshold)
-            Award(ctx);
+        // The scene's solid wall colliders sit INSIDE the old outYThreshold. Waiting for
+        // the ball centre to reach 4.2 therefore let physics bounce it back first. Detect
+        // the actual inner collider faces and project one physics step ahead so this rule
+        // claims a hard outgoing ball before the wall collision can repel it.
+        int side = PlayableSideCrossing(ctx, pos);
+        if (side != 0)
+        {
+            float outwardSpeed = Mathf.Abs(ctx.Ball.linearVelocity.y);
+            if (outwardSpeed >= minimumExitSpeed)
+                StartCoroutine(RecoverEscapedBall(ctx));
+            else
+                ReflectSoftBall(ctx, side);
+        }
     }
 
-    void Award(MatchContext ctx)
+    private void FindPlayableEdgeColliders()
     {
-        Rigidbody2D ball = ctx.Ball;
+        topWall = null;
+        bottomWall = null;
+        foreach (PoolLineFloat line in Object.FindObjectsByType<PoolLineFloat>())
+        {
+            if (line == null) continue;
+            BoxCollider2D wall = line.GetComponent<BoxCollider2D>();
+            if (wall == null || !wall.enabled || wall.isTrigger || wall.bounds.size.x < 5f) continue;
 
-        // the team that did NOT touch it last gets it (default to player team if unknown)
-        TeamSide award = ctx.LastTouchTeam != null ? ctx.EnemyOf(ctx.LastTouchTeam) : ctx.PlayerTeam;
-        if (award == null) award = ctx.PlayerTeam;
-        if (award == null) return;
+            if (wall.bounds.center.y > 0f &&
+                (topWall == null || wall.bounds.center.y > topWall.bounds.center.y))
+                topWall = wall;
+            else if (wall.bounds.center.y < 0f &&
+                     (bottomWall == null || wall.bounds.center.y < bottomWall.bounds.center.y))
+                bottomWall = wall;
+        }
+    }
 
-        // re-enter slightly inside the pool at the contact x
-        float contactY = ball.position.y;
-        float sign = contactY >= 0f ? 1f : -1f;
-        float reY = Mathf.Max(0f, Mathf.Abs(contactY) - reentryInset);
-        ball.transform.SetParent(null);
-        ball.simulated = true;
-        ball.linearVelocity = Vector2.zero;
-        ball.position = new Vector2(ball.position.x, sign * reY);
-        ctx.SetPossession(null);
+    // Returns +1 for the top edge, -1 for the bottom edge, 0 for no outward crossing.
+    private int PlayableSideCrossing(MatchContext ctx, Vector2 pos)
+    {
+        if (ctx == null || ctx.Ball == null) return 0;
+        if ((topWall == null || bottomWall == null) && Time.frameCount % 60 == 0)
+            FindPlayableEdgeColliders();
 
-        // hand it to the nearest player of the awarded team (reuses existing hold mechanics)
-        Transform receiver = award.ClosestMemberTo(ball.position);
-        if (receiver != null) ctx.GiveBallTo(receiver, award);
+        Collider2D ballCollider = ctx.Ball.GetComponent<Collider2D>();
+        float radiusY = ballCollider != null ? ballCollider.bounds.extents.y : 0f;
+        float projectedY = pos.y + ctx.Ball.linearVelocity.y * Time.fixedDeltaTime;
 
-        if (ShotClock.Instance != null) ShotClock.Instance.ResetClock();
-        if (EventFeed.Instance != null)
-            EventFeed.Instance.AddEvent("Out - " + (award == ctx.PlayerTeam ? "YOU" : "BOT"));
+        float topLimit = topWall != null ? topWall.bounds.min.y - radiusY : outYThreshold;
+        float bottomLimit = bottomWall != null ? bottomWall.bounds.max.y + radiusY : -outYThreshold;
+
+        float velocityY = ctx.Ball.linearVelocity.y;
+
+        if (velocityY > 0f && (pos.y >= topLimit || projectedY >= topLimit)) return 1;
+        if (velocityY < 0f && (pos.y <= bottomLimit || projectedY <= bottomLimit)) return -1;
+        return 0;
+    }
+
+    private void ReflectSoftBall(MatchContext ctx, int side)
+    {
+        if (ctx == null || ctx.Ball == null) return;
+        Collider2D ballCollider = ctx.Ball.GetComponent<Collider2D>();
+        float radiusY = ballCollider != null ? ballCollider.bounds.extents.y : 0f;
+        float limit = side > 0
+            ? (topWall != null ? topWall.bounds.min.y - radiusY : outYThreshold)
+            : (bottomWall != null ? bottomWall.bounds.max.y + radiusY : -outYThreshold);
+
+        Vector2 p = ctx.Ball.position;
+        p.y = limit - side * 0.01f; // stay just inside so the next step cannot re-trigger
+        ctx.Ball.position = p;
+        ctx.Ball.transform.position = p;
+
+        Vector2 v = ctx.Ball.linearVelocity;
+        v.y = -v.y * softBounceRetention;
+        ctx.Ball.linearVelocity = v;
     }
 
     // ---- full-escape recovery ----
