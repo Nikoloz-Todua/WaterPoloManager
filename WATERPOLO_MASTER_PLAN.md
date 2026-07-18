@@ -2755,3 +2755,782 @@ pre-existing baseline. Temporary verification scripts/project references were re
 4. **Task 1:** inspect GoalLeft and GoalRight while the water animates. Both complete net/frame sprites
    must stay fully opaque and stable-looking, while only the lane/divider lines retain the subtle
    submerged/refraction treatment.
+
+---
+
+## SESSION LOG — 2026-07-13 (moving-ball swim presentation; state-driven player depth; empirical art/overlay audit)
+
+This was deliberately kept to a code-first visual pass because the current player art does not have
+normalized bounds or a purpose-made two-hands-forward dribble/push cycle. Before changing code, the
+full master plan, `PlayerAnimator.cs`, and `PlayerMovement.cs` were read. The live scene wiring, actual
+PNG alpha bounds, imported sprite settings, clips, rig prefabs, and the surviving 2026-07-12 waterline
+work were then inspected rather than inferred from comments or old setup notes.
+
+**Empirical scene/art findings (important for future regeneration):**
+- All six live player `PlayerAnimator` components have all 12 front/back flat and bone-body
+  Animator/Renderer references populated. No player `WaterOverlayRenderer` or
+  `WaterOverlayBackRenderer` fields, objects, or live scene references survive in the current tree.
+  The current `SubmergedRefraction` work belongs to lane/divider lines in `PoolLineFloat`, not players.
+- Imports use **100 pixels per unit** with centered pivots, but live body scales are inconsistent:
+  front flat bodies are 0.07 or 0.08 depending on player, back flats are 0.07 or 0.077, front float
+  rigs are 0.07, front hold rigs are **0.06**, and back float/hold rigs are 0.07. Back-hold bodies
+  also have player-specific local-position nudges. This confirms the scene differs from older notes.
+- Measured non-transparent PNG bounds (`alpha > 8`; width x height pixels, followed by approximate
+  live world size at the common 0.07 scale unless the scene uses another scale):
+  - front float `test.png`: **787x740** -> about **0.551x0.518**;
+  - back float `test-back.png`: **789x758** -> about **0.552x0.531**;
+  - front hold `hold.png`: **1049x892** -> about **0.629x0.535 at its live 0.06 scale**;
+  - back/side hold `back-side.png`: **918x808** -> about **0.643x0.566**;
+  - front swim `swiml.png` / `swimr.png`: **1064x869 / 1111x860** -> about
+    **0.745x0.608 / 0.778x0.602**;
+  - back swim `swim-backl.png` / `swim-backr.png`: both **936x683** -> about **0.655x0.478**;
+  - front throw charge/release: about **1209x951 / 1190x948** -> about
+    **0.846x0.666 / 0.833x0.664**;
+  - back throw charge/release: about **982x786 / 970x780** -> about
+    **0.687x0.550 / 0.679x0.546**.
+  Players whose front flat body is 0.08 render those flat frames about 14% larger again.
+- The flat swimming clips are only two sprite frames (keys at 0.00s and 0.12s; clip length about
+  0.203s). The front frames depict alternating single-arm reach, not the requested real-water-polo
+  both-hands-forward ball push. `back-side.png`, despite being used as the back hold body, reads as a
+  side-profile one-arm-raised pose. The current `PlayerAnimator` facing split is also left-vs-right
+  (`velocity.x < -0.1` selects the so-called back bodies), not the vertical split described by stale
+  comments/offset names.
+
+**Overlay decision (flagged before implementation):**
+- One shared fixed-size player water overlay is **not defensible with the current art**. Across float,
+  hold, swim, and throw, visible widths/heights, baselines, scales, and even view/proportions differ by
+  roughly 15-35% (more for the 0.08 front bodies). An overlay tuned for float would clip or sit at the
+  wrong level over hold/swim/throw.
+- A polished overlay version therefore needs either (a) regenerated art normalized to the same canvas,
+  pivot, baseline/waterline, view, and scale, or (b) state- and facing-specific mask/overlay dimensions
+  and offsets. Option (b) is viable code work, but it should wait until the source art direction is
+  settled so those masks are not immediately discarded.
+- This pass uses state-specific **visual-body local Y offsets** instead. It creates the requested lower
+  carry / higher release read without moving gameplay roots or colliders and without pretending a bad
+  shared cover fits every body.
+
+**TASK 1 — swimming while carrying, with automatic forward ball push (`PlayerAnimator.cs`,
+`PlayerMovement.cs`):**
+- While possession is true and Rigidbody2D speed is above **0.1**, the static front/back bone hold
+  bodies are hidden and the existing flat two-frame swim controller is reused. The controller receives
+  `IsHolding=false` only for this visual moving-carrier branch, so gameplay possession is unchanged.
+- When the carrier stops, the existing bone-rigged static hold body returns exactly as before.
+- During moving possession the held ball is pinned **0.58 world units** ahead along the swimmer's
+  actual travel vector. When stationary it still uses the existing scene-tuned hand offsets.
+  `lastDirection`, charge, pass target, shot target, power, and all pass/shoot mechanics are untouched.
+- This is functional with current art, but it cannot show a convincing two-hands-forward push because
+  those frames do not exist. New matched front/back push-swim frames are the art priority for that read.
+
+**TASK 2 — state-driven visual depth (`PlayerAnimator.cs`):**
+- Every visual body variant is eased to the same state offset while preserving its serialized base
+  position and player-specific nudges: holding target **-0.04 local Y**, throwing target
+  **+0.06 local Y**, return target 0, transition speed **0.8 local units/second**.
+- Only child visual transforms move. Player roots, Rigidbody2D positions, colliders, possession, ball
+  flight, and aiming stay unchanged.
+- `PlayerMovement.Shoot()` now explicitly signals the presentation layer. Both flat facing controllers
+  receive the shoot trigger, the raised depth lasts **0.22s** to match the approximately 0.203s throw
+  clips, and the flat body temporarily wins over the idle bone rig so stationary shots are visible.
+  This replaces the unreliable old heuristic that judged a shot from the swimmer's own release speed
+  and therefore missed ordinary stationary/slow shots.
+
+**Files changed:**
+- `Assets/PlayerAnimator.cs`
+- `Assets/PlayerMovement.cs`
+- `WATERPOLO_MASTER_PLAN.md` (this log only)
+
+No scene or controller asset was changed, and no new serialized object references were introduced.
+Existing six-player wiring remains intact; the new numeric fields use their code defaults until tuned
+per player in the Inspector.
+
+**Build:** `dotnet build Assembly-CSharp.csproj` -> **0 errors, 22 warnings**. The warnings are the
+existing obsolete-API/unused-field baseline; this work adds no compile error.
+
+**Manual Unity verification/tuning priority:**
+1. Carry in every direction, especially diagonal: the static raised-ball pose must swap to the two-frame
+   swim and the ball must remain ahead of travel; stopping must restore the original hold pose.
+2. Aim independently while moving, then pass/shoot: the visual ball position may follow travel, but
+   the release direction must still follow the existing aim exactly.
+3. Shoot both stationary and moving from both flat-facing variants: the throw must remain visible for
+   its full short clip and the body should rise rather than swap immediately to the float rig.
+4. Tune `movingHoldBallForwardOffset` (0.58), `holdingSubmergeOffsetY` (-0.04),
+   `shootingRiseOffsetY` (+0.06), and `depthTransitionSpeed` (0.8) by eye against the final water art.
+5. Do not invest in per-state player water masks until the replacement push-swim/body art choice is
+   made. If current art is retained, implement state/facing-specific masks; do not use one shared mask.
+
+---
+
+## SESSION LOG — 2026-07-13b (successful-steal stun always; blindside attempts become exclusion-level fouls)
+
+Before changing anything, the full current master plan was reread, followed by the complete current
+`PlayerMovement.cs` and `PlayerAnimator.cs`. The investigation then traced all successful strip paths
+and the existing exclusion/stun owner through `WaterPoloAI.cs`, `Goalkeeper.cs`, and
+`ExclusionManager.cs`.
+
+**Diagnosis:**
+- The dizzy stars/action lock were not attached to a successful steal at all. They existed only after
+  a **failed full-risk steal** remained an ordinary foul, then passed an `aggressive=true` check, a
+  **35% random roll**, and a **6-second per-victim cooldown**. Human/AI successful steals transferred
+  possession without ever calling `FoulStun`, explaining why a carrier could visibly lose the ball
+  with no dizzy feedback.
+- The facing test is `dot(carrierFacing, carrier-to-stealer) >= 0.3`, approximately a 70-72 degree
+  front-only arc. Human Space and touch Block played the attempt animation and then silently returned
+  when outside that arc; AI returned even before its attempt notification. No foul was registered.
+- Live close-range values were left unchanged: the scene currently serializes player `stealDistance`
+  and AI `grabDistance` at **1.0**. Out-of-range contact still cannot become either a successful steal
+  or a blindside foul.
+
+**TASK 1 — every successful close-range steal now produces the dizzy/stun state:**
+- Replaced the aggressive-foul chance/cooldown fields with one `successfulStealStunSeconds` field,
+  default **1.4s**.
+- Added one centralized `ExclusionManager.StunSuccessfulStealVictim(victim)` outcome. It has no chance,
+  aggression flag, or repeat cooldown; callers reach it only after their existing proximity gate and
+  a successful possession transfer.
+- Wired all actual steal owners: human Space steal, touch Block steal, shared player-team/bot AI steal,
+  and the goalkeeper's 100%-success point-blank carrier snatch. The victim's existing `FoulStun`
+  component supplies the rotating stars and movement/action lock; `PlayerMovement`, `TeammateAI`,
+  `BotMovement`, and `Goalkeeper` already honor that lock.
+- Front-on success odds, stamina scaling, Centre modifiers, loose-hold bonus, ranges, and possession
+  transfer mechanics are unchanged. This changes feedback/outcome after success, not steal probability.
+- The former conditional aggressive ordinary-foul stun/forced-drop behavior was removed. A failed
+  legal front-on steal continues through the normal ordinary-foul/free-throw system.
+
+**TASK 2 — rear/blindside steal input is an automatic exclusion-level foul:**
+- Added `ExclusionManager.ReportExclusionFoul(...)`, which applies the existing steal lockout and
+  routes immediately through the established `Escalate` owner. It does not add an ordinary foul,
+  start an ordinary free throw, or wait for `foulsForExclusion`.
+- In-range contact that fails the existing front-arc check now triggers that direct escalation for
+  human Space, touch Block, and AI pressers. The attempt animation still plays and the victim keeps
+  the ball.
+- Normal escalation behavior is preserved: outside the attacking 2m zone the offender is temporarily
+  or permanently excluded as appropriate; inside the 2m zone the same exclusion-level offense becomes
+  the existing penalty-shot outcome. Exclusion counts, maximum-removal rules, shot-clock reset,
+  pen placement, and event-feed reporting all remain owned by `ExclusionManager`.
+- Protected carriers, keeper safe-zone holds, active free throws, cooldown gates, and out-of-range
+  presses still exit before this rule. Only genuine close-range blindside contact escalates.
+
+**Files changed this task:**
+- `Assets/ExclusionManager.cs`
+- `Assets/PlayerMovement.cs`
+- `Assets/WaterPoloAI.cs`
+- `Assets/Goalkeeper.cs`
+- `WATERPOLO_MASTER_PLAN.md` (this log)
+
+`PlayerAnimator.cs` was fully read as required but did not need a change; the dizzy visual is the
+existing procedural `FoulStun` stars, not an Animator-controller state. No scene/controller asset or
+serialized object reference changed. The new duration is a numeric Inspector field with the 1.4s code
+default; old unsaved `aggressiveFoulStun*` values, if present in an open Inspector, are obsolete.
+
+**Build:** `dotnet build Assembly-CSharp.csproj` -> **0 errors, 22 warnings**. Warnings match the
+existing obsolete-API/unused-field baseline.
+
+**Manual Unity verification priority:**
+1. Win a front-on Space steal, a touch Block steal, and an AI steal: every victim must immediately
+   show rotating stars and remain action-locked for about 1.4s after losing possession.
+2. Drive into the keeper and let it snatch: the stripped carrier must receive the same stun feedback.
+3. Attempt Space and Block directly behind a carrier while inside 1.0u: no possession roll; offender
+   immediately receives the exclusion-level outcome and the carrier retains the ball.
+4. Repeat with an AI presser approaching from behind and verify the same exclusion symmetry.
+5. Repeat the blindside contact with the victim inside the attacking 2m zone: the existing penalty
+   sequence should start instead of an ordinary free throw or a temporary pen sit-out.
+6. Attempt outside 1.0u and from a legal front angle: out-of-range remains only a lunge; a front-on
+   miss remains an ordinary foul, confirming the two new outcomes did not broaden their gates.
+
+---
+
+## SESSION LOG — 2026-07-18 (locked flipbook architecture; URP 2D palette swap; bone rig gated off)
+
+The full master plan was read first, followed by the complete current `PlayerAnimator.cs`, before any
+change. This session replaces the live field-player art direction with six-frame sprite flipbooks and
+a shared palette-key shader while keeping every not-yet-regenerated state on its existing flat art.
+
+**TASK 1 — custom URP 2D palette-swap shader:**
+- Chose a custom shader (`Assets/Shaders/PlayerPaletteSwap.shader`) instead of Shader Graph. The two
+  keyed masks, tolerance feather, and luminance-preserving replacements are short and explicit in
+  HLSL; a hand-authored Shader Graph asset would be much larger and harder to audit for the same work.
+- Exposed `_CapTint` and `_SwimwearTint`. The shader samples the SpriteRenderer texture before its
+  ordinary renderer tint, matches #FF00FF / #00FFFF with a smooth **0.45** color-distance tolerance,
+  and outputs source luminance x the matching tint. Non-key pixels and source alpha pass through.
+- `PlayerPaletteSwapRuntime` loads the Resources material template and clones **one unique material
+  instance per swimmer**. A human player's front/back renderers share only that player's instance;
+  every other player/bot receives another instance. Renderer color/alpha still multiplies normally,
+  so exclusion dimming remains compatible.
+- `PlayerAnimator` exposes per-player test `Cap Tint` / `Swimwear Tint` fields (red/white defaults).
+  `BotAnimator` uses the same runtime helper/shader and selects blue or red team-default fields from
+  `BotMovement.isBlueTeam`; there is no bot-only shader/rendering implementation.
+
+**TASK 2 — legacy bone system disabled but retained:**
+- `PlayerAnimator.enableLegacyBoneRigForRollback` is OFF by default. With it OFF, BoneBody, HoldBody,
+  BackBoneBody and BackHoldBody Animators are disabled, their SpriteRenderers are forced off, their
+  state/visibility checks cannot win, and their depth-transform updates do not run.
+- All serialized bone references and the old branch remain for rollback. Turning the gate on restores
+  the prior state-driven path.
+- The existing flat `FrontBody` / `BackBody` selection, renderer enable toggle, facing latch, and old
+  controller fallback remain in place. With all bone bodies off, exactly one flat renderer stays
+  active, preventing an idle/holding visual gap.
+
+**TASK 3 — six-frame flipbook playback with legacy fallbacks:**
+- The three source sheets were moved to the locked locations and re-sliced as true equal-cell grids:
+  `Animations/BlueTeam/idle_floating.png` = **6x1** (333x787 cells), `swimming.png` = **3x2**
+  (689x380), `throwing.png` = **3x2** (545x481). GUIDs were preserved, row order is top-left to
+  top-right then bottom-left to bottom-right, and max import size is 4096 so the 2067px swim sheet is
+  not reduced.
+- `Resources/PlayerFlipbookSet.asset` owns the three six-sprite arrays. Both player and bot presentation
+  code load this same set automatically; no per-scene drag slots are required.
+- `Flipbook Frames Per Second` is serialized on both animators, default **12 fps**. The existing
+  `isFloating`, possession, movement/sprint thresholds, defend/steal windows, exclusion state and
+  shoot-release latch are computed once and reused for selection. Idle and normal swimming loop;
+  throwing plays all six frames once through the existing shoot latch.
+- Holding, sprinting, defending, stealing and excluded presentation deliberately stays on the old
+  Animator art. The new sheets only override idle/swim/throw in `LateUpdate`, so those fallbacks keep
+  functioning until replacement sheets arrive.
+
+**Files added/changed for this architecture:**
+- Added `Assets/Shaders/PlayerPaletteSwap.shader`.
+- Added `Assets/PlayerFlipbookSet.cs`, `Assets/PlayerVisualRuntime.cs`, the Resources flipbook asset,
+  and the Resources palette material template.
+- Changed `Assets/PlayerAnimator.cs` and `Assets/BotAnimator.cs`.
+- Relocated/re-sliced the three supplied PNGs and their existing metas; no gameplay, scene, controller,
+  Firebase/preset, or AI-decision file was changed for this task.
+
+**Build:** `dotnet build Assembly-CSharp.csproj` -> **0 errors, 22 warnings**. Warnings are the existing
+obsolete-Unity-API/unused-field baseline; this session adds no C# compile error.
+
+**Manual Unity test checklist:**
+1. Select Player/Player2-Player6 during Play mode. Change `PlayerAnimator > Palette Swap Test Colors >
+   Cap Tint` to obvious red/green values and `Swimwear Tint` to white/yellow/blue. The magenta cap and
+   cyan swimwear regions must change immediately, including feathered marker edges; skin/black lines/
+   transparent pixels must remain unchanged. Confirm two players can show different colors at once.
+2. Watch an idle swimmer for several cycles, then move normally: idle and swim must each visit frames
+   0-5 in order and loop without a blank frame. Change `Flipbook Frames Per Second` from 12 to 6 and
+   18 during Play mode; playback must visibly slow/speed up without changing gameplay movement.
+3. Shoot while stationary and while moving, facing both directions. The existing shoot latch must play
+   the six throwing frames once in order, then return to idle/swim; aim, ball release and shot power
+   must remain unchanged.
+4. Exercise holding, sprint, defend proximity and steal. Each must still show its old placeholder/flat
+   Animator art without exceptions or missing sprites.
+5. Inspect every Player hierarchy while idle and holding: BoneBody/HoldBody/BackBoneBody/BackHoldBody
+   renderers must remain OFF and their Animators disabled. `FrontBody` or `BackBody` must always remain
+   visible, with the existing direction toggle/facing latch and no one-frame body gap.
+6. Watch bots through idle/swim/throw and change their blue-team default palette fields during Play.
+   They must use the same keyed shader/flipbook source while retaining bot team colors and old fallback
+   states. Confirm player and bot materials show `(Instance)` and are not the same material object.
+
+---
+
+## SESSION LOG — 2026-07-18b (Player/Bot flipbook scale parity; legacy bone system fully removed)
+
+The full current master plan was read first, followed in order by the complete current
+`PlayerVisualRuntime.cs`, `PlayerAnimator.cs`, and `BotAnimator.cs`, before any change. This session
+empirically diagnosed the tiny human-controlled Player regression, corrected only the flipbook scale
+path, and completed the requested irreversible removal of the obsolete bone-animation architecture.
+The existing swimming-sheet slicing/pivot drift was deliberately left unchanged.
+
+**Scale/PPU diagnosis — root cause confirmed before editing:**
+- Every Bot SpriteRenderer is on its Bot root, whose actual scene `localScale` is
+  **(0.3, 0.3, 1)**. Bots do not have a separate visual child scale.
+- Every human Player root is **(1, 1, 1)**, but its active flat renderer children retained the old
+  large-part-art scales: Player **0.08 front / 0.07 back**; Player2 **0.07 / 0.07**; Player3
+  **0.07 / 0.07**; Player4 **0.08 / 0.077**; Player5 **0.07 / 0.07**; Player6
+  **0.08 / 0.077**. Their effective flipbook scale was therefore only **0.07-0.08**, making the same
+  sprite 3.75x-4.29x smaller linearly than the Bot version.
+- `PlayerVisualRuntime.PlayerFlipbookPlayback.Apply` assigns only `renderer.sprite`. `PlayerAnimator`
+  calls it on the enabled FrontBody/BackBody child, while `BotAnimator` calls it on the Bot root
+  renderer. Neither path previously changed Transform scale or Sprite PPU; the divergence was solely
+  the pre-existing renderer hierarchy scale.
+- `idle_floating.png`, `swimming.png`, and `throwing.png` are all imported at **100 PPU**. Both
+  animators load the exact same `Resources/PlayerFlipbookSet.asset` Sprite references, so Player and
+  Bot cannot receive different PPU instances. The old serialized Player and Bot fallback sprites also
+  measure **100 PPU**. PPU mismatch is ruled out.
+
+**Scale fix:**
+- `PlayerAnimator` now exposes `Flipbook Renderer Local Scale`, default **(0.3, 0.3)**. While an
+  idle/swim/throw flipbook is active, LateUpdate applies that absolute local X/Y scale to FrontBody and
+  BackBody, giving the human the same effective **0.3** sprite scale as Bots.
+- Each body's original Inspector-authored scale is cached in Awake and restored whenever playback
+  falls back to old Animator art. Holding, sprinting, defending, stealing, and excluded placeholders
+  therefore retain their existing 0.07-0.08 presentation instead of being enlarged as collateral
+  damage. The Player root/collider and every Bot root/collider remain untouched.
+
+**Full bone-animation removal:**
+- Removed every BoneBody/HoldBody/BackBoneBody/BackHoldBody field, renderer toggle, Animator branch,
+  transform/depth update, and rollback gate from `PlayerAnimator`. The live visibility path is now
+  exclusively the existing flat FrontBody/BackBody toggle plus flipbook override.
+- Removed all four bone setup menu commands, their prefab/controller constants, and their serialized
+  wiring code from `AnimatorBuilder.cs`. The remaining flat-body/controller setup tools are unchanged.
+- The reference audit found no ordinary player prefab using these objects. It did find the closed old
+  dependency set in both gameplay scenes, the Unity recovery scene, the CharacterRig authoring scene,
+  four rig prefabs, five controllers (including `PlayerBodyAnimation.controller`), and four bone clips.
+- Cleaned exactly **24 rig prefab instances / 96 YAML documents per scene** from
+  `SampleScene_PoolB.unity`, `SampleScene.unity`, and `_Recovery/0 (6).unity`, including stale
+  PlayerAnimator object references and parent-child links. Flat FrontBody/BackBody references remain
+  wired for all six players in all three scenes.
+- Deleted the bone-only `CharacterRig.unity`; `test_0`, `hold_0`, `test-back_0`, and `back-side_0`
+  prefabs; `PlayerBodyAnimation`, `BoneBodyAnimation`, `HoldBodyAnimation`,
+  `BackBoneBodyAnimation`, and `BackHoldBodyAnimation` controllers; and `floating_body`,
+  `holding_body`, `floating_body_back`, and `holding_body_back` clips (14 Unity assets / 28 asset+meta
+  files). A final project-wide audit finds no remaining code, scene, prefab, controller, or clip
+  reference to that system outside this historical master-plan log.
+
+**Files changed:**
+- `Assets/PlayerAnimator.cs`
+- `Assets/Editor/AnimatorBuilder.cs`
+- `Assets/Scenes/SampleScene_PoolB.unity`
+- `Assets/Scenes/SampleScene.unity`
+- `Assets/_Recovery/0 (6).unity`
+- Deleted the 14 bone-only assets listed above
+- `WATERPOLO_MASTER_PLAN.md` (this log)
+
+`PlayerVisualRuntime.cs` and `BotAnimator.cs` were fully read and empirically compared but required no
+change. The three source PNGs and their `.meta` slicing/pivot data were not modified.
+
+**Build:** `dotnet build Assembly-CSharp.csproj` -> **0 errors, 22 warnings**. Warnings match the
+existing obsolete-Unity-API/unused-field baseline.
+
+**Manual Unity verification priority:**
+1. Enter Play in `SampleScene_PoolB`. Compare Player and a Bot while both idle, then while both swim:
+   their displayed flipbook scale should now match closely. Inspect Player FrontBody/BackBody during a
+   flipbook and confirm effective local X/Y is 0.3; Bot root remains 0.3.
+2. On each PlayerAnimator, change `Flipbook Renderer Local Scale` from 0.3 to an obvious smaller/larger
+   value during Play. Idle/swim/throw should resize immediately without changing the Player root,
+   collider, movement, ball anchor, or Bot scale. Restore it to 0.3.
+3. Exercise idle, swim, and shoot on both sides/facings. Confirm frames still cycle singly at the
+   configured FPS, throwing returns correctly, palette swap still works, and no front/back visual gap
+   appears during transitions.
+4. Exercise holding, sprint, defend, steal, and exclusion fallbacks. They must restore their original
+   per-child 0.07-0.08 scale and continue showing old flat art without becoming 4x too large.
+5. Inspect Player through Player6 in the hierarchy. Each should contain FrontBody and BackBody but no
+   BoneBody, HoldBody, BackBoneBody, or BackHoldBody child; PlayerAnimator must expose no bone fields or
+   rollback flag, and the Tools menu must expose no bone setup commands.
+6. Reopen both gameplay scenes after Unity imports the deleted assets. Confirm there are no Missing
+   Prefab, Missing Animator Controller, or missing-reference warnings on any Player, and that exactly
+   one of FrontBody/BackBody remains visible at all times.
+
+---
+
+## SESSION LOG — 2026-07-18c (Player flipbook state-mix regression; instant flat-fallback transitions)
+
+The full current master plan was read first, followed in order by the complete current
+`PlayerAnimator.cs`, `PlayerVisualRuntime.cs`, and `BotAnimator.cs`, before any change. This session
+was strictly scoped to the human Player team (Player through Player6). Bots were treated as a
+read-only baseline throughout.
+
+**Empirical Play-mode diagnosis — root cause confirmed before editing:**
+- A temporary Player-only probe ran `SampleScene_PoolB` in an isolated Unity Play-mode project copy.
+  It drove Player through idle → swimming → holding → throwing → idle and recorded the enabled
+  SpriteRenderer after `LateUpdate`, including source asset, array membership, index, PPU, and the
+  active playback array. Probe changes never entered the source project.
+- All six Players resolved the same valid six-sprite arrays. Every observed flipbook sprite was
+  **100 PPU**. The apparent idle asset-file-ID discrepancy in YAML did not produce a runtime fault;
+  Unity resolved `idle_0` through `idle_5` correctly.
+- Idle was the correct ordered loop: **idle_0 → 1 → 2 → 3 → 4 → 5 → 0** from
+  `idle_floating.png`. Swimming was the correct ordered loop: **swimming_0 → 1 → 2 → 3 → 4 → 5 →
+  0** from `swimming.png`. Throwing was the correct one-shot sequence: **throwing_0 → 1 → 2 → 3 →
+  4 → 5**, then the shoot latch selected idle directly. No state used another state's array and no
+  frame played out of order.
+- The actual mix-up was isolated to **swimming → legacy holding fallback**. At phase entry the live
+  visible sequence was `swimr_0` (frame 543, t=1.603), then `swiml_0` (frame 548, t=1.615), then
+  finally `hold_0` (frame 553, t=1.628). The Player front/back controllers had seven fixed-duration
+  Any-State transitions set to **0.05 seconds**. `SpriteRenderer.m_Sprite` is a discrete object
+  reference and cannot blend, so the non-zero transition exposed stale source/intermediate swim art.
+- Idle → swimming selected `swimming_0` on the transition frame. Holding → throwing selected
+  `throwing_0` on the transition frame. Throwing → idle selected `idle_0` at the exact 0.5-second
+  shoot-latch boundary. Those paths had no stale-frame defect.
+
+**Bone/legacy audit:**
+- Runtime hierarchy and reflection audits covered Player through Player6. Each has only the expected
+  root/FrontBody/BackBody flat Animators; `boneLikeLiveCount=0`, and `PlayerAnimator` exposes no bone
+  field or rollback gate.
+- A final source/asset audit found no BoneBody, HoldBody, BackBoneBody, BackHoldBody, bone renderer/
+  animator, or SpriteSkin reference in code, gameplay scenes, prefabs, controllers, clips, or assets.
+  Nothing from the removed bone system was executing, so no further bone deletion was necessary.
+
+**Player-only fix and cleanup:**
+- Set all seven Any-State transition durations to **0** in each human child controller:
+  `PlayerFrontAnimation.controller` and `PlayerBackAnimation.controller` (14 transitions total).
+  These controller GUIDs are referenced by the six Player child bodies and not by Bot objects.
+- Updated `AnimatorBuilder.AnyTo` to regenerate Player controllers with zero-duration transitions;
+  rerunning setup tooling can no longer restore the regression. Added the discrete-sprite rationale
+  beside that setting.
+- Corrected stale `PlayerAnimator` documentation that described vertical/back-facing selection even
+  though the live front/back toggle is horizontal, and clarified that the hidden controllers are flat
+  fallbacks. No state-detection logic, frame arrays, PPU, scale, palette, scene object, or bot path was
+  changed.
+
+**Post-fix Play-mode proof:**
+- On the same swimming → holding boundary, the first and only visible holding sprite was now
+  **`hold_0` on the phase-entry frame** (frame 463, t=1.602). `swimr_0` and `swiml_0` never appeared.
+- Holding → throwing still selected `throwing_0` immediately, played throwing_0 through throwing_5 in
+  order, and handed directly to idle. The post-fix probe reported no C# compilation error and the
+  bone summary remained zero across all six Players.
+- Protected read-only files retained their exact session-start SHA-256 values:
+  `PlayerVisualRuntime.cs` = `B1F8ACE73ADB4CBE46545DA742A4083C29745EB123CD9911E17DC4D2379C5685`,
+  `BotAnimator.cs` = `9B7B666EE132B395CBC67035106DD342C153ECDC34388201B562401A4FD72682`,
+  and `SampleScene_PoolB.unity` =
+  `584EEE394BA6AFA7020A7D7D25799803C00CA018456475F0B57B349B12F46373`.
+
+**Files changed this session:**
+- `Assets/Sprites/Players/Animations/PlayerFrontAnimation.controller`
+- `Assets/Sprites/Players/Animations/PlayerBackAnimation.controller`
+- `Assets/Editor/AnimatorBuilder.cs`
+- `Assets/PlayerAnimator.cs` (documentation cleanup only)
+- `WATERPOLO_MASTER_PLAN.md` (this log)
+
+**Build:** `dotnet build Assembly-CSharp.csproj` → **0 errors, 22 warnings**. Warnings are the existing
+obsolete-Unity-API/unused-field baseline.
+
+**Manual Unity verification priority:**
+1. In Play mode, watch Player through Player6 idle for two full cycles. Each must show only
+   `idle_floating` frames 0-5 in order and loop without a blank or swimming frame.
+2. Move each controlled Player in both directions. Idle → swim must show `swimming_0` immediately,
+   then 0-5 in order. Stop without the ball and verify the idle array resumes without an old swim
+   frame persisting.
+3. Capture swimming → holding frame-by-frame (a 60 fps screen recording is useful). The first frame
+   after possession becomes a static hold must be `hold_0`; neither `swimr_0` nor `swiml_0` may flash,
+   and the renderer must not go blank. Repeat facing both directions.
+4. From holding, shoot while stationary and while moving. The first release frame must be
+   `throwing_0`; throwing must visit 0-5 once, then return directly to idle when stopped or swimming
+   when moving. No holding/swimming placeholder may appear inside the throw.
+5. Exercise sprint, defend, steal, and exclusion fallbacks. Their old flat art must switch immediately
+   and remain at its authored fallback scale; returning to idle/swim must restore the 0.3 flipbook
+   scale without a one-frame size or sprite leak.
+6. Change `Flipbook Frames Per Second` to 6, 12, and 18 during Play. The loop speed must change while
+   state membership and frame order remain correct. Also recheck cap/swimwear Inspector tints to
+   confirm the palette material still follows every frame.
+7. Inspect Player through Player6: FrontBody/BackBody remain wired; no BoneBody/HoldBody variants,
+   SpriteSkin, bone fields, rollback gate, missing controller, or missing-reference warning exists.
+
+---
+
+## SESSION LOG — 2026-07-18d (confirmed-dead Parts cleanup; orphaned back-hold clip diagnosis)
+
+This was a tightly scoped cleanup and diagnosis pass. The full current master plan was read first,
+followed by the complete current `PlayerAnimator.cs` and `PlayerVisualRuntime.cs`, before the Parts
+audit that preceded the deletion. No live animation asset was removed and the broken back-holding
+state was deliberately left unchanged pending an art/fix decision.
+
+**Confirmed-dead Parts assets deleted:**
+- Deleted `Assets/Sprites/Players/Parts/back-side.png` and its `.meta` (GUID
+  `d6e294de35c18c04bae6729f925a1faf`).
+- Deleted `Assets/Sprites/Players/Parts/player_parts_red.png.png` and its `.meta` (GUID
+  `77e81d5d0fc27da42a18ed4d4be015e6`).
+- Deleted `Assets/Sprites/Players/Parts/test 1.png` and its `.meta` (GUID
+  `23be5ec5b94de3c4482ba3fa8e167334`).
+- Each GUID had zero current code, clip, controller, scene, prefab, Resources-load, or other
+  serialized consumers before deletion. Unity's live Asset Pipeline refresh then reported exactly
+  **3 deleted assets** (`non-scripts 3596 -> 3593`) and emitted no new missing-reference, missing-
+  script, error, or warning message after that refresh.
+
+**Missing `PlayerBackAnimation.controller` holding motion — diagnosis only:**
+- The back controller's `holding` state currently points at missing clip GUID
+  `83a57d71644c5b1489154b43af7aefbe`. Git history proves this is not fallout from today's cleanup:
+  the dangling GUID was introduced in commit `0d8eb5f` (the June back-bone/back-hold session), and
+  no committed `.meta` in that commit or any later revision ever owned it.
+- The intended flat fallback is explicit in `AnimatorBuilder`: the back `holding` state should use
+  **`Animations/hold-back.anim`**, built as a static SpriteRenderer swap from
+  **`Parts/hold-back.png`**. Neither asset exists now, and neither has ever been committed under
+  those paths, so there is no correct existing clip to reattach.
+- The historical `holding_body_back.anim` is **not** that fallback. Its real GUID was
+  `24a24c45e058eff4c8609fcc4f5d526f`, and it animates `bone_1`/`bone_3`/`bone_6` transform paths for
+  the removed SpriteSkin rig; attaching it to today's flat BackBody would not drive
+  `SpriteRenderer.m_Sprite` and would reintroduce an incompatible bone dependency.
+- Correct repair: choose/import a valid back-facing hold sprite, create the missing one-frame
+  `hold-back.anim` SpriteRenderer clip, and assign it to the back controller. Technically this is a
+  small rebuild once the art is chosen, but it is **not** a valid one-click reattach today. A quick
+  stopgap could reuse the front `holding.anim`, but it would show the wrong view and was not applied.
+
+**Files changed this session:**
+- Deleted the three PNG + `.meta` pairs listed above.
+- `WATERPOLO_MASTER_PLAN.md` (this entry only).
+- No controller, clip, scene, prefab, C# animation path, or remaining Parts asset was changed.
+
+**Verification:**
+- `dotnet build Assembly-CSharp.csproj` -> **0 errors, 0 warnings**.
+- Running Unity Editor refreshed the deletion and produced no new Missing Reference warnings.
+
+---
+
+## SESSION LOG — 2026-07-19 (startup legacy-pose flash fixed; moving carriers use new swim; six-frame holding wired)
+
+This session followed a visual regression report that Player, Player5 and Player6 still showed old
+back/floating art, moving ball carriers used the old swim controller, all swimmers flashed legacy
+poses at match start, and stopped carriers still used the old holding pose. The causes were measured
+from the live scene serialization and confirmed with an automated Play-mode state probe before the
+temporary verifier was removed.
+
+**Root causes confirmed:**
+- The exact three reported players — `Player`, `Player5`, and `Player6` — had all four serialized
+  `PlayerAnimator` slots (`frontAnimator`, `backAnimator`, `frontRenderer`, `backRenderer`) set to
+  `fileID: 0`. Their valid FrontBody/BackBody children still existed, but both child
+  SpriteRenderers were serialized enabled and continued playing the old `test` / `test-back` clips
+  because `PlayerAnimator` had no references with which to select or override them.
+- The other three players were wired, but their scene-authored FrontBody and BackBody renderers also
+  began enabled together. Selection happened in the first `Update`, leaving a possible first-frame
+  legacy-pose flash.
+- Bots explicitly played their old controller `idle` state during `Awake`; the new idle flipbook was
+  not assigned until `LateUpdate`, creating the equivalent old blue/red first-frame flash.
+- Both `PlayerAnimator` and `BotAnimator` only selected the new swimming array while
+  `isHolding == false`. A moving carrier therefore fell out of the flipbook path and exposed the old
+  Animator swimming/holding art even though the current `swimming.png` sheet was valid.
+
+**Fixes:**
+- Rewired all four body slots for Player, Player5 and Player6 in `SampleScene_PoolB`; all six human
+  PlayerAnimators now have complete FrontBody/BackBody Animator + SpriteRenderer references.
+- Added runtime self-healing in `PlayerAnimator.Awake`: if any serialized body slot is ever lost
+  again, it resolves the correctly named `FrontBody` / `BackBody` children before material or
+  visibility setup.
+- Player and bot `Awake` now immediately select and assign `idle_floating_0`. Human startup forces
+  exactly FrontBody visible and BackBody hidden before the first rendered frame; bots similarly
+  replace the controller placeholder immediately. Normal direction/facing logic resumes in Update.
+- Added a fourth six-frame array, `holdingFrames`, to `PlayerFlipbookSet` and wired all six imported
+  `holding_0..holding_5` sub-sprites from
+  `Assets/Sprites/Players/Animations/BlueTeam/holding.png` into the Resources asset.
+- New state rule for humans and bots: **moving with the ball -> current `swimming.png` flipbook**;
+  **stopped with the ball -> current `holding.png` flipbook**. PlayerMovement's existing forward
+  moving-ball anchor remains the ball owner, so the ball stays ahead of travel without changing
+  pass/shot aim or gameplay possession.
+- Sprinting, defending, stealing and exclusion still use their old flat placeholder art until their
+  replacement sheets are supplied. Idle, swimming (with or without possession), holding and
+  throwing now all use current flipbooks.
+
+**Holding-sheet import fact (art follow-up):**
+- The supplied file is **1610x977, 100 PPU**, Sprite Mode Multiple, with six named sprites.
+- Its saved sprite rectangles are auto-trimmed and unequal (widths 536/493/547/536/478/583; height
+  488), not six equal 3x2 grid cells. The metadata was deliberately left untouched this session so
+  the newly supplied art was not silently re-sliced or clipped. It works as wired, but if holding
+  appears to shift/resize between frames, regenerate it on a true evenly divisible 3x2 canvas with
+  one consistent anatomical anchor/pivot per cell; several figures currently extend across the
+  theoretical equal-cell boundaries.
+
+**Empirical Unity Play-mode proof:**
+- `PlayerFlipbookSet`: idle/swim/hold/throw arrays all reported valid six-frame arrays.
+- START: Player through Player6 and Bot through Bot6 all resolved
+  `BlueTeam/idle_floating.png`; every human had exactly one body renderer visible.
+- MOVING_WITH_BALL: all 6 players + all 6 bots resolved `BlueTeam/swimming.png`.
+- STOPPED_WITH_BALL: all 6 players + all 6 bots resolved `BlueTeam/holding.png`.
+- All three stages reported `allGood=True`; the verifier then exited Play mode and was deleted.
+
+**Files changed:**
+- `Assets/PlayerFlipbookSet.cs`
+- `Assets/Resources/PlayerFlipbookSet.asset`
+- `Assets/PlayerAnimator.cs`
+- `Assets/BotAnimator.cs`
+- `Assets/Scenes/SampleScene_PoolB.unity`
+- `WATERPOLO_MASTER_PLAN.md` (this log)
+- The user-supplied `holding.png` / `.meta` were inspected and wired but not modified.
+
+**Build:** `dotnet build Assembly-CSharp.csproj` -> **0 errors, 0 warnings** on the final post-probe
+project state. Unity's final recompile also completed successfully.
+
+**Manual visual verification:**
+1. Start a match and watch the first visible frame: every Player/Bot must already be on the new
+   palette-swapped idle sheet; no old front+back double body or blue legacy pose may flash.
+2. Carry the ball while moving right, left and diagonally: the new swimming flipbook must remain
+   active and the ball must stay ahead of travel.
+3. Release movement while still holding: switch to the new holding_0..5 loop. Move again: return
+   directly to the new swimming sheet, never the old two-frame swim/hold controller.
+4. Repeat on Player, Player5 and Player6 specifically, then watch bot carriers perform the same
+   moving-swim / stopped-hold split.
+5. Watch holding for frame-to-frame size/position drift. Any remaining drift is the measured
+   auto-trim/source-framing issue above, not a state-selection or old-animation leak.
+
+---
+
+## SESSION LOG — 2026-07-19b (legacy backward swim disabled; per-state tuning, water cover, saved player RGB)
+
+This pass addressed the human-player report that backward/sprint movement could still reveal the
+old swim animation, that the four available sheets need independent visual sizing/playback control,
+and that cap/swimwear colors should be editable from My Club rather than only on scene components.
+
+**Measured causes:**
+- `PlayerAnimator.SelectFlipbook` explicitly required `!isSprinting` before it would select current
+  flipbook art. Backward movement while sprinting therefore fell into the legacy front/back Animator
+  controllers, exposing the old `swimming_back`/sprint artwork. Those legacy controllers also kept
+  evaluating and writing `SpriteRenderer.m_Sprite` behind active flipbooks.
+- The art uses shaded marker regions rather than literal solid keys. Pixel audit results were:
+  `idle_floating.png` 1998x787 with **0 exact magenta pixels**, but 31,993 magenta-dominant pixels;
+  `swimming.png` 2068x760 with 1 exact magenta / 25 exact cyan pixels and 12,433 magenta-dominant /
+  9,974 cyan-dominant pixels; `throwing.png` 1635x962 with 5 exact magenta / 302 exact cyan pixels;
+  `holding.png` 1610x977 with 86 exact magenta and no cyan region. The old 0.45 Euclidean RGB radius
+  was therefore simultaneously too broad around bright keys and unreliable across darker marker
+  shading.
+
+**Animation fixes and controls:**
+- Every ordinary human movement speed and horizontal direction now uses `swimming.png`, including
+  sprinting/backward movement and moving with the ball. Sprint is no longer a flipbook fallback.
+- While idle/swim/hold/throw flipbooks are active, both old flat Animator controllers are disabled,
+  preventing them from writing stale sprites or running the retired back-swim animation underneath.
+  They are enabled only for defend/steal/exclusion placeholder states that still lack new sheets.
+  The legacy shooting trigger is no longer queued when the replacement throwing sheet is valid.
+- Added separate Inspector FPS fields for idle, swimming, holding and throwing (defaults 8/8/8/18),
+  plus an `Idle Swimming Transition Delay` (default 0.12 seconds) used only to debounce the
+  idle<->swim boundary. Holding and shooting still switch immediately.
+- Preserved `Flipbook Renderer Local Scale` as the overall visual-only size and added independent
+  idle/swimming/holding/throwing X/Y size multipliers. These affect only FrontBody/BackBody visual
+  children, never the player root, Rigidbody or collider.
+
+**Water and palette presentation:**
+- Added a runtime-generated, swimming-only soft wave band in front of the lower human-player sprite.
+  It has no collider/gameplay effect and exposes enable, size, offset, color/opacity, drift speed and
+  bob amount in `PlayerAnimator`. This is a reusable proof-quality cover; frame-specific water masks
+  baked into consistently framed future art remain the highest-fidelity long-term option.
+- Replaced Euclidean marker matching in `PlayerPaletteSwap.shader` with feathered chroma-dominance
+  masks (`min(R,B)-G` for magenta and `min(G,B)-R` for cyan), retaining luminance-times-tint output.
+  The material marker threshold is now 0.18. This follows shaded/anti-aliased marker art while
+  avoiding the previous broad reach into skin-adjacent colors.
+- `ClubProfile` now persists `capColorHex` and `swimwearColorHex`. Older saves self-heal from their
+  existing primary/secondary club colors. My Club now presents exact 0-255 R/G/B inputs and live
+  previews for both player colors; APPLY saves them with the roster. Human `PlayerAnimator` objects
+  load those saved colors in `Awake`. `Use My Club Palette` can be disabled per player to test its
+  local Inspector colors instead.
+
+**Files changed in this pass:**
+- `Assets/PlayerAnimator.cs`
+- `Assets/PlayerVisualRuntime.cs`
+- `Assets/Shaders/PlayerPaletteSwap.shader`
+- `Assets/Resources/Materials/PlayerPaletteSwap.mat`
+- `Assets/Scripts/Roster.cs`
+- `Assets/Scripts/RosterManager.cs`
+- `Assets/Scripts/ClubCustomizationUI.cs`
+- `WATERPOLO_MASTER_PLAN.md` (this entry)
+
+`BotAnimator.cs`, bot scene objects, bot scales and bot material configuration were not edited in
+this pass. Temporary verification scripts were removed and no diagnostic asset remains.
+
+**Verification:**
+- Final `dotnet build Assembly-CSharp.csproj` completed with **0 errors, 0 warnings** (incremental
+  build). `dotnet build Assembly-CSharp-Editor.csproj` also completed with 0 errors while compiling
+  the temporary state verifier; its warnings were the existing obsolete-Unity-API baseline.
+- A separate headless Unity execution was attempted for live state/shader proof, but Unity correctly
+  refused because this project is already open in another Editor instance. That Editor was left
+  untouched; the live visual checklist below is therefore still required after it refreshes scripts.
+
+**Manual visual verification:**
+1. Swim left/backward while holding sprint: only `swimming_0..5` may appear; no old blue/back pose.
+2. Stop/start repeatedly: idle<->swim should respect the 0.12-second debounce with no stale sprite;
+   holding and throwing must still switch immediately. Confirm throw plays once at 18 FPS.
+3. Tune each state size multiplier independently and verify the collider/root size never changes.
+4. During swimming, verify the wave band covers the lower body and drifts gently. Tune its size,
+   offset and alpha for the pool camera; it must disappear during idle, hold and throw.
+5. In My Club, enter visibly different cap/swimwear RGB values, APPLY, then start a match. The idle,
+   swimming, holding and throwing sheets must use the saved colors; the cap mask must no longer spill
+   into skin. Disable `Use My Club Palette` on one PlayerAnimator to verify local Inspector fallback.
+
+---
+
+## SESSION LOG — 2026-07-19c (main-menu stack overflow fixed; water reverted; unified arrow palette)
+
+This follow-up supersedes the water-cover and numeric-RGB portions of the preceding 2026-07-19b
+entry. The user chose to handle water in the source art and requested a simpler, single-source color
+workflow.
+
+**Main-menu failure fixed:**
+- The live stack trace proved a direct season-rollover recursion:
+  `LeaderboardManager.EnsureSeason -> Rank -> Standings -> EnsureSeason`. Rollover now records the
+  old season through `RankUnchecked` / `StandingsUnchecked`, while public `Rank` and `Standings`
+  still perform their normal season validation. A defensive re-entry guard also prevents future
+  rollover queries from recreating this stack overflow.
+- Removed `RosterManager.Instance` access from `PlayerAnimator.OnValidate`. Unity had reported that
+  the self-bootstrapping component was being created during validation, where `SendMessage` is not
+  legal. Saved profile colors are now resolved only during runtime `Awake`.
+
+**Water feature completely reverted:**
+- Removed every swimming-water serialized field and every create/update/hide call from
+  `PlayerAnimator`.
+- Removed the complete `PlayerSwimmingWaterOverlay` runtime class, generated texture/sprite logic,
+  renderer child and animation code from `PlayerVisualRuntime`.
+- Repository search reports no remaining `SwimmingWaterOverlay`, `swimmingWater`,
+  `showSwimmingWater`, or water-sprite runtime reference. No scene/prefab water child was serialized;
+  the old object existed only transiently in Play mode, so a fresh play session cannot recreate it.
+
+**One authoritative player palette:**
+- Deleted the numeric cap/swimwear RGB input fields and their parsing helpers from My Club.
+- Added previous/next arrow selectors for 14 named common colors: Blue, Red, Green, Gold, Purple,
+  Teal, Orange, Navy, Charcoal, White, Pink, Cyan, Black and Lime. Each selector shows the current
+  name on its actual color, with automatic readable light/dark label text.
+- Existing saved/custom hex values map to their nearest common color when the screen opens; APPLY
+  persists the selected cap and swimwear colors in the existing `ClubProfile` fields.
+- Removed the `PlayerAnimator` `Use My Club Palette`, Cap Tint and Swimwear Tint Inspector controls.
+  The saved My Club palette is now the sole human-player source, so different Player objects cannot
+  silently override it. All human palette material instances read the same saved profile values in
+  `Awake`; bot configuration remains separate and unchanged.
+
+**Files changed:**
+- `Assets/Scripts/LeaderboardManager.cs`
+- `Assets/PlayerAnimator.cs`
+- `Assets/PlayerVisualRuntime.cs`
+- `Assets/Scripts/ClubCustomizationUI.cs`
+- `WATERPOLO_MASTER_PLAN.md` (this entry)
+
+**Build:** final `dotnet build Assembly-CSharp.csproj` completed with **0 errors**. The 22 warnings
+are the existing obsolete-Unity-API/unused-field baseline. Unity's open Editor captured one
+intermediate picker save and still needs `Assets > Refresh` (or an Editor restart) to replace those
+stale `capRgbFields` Console entries with the final clean source.
+
+**Required verification:**
+1. Stop Play mode after the old stack overflow, allow a full Unity domain reload, clear Console, and
+   reopen the main menu/ranking screen. No leaderboard recursion or palette `OnValidate` error may
+   return.
+2. Open My Club and click both `<` / `>` selectors through all 14 colors. APPLY, reopen My Club and
+   confirm both choices persisted.
+3. Start a match and verify Player through Player6 all use the saved cap/swimwear colors in every
+   current flipbook state. PlayerAnimator must expose no separate color override fields.
+4. Swim in every direction and verify no `SwimmingWaterOverlay` child or procedural cover appears.
+
+---
+
+## SESSION LOG — 2026-07-19d (sprint flipbook, directional swimmers, held-ball motion)
+
+This presentation pass keeps the current idle/swimming/holding/throwing sheets and leaves the
+legacy defending/stealing/exclusion placeholders unchanged until replacement art exists.
+
+**Measured sprint cause and fix:**
+- The human `PlayerAnimator` path already allowed every ordinary movement speed, including sprint,
+  to select `SwimmingFrames`. The bot path did not: `BotAnimator.SelectFlipbook` explicitly required
+  `!isSprinting`, so any driving bot fell out of the current flipbook and exposed its legacy
+  controller art while racing to the ball.
+- Removed that bot-only gate. Bot driving/sprinting, ordinary loose-ball pursuit, and moving with
+  possession now all select the same current six-frame swimming sheet. Defend, steal and exclusion
+  still deliberately fall back to their existing placeholders.
+
+**Full-direction visual rotation:**
+- Current swimming art now turns toward the full Rigidbody2D velocity, so vertical and diagonal
+  travel no longer leaves the body horizontal while only the aim arrow points up/down.
+- Human players rotate only their existing `FrontBody`/`BackBody` visual child. Bots now render
+  current flipbooks on a runtime `FlipbookBody` child copied from the root SpriteRenderer. Their
+  legacy controller remains on the hidden root renderer for placeholder states. In both paths the
+  gameplay root, Rigidbody2D and collider never rotate or change scale.
+- The turn can be enabled/disabled and its speed tuned with `Rotate Swimming To Movement` and
+  `Swimming Direction Turn Speed` (default 720 degrees/second). Idle, hold, throw and legacy states
+  immediately restore the authored upright rotation.
+
+**Held-ball swim motion:**
+- A moving human carrier keeps the ball along actual travel direction near the leading/head side,
+  with a small 0.06-unit in/out pulse at 1.7 cycles/second and a gentle +/-7-degree rock. Stopping
+  restores the existing art-tuned holding-hand position and upright ball.
+- AI carriers use the same pulse/rock values in `WaterPoloBrain.KeepHeldBall`, with a stable
+  per-swimmer phase so carriers do not move in lock-step. This is LateUpdate presentation only;
+  shot/pass aim, release direction, velocity and possession rules are unchanged.
+
+**Files changed:**
+- `Assets/PlayerAnimator.cs`
+- `Assets/BotAnimator.cs`
+- `Assets/PlayerMovement.cs`
+- `Assets/WaterPoloAI.cs`
+- `WATERPOLO_MASTER_PLAN.md` (this entry)
+
+**Verification:**
+- `dotnet build Assembly-CSharp.csproj` completed with 0 errors. The open Unity Editor log available
+  to the session had not yet refreshed to this source revision, so the visual behavior still needs
+  the manual Play-mode checks below after Unity recompiles.
+
+**Required Play-mode checks:**
+1. Watch a bot drive/sprint toward a loose ball: it must keep cycling the current swimming sheet and
+   never switch to floating/legacy sprint art.
+2. Move the human up, down and diagonally, then watch bots do the same. Only the rendered swimmer
+   turns; collider contacts and movement physics must remain unchanged.
+3. Carry the ball while swimming in all directions. It should stay close to the leading/head side,
+   pulse slightly nearer/farther, and rock gently without changing the aim arrow or released shot.
+4. Stop with the ball: the holding sheet and stationary hand offset must appear immediately, with
+   the ball upright. Shoot/pass and verify their existing trajectories are unchanged.
+5. Trigger a defend/steal/exclusion fallback and confirm its existing placeholder still renders;
+   no defending art was replaced in this pass.

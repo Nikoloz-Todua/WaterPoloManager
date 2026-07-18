@@ -29,5 +29,7 @@ public class ClubProfile
     public int logoId;                          // index into ClubCustomizationUI's crest set
     public string primaryColorHex = "1E90FF";   // RRGGBB, no '#'
     public string secondaryColorHex = "FFFFFF";
+    public string capColorHex = "D90D1A";       // player-team palette-swap cap color
+    public string swimwearColorHex = "FFFFFF";  // player-team palette-swap swimwear color
     public string countryId = "";               // e.g. "GEO"; "" = not chosen yet
 }

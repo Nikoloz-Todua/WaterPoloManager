@@ -50,6 +50,7 @@ public class LeaderboardManager
     }
 
     SaveData data;
+    bool isEnsuringSeason;
     string SavePath => Path.Combine(Application.persistentDataPath, "leaderboard.json");
 
     LeaderboardManager()
@@ -78,24 +79,38 @@ public class LeaderboardManager
 
     void EnsureSeason()
     {
-        long seasonTicks = SeasonPassManager.Instance.SeasonStartTicks;
-        if (data.seasonTicks == seasonTicks && data.rivals.Count > 0) return;
-
-        if (data.seasonTicks != 0 && data.rivals.Count > 0)
+        // Defensive re-entry guard: rollover now uses unchecked helpers below, but this prevents a
+        // future query added inside rollover from ever recreating the old stack-overflow cycle.
+        if (isEnsuringSeason) return;
+        isEnsuringSeason = true;
+        try
         {
-            // Close out the old season: record the result, then promote/demote.
-            data.prevRank = Rank();
-            data.prevPoints = data.playerPoints;
-            data.prevTier = TierNames[Mathf.Clamp(data.tier, 0, TierNames.Length - 1)];
-            data.hasPrev = true;
-            if (data.prevRank <= PromoteRank) data.tier = Mathf.Min(data.tier + 1, TierNames.Length - 1);
-            else if (data.prevRank >= DemoteRank) data.tier = Mathf.Max(data.tier - 1, 0);
-        }
+            long seasonTicks = SeasonPassManager.Instance.SeasonStartTicks;
+            if (data.seasonTicks == seasonTicks && data.rivals.Count > 0) return;
 
-        data.seasonTicks = seasonTicks;
-        data.playerPoints = 0;
-        GenerateRivals(seasonTicks);
-        Save();
+            if (data.seasonTicks != 0 && data.rivals.Count > 0)
+            {
+                // Close out the old season: record the result, then promote/demote.
+                // Do not call the public Rank() here: Rank -> Standings -> EnsureSeason would re-enter
+                // this rollover indefinitely. The current data still represents the OLD season at
+                // this point, so calculate its final rank directly before replacing the rivals.
+                data.prevRank = RankUnchecked();
+                data.prevPoints = data.playerPoints;
+                data.prevTier = TierNames[Mathf.Clamp(data.tier, 0, TierNames.Length - 1)];
+                data.hasPrev = true;
+                if (data.prevRank <= PromoteRank) data.tier = Mathf.Min(data.tier + 1, TierNames.Length - 1);
+                else if (data.prevRank >= DemoteRank) data.tier = Mathf.Max(data.tier - 1, 0);
+            }
+
+            data.seasonTicks = seasonTicks;
+            data.playerPoints = 0;
+            GenerateRivals(seasonTicks);
+            Save();
+        }
+        finally
+        {
+            isEnsuringSeason = false;
+        }
     }
 
     // Deterministic per season: same rivals all season, fresh set next season. Point spread
@@ -137,6 +152,13 @@ public class LeaderboardManager
     public List<Row> Standings()
     {
         EnsureSeason();
+        return StandingsUnchecked();
+    }
+
+    // Builds rows from the data currently in memory without trying to roll the season. This is
+    // required while EnsureSeason is closing the old season and recording its final result.
+    List<Row> StandingsUnchecked()
+    {
         List<Row> rows = new List<Row>(data.rivals.Count + 1);
         foreach (Rival r in data.rivals) rows.Add(new Row { name = r.name, points = r.points });
         rows.Add(new Row { name = RosterManager.Instance.Club.clubName, points = data.playerPoints, isPlayer = true });
@@ -150,7 +172,13 @@ public class LeaderboardManager
 
     public int Rank()
     {
-        List<Row> rows = Standings();
+        EnsureSeason();
+        return RankUnchecked();
+    }
+
+    int RankUnchecked()
+    {
+        List<Row> rows = StandingsUnchecked();
         for (int i = 0; i < rows.Count; i++) if (rows[i].isPlayer) return i + 1;
         return rows.Count;
     }

@@ -1,0 +1,32 @@
+using UnityEngine;
+
+[CreateAssetMenu(fileName = "PlayerFlipbookSet", menuName = "Water Polo/Player Flipbook Set")]
+public sealed class PlayerFlipbookSet : ScriptableObject
+{
+    public const int RequiredFrameCount = 6;
+
+    [SerializeField] private Sprite[] idleFrames = new Sprite[RequiredFrameCount];
+    [SerializeField] private Sprite[] swimmingFrames = new Sprite[RequiredFrameCount];
+    [SerializeField] private Sprite[] holdingFrames = new Sprite[RequiredFrameCount];
+    [SerializeField] private Sprite[] throwingFrames = new Sprite[RequiredFrameCount];
+
+    public Sprite[] IdleFrames => ValidFrames(idleFrames) ? idleFrames : null;
+    public Sprite[] SwimmingFrames => ValidFrames(swimmingFrames) ? swimmingFrames : null;
+    public Sprite[] HoldingFrames => ValidFrames(holdingFrames) ? holdingFrames : null;
+    public Sprite[] ThrowingFrames => ValidFrames(throwingFrames) ? throwingFrames : null;
+
+    public static bool ValidFrames(Sprite[] frames)
+    {
+        if (frames == null || frames.Length != RequiredFrameCount) return false;
+        for (int i = 0; i < frames.Length; i++)
+            if (frames[i] == null) return false;
+        return true;
+    }
+
+    public static float Duration(Sprite[] frames, float framesPerSecond)
+    {
+        return ValidFrames(frames)
+            ? frames.Length / Mathf.Max(1f, framesPerSecond)
+            : 0f;
+    }
+}

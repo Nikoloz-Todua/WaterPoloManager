@@ -37,12 +37,10 @@ public class ExclusionManager : MonoBehaviour
     [Tooltip("Brief referee-whistle pause on an ordinary foul: play freezes this long so the foul visibly registers. 0 = no pause.")]
     [SerializeField] private float foulWhistleFreezeSeconds = 0.7f;
 
-    [Header("Aggressive-foul stun")]
-    [Tooltip("Chance that a failed full-risk steal which remains an ordinary foul stuns the victim. Safer Block steals never roll this.")]
-    [SerializeField, Range(0f, 1f)] private float aggressiveFoulStunChance = 0.35f;
-    [SerializeField, Range(1f, 1.5f)] private float aggressiveFoulStunSeconds = 1.4f;
-    [Tooltip("A victim cannot be repeatedly stunned more often than this.")]
-    [SerializeField] private float aggressiveFoulStunCooldown = 6f;
+    [Header("Successful-steal stun")]
+    [Tooltip("Every carrier who actually loses the ball to a close-range steal is visibly stunned for this long. No chance, aggression, or repeat-cooldown gate.")]
+    [SerializeField, Range(0.1f, 2f)] private float successfulStealStunSeconds = 1.4f;
+    private const float DefaultSuccessfulStealStunSeconds = 1.4f;
 
     [Header("References")]
     [SerializeField] private MatchTimer matchTimer;           // to end the match on a forfeit
@@ -71,7 +69,6 @@ public class ExclusionManager : MonoBehaviour
     private readonly List<Exclusion> activeExclusions = new List<Exclusion>();
     private readonly Dictionary<Transform, List<float>> foulTimes = new Dictionary<Transform, List<float>>();
     private readonly Dictionary<Transform, int> exclusionCount = new Dictionary<Transform, int>();
-    private readonly Dictionary<Transform, float> nextStunTime = new Dictionary<Transform, float>();
     private readonly HashSet<Transform> excludedNow = new HashSet<Transform>();    // temporarily out
     private readonly HashSet<Transform> permanentlyOut = new HashSet<Transform>(); // gone for good
     private readonly Dictionary<TeamSide, Transform[]> originalRoster = new Dictionary<TeamSide, Transform[]>();
@@ -269,7 +266,7 @@ public class ExclusionManager : MonoBehaviour
     // Called on EVERY failed steal. `victim` = the carrier that was fouled. Carrier keeps
     // the ball; offender is locked out. An ordinary foul gives the victim a FREE THROW;
     // enough fouls escalate to an exclusion — or a PENALTY if the victim was in the 2m zone.
-    public void ReportFoul(Transform offender, TeamSide team, Transform victim, bool aggressive = false)
+    public void ReportFoul(Transform offender, TeamSide team, Transform victim)
     {
         if (offender == null) return;
 
@@ -301,30 +298,29 @@ public class ExclusionManager : MonoBehaviour
         else
         {
             FreeThrow(team, victim);           // ordinary foul
-            TryAggressiveFoulStun(team, victim, aggressive);
         }
     }
 
-    void TryAggressiveFoulStun(TeamSide offenderTeam, Transform victim, bool aggressive)
+    // Blindside/rear contact is already inside the same genuine close-range gate as a normal steal,
+    // but it is never allowed to roll for possession. It goes straight to the existing exclusion-
+    // level owner: temporary/permanent exclusion, or a penalty when the victim is in the 2m zone.
+    public void ReportExclusionFoul(Transform offender, TeamSide team, Transform victim)
     {
-        if (!aggressive || victim == null || aggressiveFoulStunChance <= 0f) return;
-        if (nextStunTime.TryGetValue(victim, out float next) && Time.time < next) return;
-        if (Random.value > aggressiveFoulStunChance) return;
+        if (offender == null) return;
+        ApplyStealLockout(offender);
+        Escalate(offender, team, victim);
+    }
 
-        nextStunTime[victim] = Time.time + Mathf.Max(0f, aggressiveFoulStunCooldown);
-        MatchContext ctx = MatchContext.Instance;
-        if (ctx != null && ctx.Ball != null && ctx.Ball.transform.parent == victim)
-        {
-            Goalkeeper keeper = victim.GetComponent<Goalkeeper>();
-            if (keeper != null) keeper.OnBallStolen();
-            ctx.ForceDropHeldBall();
-        }
-
-        FoulStun.Apply(victim, aggressiveFoulStunSeconds);
-
-        TeamSide victimTeam = ctx != null ? ctx.EnemyOf(offenderTeam) : null;
-        if (EventFeed.Instance != null)
-            EventFeed.Instance.AddEvent("Stunned - " + (victimTeam == playerTeam ? "YOU" : "BOT"));
+    // Called only after a real close-range steal has succeeded. The callers already enforce their
+    // established reach checks, so the outcome has exactly one gate: proximity. This intentionally
+    // has no random chance, "aggressive" flag, or per-victim cooldown. The fallback keeps the visual
+    // working in a stripped-down test scene that happens to omit ExclusionManager.
+    public static void StunSuccessfulStealVictim(Transform victim)
+    {
+        float seconds = Instance != null
+            ? Instance.successfulStealStunSeconds
+            : DefaultSuccessfulStealStunSeconds;
+        FoulStun.Apply(victim, seconds);
     }
 
     // Ordinary foul → free throw to the fouled (victim's) team: shot clock pauses and the
@@ -590,8 +586,8 @@ public class ExclusionManager : MonoBehaviour
     }
 }
 
-// Short visual/action lock applied by an aggressive ordinary foul. Kept in this file so
-// the feature stays owned by the existing foul system and needs no scene component/wiring.
+// Short visual/action lock applied whenever a carrier actually loses the ball to a close-range
+// steal. Kept in this file so the existing foul/steal owner supplies the visual with no wiring.
 sealed class FoulStun : MonoBehaviour
 {
     private float stunnedUntil;

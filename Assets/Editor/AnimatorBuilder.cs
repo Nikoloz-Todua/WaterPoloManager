@@ -11,15 +11,11 @@ using UnityEngine.SceneManagement;
 //   Tools > Wire Animation Clips       <-- then this (fixes idle/hold/defend clips + assigns all)
 //   Tools > Build Player Animator Controllers
 //   Tools > Setup Player GameObjects
-//   Tools > Setup BoneBody All Players <-- adds the bone-rigged idle-float body to all six players
-//   Tools > Setup HoldBody All Players <-- adds the bone-rigged ball-holding body to all six players
 //
 // Architecture: each red swimmer (PlayerAnimator) has two PLAIN SpriteRenderer + Animator children,
 // FrontBody and BackBody, shown one at a time by velocity.y. FrontBody runs PlayerFrontAnimation,
 // BackBody runs PlayerBackAnimation. Every swim/etc clip is sprite-swap (animates m_Sprite).
-// Two more SpriteSkin bone children are shown instead of the flat sprites in specific states:
-// BoneBody (test_0 prefab / BoneBodyAnimation) while floating, and HoldBody (hold_0 prefab /
-// HoldBodyAnimation) while holding the ball. (Bots/blue use BotAnimator.)
+// (Bots/blue use BotAnimator.)
 public static class AnimatorBuilder
 {
     const string PlayersDir = "Assets/Sprites/Players";
@@ -27,19 +23,6 @@ public static class AnimatorBuilder
     const string PartsDir = PlayersDir + "/Parts";
     const string FrontControllerPath = AnimDir + "/PlayerFrontAnimation.controller";
     const string BackControllerPath = AnimDir + "/PlayerBackAnimation.controller";
-    const string BonePrefabPath = PlayersDir + "/test_0.prefab";
-    const string BoneControllerPath = AnimDir + "/BoneBodyAnimation.controller";
-    const string HoldPrefabPath = PlayersDir + "/hold_0.prefab";
-    const string HoldControllerPath = AnimDir + "/HoldBodyAnimation.controller";
-    const string BackBonePrefabPath = PlayersDir + "/test-back_0.prefab";
-    const string BackBoneControllerPath = AnimDir + "/BackBoneBodyAnimation.controller";
-    const string BackHoldPrefabPath = PlayersDir + "/back-side_0.prefab";
-    const string BackHoldControllerPath = AnimDir + "/BackHoldBodyAnimation.controller";
-
-    // The six human red-team swimmers in the match scene, by GameObject name.
-    static readonly string[] PlayerNames =
-        { "Player", "Player2", "Player3", "Player4", "Player5", "Player6" };
-
     // Plain-body scale (the part sprites are authored large, so 0.07 fits them to the pool).
     static readonly Vector3 BodyScale = new Vector3(0.07f, 0.07f, 1f);
 
@@ -216,7 +199,9 @@ public static class AnimatorBuilder
         Debug.Log($"[AnimatorBuilder] Wired {controllerPath}");
     }
 
-    // All seven transitions come from Any State (hasExitTime=false, duration=0.05). Unity evaluates
+    // All seven transitions come from Any State (hasExitTime=false, duration=0). Sprite references
+    // are discrete and cannot blend, so any non-zero transition exposes stale source-state art.
+    // Unity evaluates
     // Any State transitions TOP-DOWN, first match wins — so order is priority. Triggers go first
     // (else the generic "swimming" rule would shadow them on shot release); holding sits above
     // sprinting/swimming so a carrier is caught first; floating is the catch-all idle fallback.
@@ -284,7 +269,9 @@ public static class AnimatorBuilder
         t.hasExitTime = false;
         t.exitTime = 0f;
         t.hasFixedDuration = true;
-        t.duration = 0.05f;
+        // SpriteRenderer.m_Sprite is a discrete object reference: transition blending only keeps
+        // the previous state's sprite visible. Snap Player fallback states on the same frame.
+        t.duration = 0f;
         t.canTransitionToSelf = false;
         return t;
     }
@@ -369,8 +356,7 @@ public static class AnimatorBuilder
         }
     }
 
-    // Delete any existing body child of this name (an old bone-rig prefab instance OR a previous
-    // plain body) and build a fresh plain SpriteRenderer + Animator body.
+    // Delete any existing plain body child of this name and build a fresh SpriteRenderer + Animator body.
     static SpriteRenderer EnsureBody(GameObject root, string childName, AnimatorController controller,
                                      Sprite restSprite)
     {
@@ -410,300 +396,6 @@ public static class AnimatorBuilder
         SerializedProperty p = so.FindProperty(prop);
         if (p == null) { Debug.LogError($"[AnimatorBuilder] PlayerAnimator has no serialized field '{prop}'."); return; }
         p.objectReferenceValue = value;
-    }
-
-    // ======================================================================================
-    //  Setup the bone-rigged BoneBody child (idle float body) on all six players + wire slots
-    // ======================================================================================
-
-    [MenuItem("Tools/Setup BoneBody All Players")]
-    public static void SetupBoneBodyAllPlayers()
-    {
-        GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(BonePrefabPath);
-        if (prefab == null)
-        {
-            Debug.LogError($"[AnimatorBuilder] BoneBody prefab not found at {BonePrefabPath}.");
-            return;
-        }
-        AnimatorController boneCtrl = AssetDatabase.LoadAssetAtPath<AnimatorController>(BoneControllerPath);
-        if (boneCtrl == null)
-        {
-            Debug.LogError($"[AnimatorBuilder] BoneBodyAnimation controller not found at {BoneControllerPath}.");
-            return;
-        }
-
-        // Match the six named players against the PlayerAnimators in the open scene (includes inactive).
-        PlayerAnimator[] all = Object.FindObjectsByType<PlayerAnimator>(
-            FindObjectsInactive.Include, FindObjectsSortMode.None);
-
-        int added = 0, skipped = 0, missing = 0;
-        var dirtyScenes = new HashSet<Scene>();
-        foreach (string name in PlayerNames)
-        {
-            PlayerAnimator pa = all.FirstOrDefault(p => p.gameObject.name == name);
-            if (pa == null)
-            {
-                Debug.LogWarning($"[AnimatorBuilder] Player '{name}' (with PlayerAnimator) not found in " +
-                                 "the open scene — skipped.");
-                missing++;
-                continue;
-            }
-
-            GameObject player = pa.gameObject;
-            if (player.transform.Find("BoneBody") != null) { skipped++; continue; } // already has one
-
-            // Instantiate the test_0 prefab as a child named BoneBody at the rest transform.
-            GameObject bone = (GameObject)PrefabUtility.InstantiatePrefab(prefab, player.scene);
-            Undo.RegisterCreatedObjectUndo(bone, "Create BoneBody");
-            bone.name = "BoneBody";
-            bone.transform.SetParent(player.transform, false);
-            bone.transform.localPosition = Vector3.zero;
-            bone.transform.localRotation = Quaternion.identity;
-            bone.transform.localScale = BodyScale;
-
-            Animator anim = bone.GetComponent<Animator>();
-            if (anim == null) anim = Undo.AddComponent<Animator>(bone);
-            anim.runtimeAnimatorController = boneCtrl;
-            SpriteRenderer sr = bone.GetComponent<SpriteRenderer>();
-
-            // Wire the bone slots on PlayerAnimator (recorded for Undo, marks the component dirty).
-            var so = new SerializedObject(pa);
-            SetRef(so, "boneAnimator", anim);
-            SetRef(so, "boneRenderer", sr);
-            so.ApplyModifiedProperties();
-
-            EditorUtility.SetDirty(bone);
-            dirtyScenes.Add(player.scene);
-            added++;
-        }
-
-        // Mark each touched scene dirty so YOU review + save it. We never auto-save the scene.
-        foreach (Scene scene in dirtyScenes)
-            UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(scene);
-
-        Debug.Log($"[AnimatorBuilder] Setup BoneBody: added {added}, skipped {skipped} (already had one), " +
-                  $"missing {missing}. CHECK the boneAnimator/boneRenderer slots, then SAVE the scene (Ctrl+S).");
-    }
-
-    // ======================================================================================
-    //  Setup the bone-rigged HoldBody child (ball-holding body) on all six players + wire slots
-    // ======================================================================================
-
-    [MenuItem("Tools/Setup HoldBody All Players")]
-    public static void SetupHoldBodyAllPlayers()
-    {
-        GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(HoldPrefabPath);
-        if (prefab == null)
-        {
-            Debug.LogError($"[AnimatorBuilder] HoldBody prefab not found at {HoldPrefabPath}. Drag the " +
-                           "rigged 'hold_0' object from the CharacterRig scene into Assets/Sprites/Players/ " +
-                           "to create hold_0.prefab, then run this again.");
-            return;
-        }
-        AnimatorController holdCtrl = AssetDatabase.LoadAssetAtPath<AnimatorController>(HoldControllerPath);
-        if (holdCtrl == null)
-        {
-            Debug.LogError($"[AnimatorBuilder] HoldBodyAnimation controller not found at {HoldControllerPath}.");
-            return;
-        }
-
-        // Match the six named players against the PlayerAnimators in the open scene (includes inactive).
-        PlayerAnimator[] all = Object.FindObjectsByType<PlayerAnimator>(
-            FindObjectsInactive.Include, FindObjectsSortMode.None);
-
-        int added = 0, skipped = 0, missing = 0;
-        var dirtyScenes = new HashSet<Scene>();
-        foreach (string name in PlayerNames)
-        {
-            PlayerAnimator pa = all.FirstOrDefault(p => p.gameObject.name == name);
-            if (pa == null)
-            {
-                Debug.LogWarning($"[AnimatorBuilder] Player '{name}' (with PlayerAnimator) not found in " +
-                                 "the open scene — skipped.");
-                missing++;
-                continue;
-            }
-
-            GameObject player = pa.gameObject;
-            if (player.transform.Find("HoldBody") != null) { skipped++; continue; } // already has one
-
-            // Instantiate the hold_0 prefab as a child named HoldBody at the rest transform.
-            GameObject hold = (GameObject)PrefabUtility.InstantiatePrefab(prefab, player.scene);
-            Undo.RegisterCreatedObjectUndo(hold, "Create HoldBody");
-            hold.name = "HoldBody";
-            hold.transform.SetParent(player.transform, false);
-            hold.transform.localPosition = Vector3.zero;
-            hold.transform.localRotation = Quaternion.identity;
-            hold.transform.localScale = BodyScale;
-
-            Animator anim = hold.GetComponent<Animator>();
-            if (anim == null) anim = Undo.AddComponent<Animator>(hold);
-            anim.runtimeAnimatorController = holdCtrl;
-            SpriteRenderer sr = hold.GetComponent<SpriteRenderer>();
-
-            // Wire the hold slots on PlayerAnimator (recorded for Undo, marks the component dirty).
-            var so = new SerializedObject(pa);
-            SetRef(so, "holdAnimator", anim);
-            SetRef(so, "holdRenderer", sr);
-            so.ApplyModifiedProperties();
-
-            EditorUtility.SetDirty(hold);
-            dirtyScenes.Add(player.scene);
-            added++;
-        }
-
-        // Mark each touched scene dirty so YOU review + save it. We never auto-save the scene.
-        foreach (Scene scene in dirtyScenes)
-            UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(scene);
-
-        Debug.Log($"[AnimatorBuilder] Setup HoldBody: added {added}, skipped {skipped} (already had one), " +
-                  $"missing {missing}. CHECK the holdAnimator/holdRenderer slots, then SAVE the scene (Ctrl+S).");
-    }
-
-    // ======================================================================================
-    //  Setup the bone-rigged BackBoneBody child (back-facing idle float body) on all six players
-    // ======================================================================================
-
-    [MenuItem("Tools/Setup BackBoneBody All Players")]
-    public static void SetupBackBoneBodyAllPlayers()
-    {
-        GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(BackBonePrefabPath);
-        if (prefab == null)
-        {
-            Debug.LogError($"[AnimatorBuilder] BackBoneBody prefab not found at {BackBonePrefabPath}.");
-            return;
-        }
-        AnimatorController backBoneCtrl = AssetDatabase.LoadAssetAtPath<AnimatorController>(BackBoneControllerPath);
-        if (backBoneCtrl == null)
-        {
-            Debug.LogError($"[AnimatorBuilder] BackBoneBodyAnimation controller not found at {BackBoneControllerPath}.");
-            return;
-        }
-
-        // Match the six named players against the PlayerAnimators in the open scene (includes inactive).
-        PlayerAnimator[] all = Object.FindObjectsByType<PlayerAnimator>(
-            FindObjectsInactive.Include, FindObjectsSortMode.None);
-
-        int added = 0, skipped = 0, missing = 0;
-        var dirtyScenes = new HashSet<Scene>();
-        foreach (string name in PlayerNames)
-        {
-            PlayerAnimator pa = all.FirstOrDefault(p => p.gameObject.name == name);
-            if (pa == null)
-            {
-                Debug.LogWarning($"[AnimatorBuilder] Player '{name}' (with PlayerAnimator) not found in " +
-                                 "the open scene — skipped.");
-                missing++;
-                continue;
-            }
-
-            GameObject player = pa.gameObject;
-            if (player.transform.Find("BackBoneBody") != null) { skipped++; continue; } // already has one
-
-            // Instantiate the test-back_0 prefab as a child named BackBoneBody at the rest transform.
-            GameObject bone = (GameObject)PrefabUtility.InstantiatePrefab(prefab, player.scene);
-            Undo.RegisterCreatedObjectUndo(bone, "Create BackBoneBody");
-            bone.name = "BackBoneBody";
-            bone.transform.SetParent(player.transform, false);
-            bone.transform.localPosition = Vector3.zero;
-            bone.transform.localRotation = Quaternion.identity;
-            bone.transform.localScale = BodyScale;
-
-            Animator anim = bone.GetComponent<Animator>();
-            if (anim == null) anim = Undo.AddComponent<Animator>(bone);
-            anim.runtimeAnimatorController = backBoneCtrl;
-            SpriteRenderer sr = bone.GetComponent<SpriteRenderer>();
-
-            // Wire the back-bone slots on PlayerAnimator (recorded for Undo, marks the component dirty).
-            var so = new SerializedObject(pa);
-            SetRef(so, "backBoneAnimator", anim);
-            SetRef(so, "backBoneRenderer", sr);
-            so.ApplyModifiedProperties();
-
-            EditorUtility.SetDirty(bone);
-            dirtyScenes.Add(player.scene);
-            added++;
-        }
-
-        // Mark each touched scene dirty so YOU review + save it. We never auto-save the scene.
-        foreach (Scene scene in dirtyScenes)
-            UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(scene);
-
-        Debug.Log($"[AnimatorBuilder] Setup BackBoneBody: added {added}, skipped {skipped} (already had one), " +
-                  $"missing {missing}. CHECK the backBoneAnimator/backBoneRenderer slots, then SAVE the scene (Ctrl+S).");
-    }
-
-    // ======================================================================================
-    //  Setup the bone-rigged BackHoldBody child (back-facing ball-holding body) on all six players
-    // ======================================================================================
-
-    [MenuItem("Tools/Setup BackHoldBody All Players")]
-    public static void SetupBackHoldBodyAllPlayers()
-    {
-        GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(BackHoldPrefabPath);
-        if (prefab == null)
-        {
-            Debug.LogError($"[AnimatorBuilder] BackHoldBody prefab not found at {BackHoldPrefabPath}.");
-            return;
-        }
-        AnimatorController backHoldCtrl = AssetDatabase.LoadAssetAtPath<AnimatorController>(BackHoldControllerPath);
-        if (backHoldCtrl == null)
-        {
-            Debug.LogError($"[AnimatorBuilder] BackHoldBodyAnimation controller not found at {BackHoldControllerPath}.");
-            return;
-        }
-
-        // Match the six named players against the PlayerAnimators in the open scene (includes inactive).
-        PlayerAnimator[] all = Object.FindObjectsByType<PlayerAnimator>(
-            FindObjectsInactive.Include, FindObjectsSortMode.None);
-
-        int added = 0, skipped = 0, missing = 0;
-        var dirtyScenes = new HashSet<Scene>();
-        foreach (string name in PlayerNames)
-        {
-            PlayerAnimator pa = all.FirstOrDefault(p => p.gameObject.name == name);
-            if (pa == null)
-            {
-                Debug.LogWarning($"[AnimatorBuilder] Player '{name}' (with PlayerAnimator) not found in " +
-                                 "the open scene — skipped.");
-                missing++;
-                continue;
-            }
-
-            GameObject player = pa.gameObject;
-            if (player.transform.Find("BackHoldBody") != null) { skipped++; continue; } // already has one
-
-            // Instantiate the back-side_0 prefab as a child named BackHoldBody at the rest transform.
-            GameObject hold = (GameObject)PrefabUtility.InstantiatePrefab(prefab, player.scene);
-            Undo.RegisterCreatedObjectUndo(hold, "Create BackHoldBody");
-            hold.name = "BackHoldBody";
-            hold.transform.SetParent(player.transform, false);
-            hold.transform.localPosition = Vector3.zero;
-            hold.transform.localRotation = Quaternion.identity;
-            hold.transform.localScale = BodyScale;
-
-            Animator anim = hold.GetComponent<Animator>();
-            if (anim == null) anim = Undo.AddComponent<Animator>(hold);
-            anim.runtimeAnimatorController = backHoldCtrl;
-            SpriteRenderer sr = hold.GetComponent<SpriteRenderer>();
-
-            // Wire the back-hold slots on PlayerAnimator (recorded for Undo, marks the component dirty).
-            var so = new SerializedObject(pa);
-            SetRef(so, "backHoldAnimator", anim);
-            SetRef(so, "backHoldRenderer", sr);
-            so.ApplyModifiedProperties();
-
-            EditorUtility.SetDirty(hold);
-            dirtyScenes.Add(player.scene);
-            added++;
-        }
-
-        // Mark each touched scene dirty so YOU review + save it. We never auto-save the scene.
-        foreach (Scene scene in dirtyScenes)
-            UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(scene);
-
-        Debug.Log($"[AnimatorBuilder] Setup BackHoldBody: added {added}, skipped {skipped} (already had one), " +
-                  $"missing {missing}. CHECK the backHoldAnimator/backHoldRenderer slots, then SAVE the scene (Ctrl+S).");
     }
 
     // ======================================================================================

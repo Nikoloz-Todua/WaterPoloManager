@@ -65,6 +65,21 @@ public class RosterManager : MonoBehaviour
         if (roster.ownedPlayerIds == null) roster.ownedPlayerIds = new List<string>();
         if (roster.starterSlots == null || roster.starterSlots.Length != 7) roster.starterSlots = new string[7];
         if (roster.club == null) roster.club = new ClubProfile(); // pre-club saves
+        bool clubPaletteMigrated = false;
+        if (string.IsNullOrEmpty(roster.club.capColorHex))
+        {
+            roster.club.capColorHex = string.IsNullOrEmpty(roster.club.primaryColorHex)
+                ? "D90D1A"
+                : roster.club.primaryColorHex;
+            clubPaletteMigrated = true;
+        }
+        if (string.IsNullOrEmpty(roster.club.swimwearColorHex))
+        {
+            roster.club.swimwearColorHex = string.IsNullOrEmpty(roster.club.secondaryColorHex)
+                ? "FFFFFF"
+                : roster.club.secondaryColorHex;
+            clubPaletteMigrated = true;
+        }
 
         // One-time guest name: generated on the first load that finds no name, then persisted —
         // never regenerates on later launches.
@@ -83,7 +98,7 @@ public class RosterManager : MonoBehaviour
         if (roster.ownedPlayerIds.Count == 0 && PlayerDatabase.Instance.Count > 0) { SeedDefaultRoster(); seeded = true; }
 
         RebuildOwnedRuntime();
-        if (seeded || !fileExisted) Save();
+        if (seeded || !fileExisted || clubPaletteMigrated) Save();
     }
 
     void Save()

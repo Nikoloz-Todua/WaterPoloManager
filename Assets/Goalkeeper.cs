@@ -627,6 +627,7 @@ public class Goalkeeper : MonoBehaviour
         else { PlayerMovement pm = carrier.GetComponent<PlayerMovement>(); if (pm != null) pm.ReleaseBall(); }
 
         Grab(ctx, team);
+        ExclusionManager.StunSuccessfulStealVictim(carrier);
         return true;
     }
 

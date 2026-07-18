@@ -29,12 +29,23 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private Vector2 handOffsetUpLeft = new Vector2(-0.1f, 0.5f);
     [Tooltip("Ball position when facing DOWN / idle — the front sprite's resting hand.")]
     [SerializeField] private Vector2 handOffsetDown = new Vector2(0.28f, -0.05f);
+    [Tooltip("While carrying and moving, the ball is pushed this far ahead along the swimmer's actual travel direction. Presentation only: pass/shot aim still uses lastDirection exactly as before.")]
+    [SerializeField] private float movingHoldBallForwardOffset = 0.58f;
+    [Tooltip("Small in/out distance change while swimming with the ball, to suggest repeated hand pushes through the water.")]
+    [SerializeField, Range(0f, 0.2f)] private float movingHoldBallPushAmplitude = 0.06f;
+    [Tooltip("How many gentle held-ball push cycles play per second while swimming.")]
+    [SerializeField, Range(0.1f, 5f)] private float movingHoldBallPushCyclesPerSecond = 1.7f;
+    [Tooltip("Maximum clockwise/counter-clockwise rocking of the held ball while swimming.")]
+    [SerializeField, Range(0f, 30f)] private float movingHoldBallRockDegrees = 7f;
     [SerializeField] private Vector2 handOffsetRightSwapped;
     [SerializeField] private Vector2 handOffsetLeftSwapped;
     [SerializeField] private Vector2 handOffsetUpSwapped;
     [SerializeField] private Vector2 handOffsetUpLeftSwapped;
     [SerializeField] private Vector2 handOffsetDownSwapped;
-    private const float BackFacingThreshold = 0.3f; // velocity.y above this shows the BACK body (matches PlayerAnimator)
+    // Retained for the legacy stationary hand-offset selector below. Moving carriers now bypass all
+    // art-specific hand offsets and place the ball directly along their travel direction.
+    private const float BackFacingThreshold = 0.3f;
+    private const float MovingHoldSpeedThreshold = 0.1f;
 
     [Header("Shooting")]
     [SerializeField] private float maxShootPower = 12f;
@@ -110,6 +121,8 @@ public class PlayerMovement : MonoBehaviour
 
     public bool IsActive = false;
     public bool IsHolding => isHolding;
+    public bool IsMovingWithBall => isHolding && rb != null &&
+                                    rb.linearVelocity.sqrMagnitude > MovingHoldSpeedThreshold * MovingHoldSpeedThreshold;
     public Vector2 Facing => lastDirection;
 
     // 0..1, charged in lock-step with shot power (0–0.3 low, 0.3–0.7 mid, 0.7–1 high).
@@ -152,6 +165,7 @@ public class PlayerMovement : MonoBehaviour
     private bool stealConsumedSpace = false;
     private bool sprintHeld = false;        // LEFT SHIFT / Sprint button held this frame (active player only)
     private PlayerAnimator playerAnimator; // optional; fires the steal animation on attempts
+    private float heldBallMotionPhase;
 
     // --- Touch input (written by TouchControls.SetTouchInput every frame; each field is
     // merged into its matching keyboard check with || so keyboard keeps working as-is) ---
@@ -180,6 +194,7 @@ public class PlayerMovement : MonoBehaviour
     {
         rb = GetComponent<Rigidbody2D>();
         playerAnimator = GetComponent<PlayerAnimator>();
+        heldBallMotionPhase = Random.Range(0f, Mathf.PI * 2f);
 
         // flight effects (skip bounce, high-ball arc + shadow) live on the Ball — first Awake adds them
         if (ball != null && ball.GetComponent<BallFlight>() == null)
@@ -678,7 +693,8 @@ public class PlayerMovement : MonoBehaviour
         // gate or the dice roll, so EVERY attempt is visible (success or not).
         if (playerAnimator != null) playerAnimator.TriggerSteal();
 
-        // Must approach the carrier from its front, not from behind.
+        // A blindside/rear attempt is no longer a silent blocked input. It is illegal contact and
+        // therefore goes straight to the existing exclusion-level foul path (or a penalty in 2m).
         Vector2 carrierFacing = Vector2.zero;
         IAgentBody carrierBody = carrier.GetComponent<IAgentBody>();
         if (carrierBody != null) carrierFacing = carrierBody.LastDirection;
@@ -687,7 +703,11 @@ public class PlayerMovement : MonoBehaviour
         if (dirToCarrier.sqrMagnitude > 1e-4f) dirToCarrier.Normalize();
         if (carrierFacing.sqrMagnitude > 1e-4f &&
             Vector2.Dot(carrierFacing.normalized, -dirToCarrier) < StealFacingDot)
-            return; // wrong side (anim already fired above)
+        {
+            if (ExclusionManager.Instance != null)
+                ExclusionManager.Instance.ReportExclusionFoul(transform, ctx.PlayerTeam, carrier);
+            return; // ball stays with the victim; anim already fired above
+        }
 
         lastStealTime = Time.time;
 
@@ -704,11 +724,12 @@ public class PlayerMovement : MonoBehaviour
             ball.transform.localPosition = (Vector3)(lastDirection * holdOffset);
 
             ctx.SetPossession(ctx.PlayerTeam);
+            ExclusionManager.StunSuccessfulStealVictim(carrier);
         }
         else if (ExclusionManager.Instance != null)
         {
             // failed steal = ordinary foul: carrier keeps the ball, we get locked out
-            ExclusionManager.Instance.ReportFoul(transform, ctx.PlayerTeam, carrier, true);
+            ExclusionManager.Instance.ReportFoul(transform, ctx.PlayerTeam, carrier);
         }
     }
 
@@ -761,7 +782,8 @@ public class PlayerMovement : MonoBehaviour
         // In range = a real attempt → play the snatch animation now (success or not).
         if (playerAnimator != null) playerAnimator.TriggerSteal();
 
-        // Must approach the carrier from its front, not from behind.
+        // The safer Block button changes the front-on success/foul odds, but it does not legalize
+        // blindside contact: rear/outside-front-arc contact is still an exclusion-level foul.
         Vector2 carrierFacing = Vector2.zero;
         IAgentBody carrierBody = carrier.GetComponent<IAgentBody>();
         if (carrierBody != null) carrierFacing = carrierBody.LastDirection;
@@ -770,7 +792,11 @@ public class PlayerMovement : MonoBehaviour
         if (dirToCarrier.sqrMagnitude > 1e-4f) dirToCarrier.Normalize();
         if (carrierFacing.sqrMagnitude > 1e-4f &&
             Vector2.Dot(carrierFacing.normalized, -dirToCarrier) < StealFacingDot)
-            return; // wrong side (anim already fired above)
+        {
+            if (ExclusionManager.Instance != null)
+                ExclusionManager.Instance.ReportExclusionFoul(transform, ctx.PlayerTeam, carrier);
+            return; // ball stays with the victim; anim already fired above
+        }
 
         lastStealTime = Time.time;
 
@@ -787,6 +813,7 @@ public class PlayerMovement : MonoBehaviour
             ball.transform.localPosition = (Vector3)(lastDirection * holdOffset);
 
             ctx.SetPossession(ctx.PlayerTeam);
+            ExclusionManager.StunSuccessfulStealVictim(carrier);
         }
         else if (Random.value < 0.5f && ExclusionManager.Instance != null) // only HALF of misses foul
         {
@@ -853,6 +880,10 @@ public class PlayerMovement : MonoBehaviour
     void Shoot()
     {
         if (ball == null) return;
+
+        // Explicit presentation signal: stationary shots must animate too. This does not alter
+        // lastDirection, shot power, landing point, or any pass/shoot mechanics.
+        if (playerAnimator != null) playerAnimator.TriggerShoot();
 
         bool skip = skipCharge;
         skipCharge = false;
@@ -1030,24 +1061,31 @@ public class PlayerMovement : MonoBehaviour
     {
         if (isHolding && ball != null)
         {
-            // Pin the ball to the hand for the facing the animator is actually showing. World-space
-            // so it's correct regardless of what the ball is parented to (root or a hand anchor);
-            // keep the ball's own z so its sprite sorting is untouched.
-            Vector3 p = transform.position + (Vector3)HeldBallHandOffset();
+            // Moving carrier: push the ball automatically ahead of the ACTUAL travel vector. This
+            // is independent from lastDirection, so presentation never rewrites pass/shoot aim.
+            // Stationary carrier: retain the existing art-tuned holding-hand offsets exactly.
+            bool movingWithBall = IsMovingWithBall;
+            float motion = Mathf.Sin(
+                Time.time * movingHoldBallPushCyclesPerSecond * Mathf.PI * 2f + heldBallMotionPhase);
+            Vector2 visualOffset = movingWithBall
+                ? rb.linearVelocity.normalized *
+                  (movingHoldBallForwardOffset + motion * movingHoldBallPushAmplitude)
+                : HeldBallHandOffset();
+            Vector3 p = transform.position + (Vector3)visualOffset;
             p.z = ball.transform.position.z;
             ball.transform.position = p;
+            ball.transform.localRotation = movingWithBall
+                ? Quaternion.Euler(0f, 0f, motion * movingHoldBallRockDegrees)
+                : Quaternion.identity;
         }
     }
 
-    // World-space offset (from the player centre) where the held ball should sit, matched to the
-    // body/facing PlayerAnimator displays so the ball reads as carried IN the hand. The back body
-    // has no flipX (its clips handle left/right), so its hand uses the CURRENT aim's x. The down/
-    // idle hand is a single fixed spot, so the ball never jumps sides between A→S and D→S.
+    // Legacy world-space hand offsets, now used only while the carrier is stationary. The down/idle
+    // hand is a single fixed spot, so the ball never jumps sides between A→S and D→S.
     Vector2 HeldBallHandOffset()
     {
-        // BACK body — shown while swimming AWAY (upward velocity); mirrors PlayerAnimator's rule.
-        // The back body picks swim-backl / swim-backr from the CURRENT aim (lastDirection.x).
-        // Those frames aren't exact mirrors, so each side gets its own offset.
+        // Kept for compatibility with the existing serialized up/back offsets. Under the moving-hold
+        // path this method is bypassed; at a true stop vy is normally below this branch's threshold.
         float vy = rb != null ? rb.linearVelocity.y : 0f;
 
         // Ends are swapped at halftime (P3/P4): the player team's defendGoal moves to the RIGHT (+x).

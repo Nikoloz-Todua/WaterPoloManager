@@ -4,8 +4,8 @@ using UnityEngine.UI;
 using TMPro;
 
 // The "My Club" customization screen — code-built (no prefabs), hosted in NavigationManager's
-// club overlay (opened by tapping the hub's avatar or club name). Basic by design: crest grid +
-// two color swatch rows + country grid + name field + APPLY.
+// club overlay (opened by tapping the hub's avatar or club name). Includes crest/club colors,
+// simple previous/next player palette selectors, country, name and APPLY.
 //
 // No crest/flag art exists yet, so the 8 crests are procedural shapes (shield/circle/star/…)
 // and a selected country shows as a colored dot on the hub's flag badge. Persistence is the
@@ -21,12 +21,23 @@ public class ClubCustomizationUI : MonoBehaviour
 
     public const int CrestCount = 8;
 
-    // Preset palette — used for BOTH primary and secondary rows. Index 0 / white must stay in
-    // here: they're the ClubProfile defaults ("1E90FF" / "FFFFFF").
+    const int DefaultCapPaletteIndex = 1;
+    const int DefaultSwimwearPaletteIndex = 9;
+
+    // Fourteen common colors drive club swatches and the human-player cap/swimwear selectors.
+    // The saved ClubProfile hex values are the sole match-time source; PlayerAnimator has no
+    // independent Inspector override.
     public static readonly Color[] Palette =
     {
         Hex("1E90FF"), Hex("C62828"), Hex("2E7D32"), Hex("F9A825"), Hex("6A1B9A"),
         Hex("00838F"), Hex("E64A19"), Hex("283593"), Hex("37474F"), Hex("FFFFFF"),
+        Hex("EC407A"), Hex("00BCD4"), Hex("111111"), Hex("7CB342"),
+    };
+
+    static readonly string[] PaletteNames =
+    {
+        "BLUE", "RED", "GREEN", "GOLD", "PURPLE", "TEAL", "ORANGE",
+        "NAVY", "CHARCOAL", "WHITE", "PINK", "CYAN", "BLACK", "LIME"
     };
 
     // Water-polo nations, text-only (no flag art yet).
@@ -37,10 +48,13 @@ public class ClubCustomizationUI : MonoBehaviour
     NavigationManager nav;
 
     // Working selections (committed to the profile only on APPLY).
-    int selCrest, selPrimary, selSecondary = Palette.Length - 1, selCountry = -1;
+    int selCrest, selPrimary, selSecondary = DefaultSwimwearPaletteIndex, selCountry = -1;
+    int selCap = DefaultCapPaletteIndex, selSwimwear = DefaultSwimwearPaletteIndex;
 
     TMP_InputField nameField;
     Image previewCircle, previewCrest;
+    Image capColorPreview, swimwearColorPreview;
+    TextMeshProUGUI capColorName, swimwearColorName;
     TextMeshProUGUI savedFlash;
     readonly List<Image> crestFrames = new List<Image>();
     readonly List<Image> primFrames = new List<Image>();
@@ -142,25 +156,64 @@ public class ClubCustomizationUI : MonoBehaviour
 
     void BuildColorRows()
     {
-        MakeText(root, "PRIMARY COLOR", 16f, new Vector2(0.5f, 0.5f), new Vector2(-60f, 10f),
+        MakeText(root, "CLUB PRIMARY", 16f, new Vector2(0.5f, 0.5f), new Vector2(-60f, 10f),
                  new Vector2(300f, 22f), Gold, TextAlignmentOptions.Center);
         primFrames.Clear();
         for (int i = 0; i < Palette.Length; i++)
         {
             int idx = i;
-            primFrames.Add(MakeSwatch(new Vector2(-60f + (i - 4.5f) * 48f, -30f), Palette[i],
+            primFrames.Add(MakeSwatch(new Vector2(
+                                      -60f + (i - (Palette.Length - 1) * 0.5f) * 36f, -30f), Palette[i],
                                       () => { selPrimary = idx; SyncSelectionVisuals(); }));
         }
 
-        MakeText(root, "SECONDARY COLOR", 16f, new Vector2(0.5f, 0.5f), new Vector2(-60f, -80f),
+        MakeText(root, "CLUB SECONDARY", 16f, new Vector2(0.5f, 0.5f), new Vector2(-60f, -80f),
                  new Vector2(300f, 22f), Gold, TextAlignmentOptions.Center);
         secFrames.Clear();
         for (int i = 0; i < Palette.Length; i++)
         {
             int idx = i;
-            secFrames.Add(MakeSwatch(new Vector2(-60f + (i - 4.5f) * 48f, -120f), Palette[i],
+            secFrames.Add(MakeSwatch(new Vector2(
+                                     -60f + (i - (Palette.Length - 1) * 0.5f) * 36f, -120f), Palette[i],
                                      () => { selSecondary = idx; SyncSelectionVisuals(); }));
         }
+
+        BuildPlayerColorSelector("PLAYER CAP COLOR", -185f, true,
+                                 out capColorPreview, out capColorName);
+        BuildPlayerColorSelector("PLAYER SWIMWEAR COLOR", -275f, false,
+                                 out swimwearColorPreview, out swimwearColorName);
+    }
+
+    void BuildPlayerColorSelector(string label, float labelY, bool cap,
+                                  out Image preview, out TextMeshProUGUI colorName)
+    {
+        MakeText(root, label, 15f, new Vector2(0.5f, 0.5f), new Vector2(-60f, labelY),
+                 new Vector2(330f, 22f), Gold, TextAlignmentOptions.Center);
+
+        Color arrowColor = new Color(0.16f, 0.2f, 0.28f, 1f);
+        MakeButton(root, "<", 24f, new Vector2(0.5f, 0.5f), new Vector2(-190f, labelY - 40f),
+                   new Vector2(54f, 42f), arrowColor, () => CyclePlayerColor(cap, -1));
+        MakeButton(root, ">", 24f, new Vector2(0.5f, 0.5f), new Vector2(70f, labelY - 40f),
+                   new Vector2(54f, 42f), arrowColor, () => CyclePlayerColor(cap, 1));
+
+        preview = NewImage(cap ? "CapColorPreview" : "SwimwearColorPreview", root);
+        preview.sprite = Rounded();
+        preview.type = Image.Type.Sliced;
+        preview.raycastTarget = false;
+        SetRect(preview.rectTransform, new Vector2(0.5f, 0.5f),
+                new Vector2(-60f, labelY - 40f), new Vector2(180f, 42f));
+        colorName = MakeText(preview.transform, "", 16f, new Vector2(0.5f, 0.5f), Vector2.zero,
+                             new Vector2(170f, 38f), Color.white, TextAlignmentOptions.Center);
+        Stretch(colorName.rectTransform);
+    }
+
+    void CyclePlayerColor(bool cap, int direction)
+    {
+        if (cap)
+            selCap = (selCap + direction + Palette.Length) % Palette.Length;
+        else
+            selSwimwear = (selSwimwear + direction + Palette.Length) % Palette.Length;
+        SyncPlayerColorPreviews();
     }
 
     void BuildCountryGrid()
@@ -194,7 +247,9 @@ public class ClubCustomizationUI : MonoBehaviour
         ClubProfile club = RosterManager.Instance.Club;
         selCrest = Mathf.Clamp(club.logoId, 0, CrestCount - 1);
         selPrimary = PaletteIndex(club.primaryColorHex, 0);
-        selSecondary = PaletteIndex(club.secondaryColorHex, Palette.Length - 1);
+        selSecondary = PaletteIndex(club.secondaryColorHex, DefaultSwimwearPaletteIndex);
+        selCap = PaletteIndex(club.capColorHex, DefaultCapPaletteIndex);
+        selSwimwear = PaletteIndex(club.swimwearColorHex, DefaultSwimwearPaletteIndex);
         selCountry = System.Array.IndexOf(CountryIds, club.countryId);
         nameField.text = club.clubName;
         SyncSelectionVisuals();
@@ -202,10 +257,20 @@ public class ClubCustomizationUI : MonoBehaviour
 
     static int PaletteIndex(string hex, int fallback)
     {
+        fallback = Mathf.Clamp(fallback, 0, Palette.Length - 1);
         Color c = ParseHex(hex, Palette[fallback]);
+        int nearest = fallback;
+        float nearestDistance = float.MaxValue;
         for (int i = 0; i < Palette.Length; i++)
+        {
             if (ColorUtility.ToHtmlStringRGB(Palette[i]) == ColorUtility.ToHtmlStringRGB(c)) return i;
-        return fallback;
+            float dr = Palette[i].r - c.r;
+            float dg = Palette[i].g - c.g;
+            float db = Palette[i].b - c.b;
+            float distance = dr * dr + dg * dg + db * db;
+            if (distance < nearestDistance) { nearestDistance = distance; nearest = i; }
+        }
+        return nearest;
     }
 
     void SyncSelectionVisuals()
@@ -216,6 +281,31 @@ public class ClubCustomizationUI : MonoBehaviour
         for (int i = 0; i < countryFrames.Count; i++) countryFrames[i].color = i == selCountry ? Gold : TileDark;
         if (previewCircle != null) previewCircle.color = Palette[selPrimary];
         if (previewCrest != null) { previewCrest.sprite = CrestSprite(selCrest); previewCrest.color = Palette[selSecondary]; }
+        SyncPlayerColorPreviews();
+    }
+
+    void SyncPlayerColorPreviews()
+    {
+        if (capColorPreview != null)
+            capColorPreview.color = Palette[selCap];
+        if (capColorName != null)
+        {
+            capColorName.text = PaletteNames[selCap];
+            capColorName.color = ReadableTextColor(Palette[selCap]);
+        }
+        if (swimwearColorPreview != null)
+            swimwearColorPreview.color = Palette[selSwimwear];
+        if (swimwearColorName != null)
+        {
+            swimwearColorName.text = PaletteNames[selSwimwear];
+            swimwearColorName.color = ReadableTextColor(Palette[selSwimwear]);
+        }
+    }
+
+    static Color ReadableTextColor(Color background)
+    {
+        float luminance = background.r * 0.2126f + background.g * 0.7152f + background.b * 0.0722f;
+        return luminance > 0.58f ? new Color(0.05f, 0.06f, 0.08f) : Color.white;
     }
 
     void Apply()
@@ -227,10 +317,13 @@ public class ClubCustomizationUI : MonoBehaviour
         club.logoId = selCrest;
         club.primaryColorHex = ColorUtility.ToHtmlStringRGB(Palette[selPrimary]);
         club.secondaryColorHex = ColorUtility.ToHtmlStringRGB(Palette[selSecondary]);
+        club.capColorHex = ColorUtility.ToHtmlStringRGB(Palette[selCap]);
+        club.swimwearColorHex = ColorUtility.ToHtmlStringRGB(Palette[selSwimwear]);
         club.countryId = selCountry >= 0 ? CountryIds[selCountry] : "";
         RosterManager.Instance.SaveClub();
         if (nav != null) nav.RefreshClubProfile(); // hub cluster updates immediately
         nameField.text = club.clubName;            // show what was actually kept
+        SyncPlayerColorPreviews();
 
         savedFlash.text = "SAVED!";
         savedFlash.alpha = 1f;
@@ -309,7 +402,9 @@ public class ClubCustomizationUI : MonoBehaviour
         if (string.IsNullOrEmpty(id)) return new Color(0.5f, 0.53f, 0.6f);
         int h = 0;
         foreach (char c in id) h = h * 31 + c;
-        return Palette[Mathf.Abs(h) % (Palette.Length - 1)]; // skip white (invisible dot)
+        int index = Mathf.Abs(h) % (Palette.Length - 1);
+        if (index >= DefaultSwimwearPaletteIndex) index++; // skip white (invisible dot)
+        return Palette[index];
     }
 
     // ------------------------------------------------------------------ UI helpers
@@ -335,14 +430,14 @@ public class ClubCustomizationUI : MonoBehaviour
 
     Image MakeSwatch(Vector2 pos, Color color, UnityEngine.Events.UnityAction onClick)
     {
-        Image frame = MakeTile(pos, new Vector2(42f, 42f), onClick);
+        Image frame = MakeTile(pos, new Vector2(34f, 34f), onClick);
         Image sw = NewImage("Swatch", frame.transform);
         sw.sprite = Rounded(); sw.type = Image.Type.Sliced;
         sw.color = color;
         sw.raycastTarget = false;
         RectTransform srt = sw.rectTransform;
         srt.anchorMin = Vector2.zero; srt.anchorMax = Vector2.one;
-        srt.offsetMin = new Vector2(6f, 6f); srt.offsetMax = new Vector2(-6f, -6f);
+        srt.offsetMin = new Vector2(5f, 5f); srt.offsetMax = new Vector2(-5f, -5f);
         return frame;
     }
 

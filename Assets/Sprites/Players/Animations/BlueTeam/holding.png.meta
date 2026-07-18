@@ -1,10 +1,25 @@
 fileFormatVersion: 2
-guid: 23be5ec5b94de3c4482ba3fa8e167334
+guid: d61ed25fbaa985e448d9a977255f5d73
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: 8101936705529051440
-    second: test 1_0
+      213: 2767496150357596284
+    second: holding_0
+  - first:
+      213: 3831271297870293176
+    second: holding_1
+  - first:
+      213: -3838146068379737069
+    second: holding_2
+  - first:
+      213: -4190978033386431930
+    second: holding_3
+  - first:
+      213: -4833010592063797483
+    second: holding_4
+  - first:
+      213: -5195129771092768162
+    second: holding_5
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -139,23 +154,133 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: test 1_0
+      name: holding_0
       rect:
         serializedVersion: 2
-        x: 118
-        y: 57
-        width: 793
-        height: 832
+        x: 0
+        y: 489
+        width: 536
+        height: 488
       alignment: 0
-      pivot: {x: 0, y: 0}
+      pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: 039f1cdf18cdf6070800000000000000
-      internalID: 8101936705529051440
+      spriteID: c78535ff51f186620800000000000000
+      internalID: 2767496150357596284
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: holding_1
+      rect:
+        serializedVersion: 2
+        x: 536
+        y: 489
+        width: 493
+        height: 488
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 8b865bb42f86b2530800000000000000
+      internalID: 3831271297870293176
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: holding_2
+      rect:
+        serializedVersion: 2
+        x: 1061
+        y: 489
+        width: 547
+        height: 488
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 314e9267c7a2cbac0800000000000000
+      internalID: -3838146068379737069
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: holding_3
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 1
+        width: 536
+        height: 488
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 64a5982fea7a6d5c0800000000000000
+      internalID: -4190978033386431930
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: holding_4
+      rect:
+        serializedVersion: 2
+        x: 536
+        y: 1
+        width: 478
+        height: 488
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 51746501972bdecb0800000000000000
+      internalID: -4833010592063797483
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: holding_5
+      rect:
+        serializedVersion: 2
+        x: 1025
+        y: 1
+        width: 583
+        height: 488
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e5a85f78ff037e7b0800000000000000
+      internalID: -5195129771092768162
       vertices: []
       indices: 
       edges: []
@@ -164,7 +289,7 @@ TextureImporter:
     customData: 
     physicsShape: []
     bones: []
-    spriteID: 
+    spriteID: 6b4aef73a5d8c5c41bdfbc2db8c97503
     internalID: 0
     vertices: []
     indices: 
@@ -172,9 +297,16 @@ TextureImporter:
     weights: []
     secondaryTextures: []
     spriteCustomMetadata:
-      entries: []
+      entries:
+      - key: SpriteEditor.SliceSettings
+        value: '{"sliceOnImport":false,"gridCellCount":{"x":3.0,"y":2.0},"gridSpriteSize":{"x":536.0,"y":488.0},"gridSpriteOffset":{"x":0.0,"y":0.0},"gridSpritePadding":{"x":0.0,"y":0.0},"pivot":{"x":0.5,"y":0.5},"pivotPixels":{"x":0.0,"y":0.0},"autoSlicingMethod":0,"spriteAlignment":0,"pivotUnitMode":0,"slicingType":2,"keepEmptyRects":false,"isAlternate":false}'
     nameFileIdTable:
-      test 1_0: 8101936705529051440
+      holding_0: 2767496150357596284
+      holding_1: 3831271297870293176
+      holding_2: -3838146068379737069
+      holding_3: -4190978033386431930
+      holding_4: -4833010592063797483
+      holding_5: -5195129771092768162
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

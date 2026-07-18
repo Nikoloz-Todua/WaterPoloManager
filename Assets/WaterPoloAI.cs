@@ -489,7 +489,25 @@ public static class WaterPoloBrain
         // ball to a world point (this was the "ball freezes in place" bug).
         if (ctx.Ball.transform.parent != a.Tf) { a.IsHolding = false; return; }
 
-        ctx.Ball.transform.localPosition = (Vector3)(a.LastDirection * a.HoldOffset);
+        const float movingThreshold = 0.1f;
+        const float pushAmplitude = 0.06f;
+        const float pushCyclesPerSecond = 1.7f;
+        const float rockDegrees = 7f;
+
+        Vector2 velocity = a.Body != null ? a.Body.linearVelocity : Vector2.zero;
+        bool moving = velocity.sqrMagnitude > movingThreshold * movingThreshold;
+        Vector2 forward = moving ? velocity.normalized : a.LastDirection.normalized;
+        if (forward.sqrMagnitude < 1e-4f) forward = Vector2.right;
+
+        // A stable per-swimmer phase prevents every carrier from pulsing in lock-step. This is
+        // presentation only: shooting/passing still use LastDirection and their existing physics.
+        float phase = Mathf.Abs(Animator.StringToHash(a.Tf.name) % 360) * Mathf.Deg2Rad;
+        float motion = Mathf.Sin(Time.time * pushCyclesPerSecond * Mathf.PI * 2f + phase);
+        float distance = a.HoldOffset + (moving ? motion * pushAmplitude : 0f);
+        ctx.Ball.transform.localPosition = (Vector3)(forward * distance);
+        ctx.Ball.transform.localRotation = moving
+            ? Quaternion.Euler(0f, 0f, motion * rockDegrees)
+            : Quaternion.identity;
     }
 
     // ---- carrier: shoot, pass, or dribble ----
@@ -926,13 +944,20 @@ public static class WaterPoloBrain
         float reach = a.GrabDistance;
         if (Vector2.Distance(a.Body.position, carrier.position) > reach) return false;
 
-        // Must come at the carrier from the front, not from behind.
+        // Rear/outside-front-arc contact is a real close-range attempt, but an illegal blindside
+        // one: animate it and send it straight to the exclusion-level foul owner instead of
+        // silently blocking the AI at the old facing gate.
         Vector2 dirToCarrier = (Vector2)carrier.position - a.Body.position;
         if (dirToCarrier.sqrMagnitude > 1e-4f) dirToCarrier.Normalize();
         Vector2 carrierFacing = CarrierFacing(carrier);
         if (carrierFacing.sqrMagnitude > 1e-4f &&
             Vector2.Dot(carrierFacing.normalized, -dirToCarrier) < StealFacingDot)
-            return false;
+        {
+            NotifyStealAttempt(a.Tf);
+            if (ExclusionManager.Instance != null)
+                ExclusionManager.Instance.ReportExclusionFoul(a.Tf, a.Team, carrier);
+            return true; // foul/exclusion owns this frame; do not immediately chase from the pen
+        }
 
         // Feature 5: stripping a settled Centre holding inside water rarely works — those
         // attempts come faster but fail more often, so the Centre draws fouls (and with
@@ -950,7 +975,7 @@ public static class WaterPoloBrain
         {
             // failed steal = ordinary foul (carrier keeps the ball; offender locked out longer)
             if (ExclusionManager.Instance != null)
-                ExclusionManager.Instance.ReportFoul(a.Tf, a.Team, carrier, true);
+                ExclusionManager.Instance.ReportFoul(a.Tf, a.Team, carrier);
             return false;
         }
         IAgentBody holder = carrier.GetComponent<IAgentBody>();
@@ -969,6 +994,7 @@ public static class WaterPoloBrain
         ctx.Ball.transform.SetParent(a.Tf);
         ctx.Ball.transform.localPosition = (Vector3)(a.LastDirection * a.HoldOffset);
         ctx.SetPossession(a.Team);
+        ExclusionManager.StunSuccessfulStealVictim(carrier);
         return true;
     }
 
