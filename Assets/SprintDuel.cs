@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using TMPro;
+using System.Collections.Generic;
 
 // Quarter-start sprint duel (plan B16.2), completely rebuilt. Singleton. Called by MatchTimer
 // at the start of every quarter (incl. Q1). All players freeze on their own goal lines; a
@@ -68,6 +69,11 @@ public class SprintDuel : MonoBehaviour
     private DuelTapCatcher tapCatcher;
     private float countdownPulse;  // 0..1 scale-pulse value, reset on each number
     private float shownFill;       // smoothed speed-bar fill
+    // SprintDuel moves frozen bodies by Rigidbody2D.position, which deliberately leaves
+    // Rigidbody2D.linearVelocity at zero. Animators use this transient map only to present
+    // that direct motion as swimming; it never feeds gameplay, physics, or AI decisions.
+    private readonly Dictionary<Transform, Vector2> presentationVelocities =
+        new Dictionary<Transform, Vector2>();
 
     const float ReferenceWidth = 1920f, ReferenceHeight = 1080f;
 
@@ -86,6 +92,7 @@ public class SprintDuel : MonoBehaviour
 
         TeamSide pt = ctx.PlayerTeam;
         TeamSide bt = ctx.BotTeam;
+        presentationVelocities.Clear();
 
         // Ball to EXACT centre and OFF (physics disabled) so nothing can nudge it off (0,0)
         // during the countdown; it goes live again the instant the race starts.
@@ -223,7 +230,18 @@ public class SprintDuel : MonoBehaviour
         ctx.SetKickoffPass(team); // winner's AI center passes back to its deepest teammate first
         if (ShotClock.Instance != null) ShotClock.Instance.ResetClock();
         state = State.Idle;
+        presentationVelocities.Clear();
         EndDuelUI();
+    }
+
+    // Direct-position sprint-duel movement has no physical velocity. This exposes the real
+    // authored motion speed to presentation only, so PlayerAnimator/BotAnimator do not mistake
+    // a 3-6 u/s visible sprint for a stationary floater during the frozen duel.
+    public static bool TryGetPresentationVelocity(Transform swimmer, out Vector2 velocity)
+    {
+        velocity = Vector2.zero;
+        return Instance != null && Instance.state == State.Racing && swimmer != null &&
+               Instance.presentationVelocities.TryGetValue(swimmer, out velocity);
     }
 
     // ---- ball / sprinters ----
@@ -251,6 +269,7 @@ public class SprintDuel : MonoBehaviour
         Vector2 cur = rb != null ? rb.position : (Vector2)s.position;
         Vector2 next = Vector2.MoveTowards(cur, target, speed * Time.fixedDeltaTime);
         if (rb != null) rb.position = next; else s.position = next;
+        presentationVelocities[s] = (next - cur) / Mathf.Max(Time.fixedDeltaTime, 0.0001f);
     }
 
     // Every available member EXCEPT this team's sprinter jogs to its natural formation spot.

@@ -953,6 +953,8 @@ public class PlayerMovement : MonoBehaviour
     {
         if (ball == null || !isHolding) return;
         if (MatchContext.Instance == null) return;
+        // A pass is the same throwing action as a shot: no alternate pass pose/trigger.
+        if (playerAnimator != null) playerAnimator.TriggerThrow();
         Vector2 aimDir = lastDirection.sqrMagnitude > 1e-4f ? lastDirection.normalized : Vector2.up;
 
         Vector2 fireDir = aimDir;

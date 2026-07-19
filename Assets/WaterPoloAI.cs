@@ -67,8 +67,8 @@ public static class WaterPoloBrain
     const float SteerAwayWeight = 0.8f; // how hard the carrier veers off a defender
     const float SettleDelay = 0.4f;     // must hold the ball this long before shooting
     const float MaxCarrySeconds = 1.8f;    // carrier force-shoots after holding this long (anti-stall / more aggressive)
-    const float CloseShootDistance = 3.5f; // within this of goal, prefer shooting over dribbling (was 4 — drive closer)
-    const float MaxShootDistance = 3.5f;   // hard cap on a NON-forced shot: bots had ShootRange 20 and fired from anywhere
+    const float CloseShootDistance = 4f; // within this of goal, prefer shooting over dribbling
+    const float MaxShootDistance = 4f;   // non-forced shooting cap; matches the live BotMovement ShootRange
     const float PassSettleDelay = 0.35f;   // a bot holds the ball at least this long before relaying (calms ping-pong passing)
     const float MinPassControlDelay = 0.3f;// every pass path: briefly control a new possession before release
     const float SprintMult = 1.7f;         // speed burst when chasing the ball / covering ground (bots actually sprint now)

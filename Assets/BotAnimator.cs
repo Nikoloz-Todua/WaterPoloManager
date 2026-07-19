@@ -20,6 +20,7 @@ public class BotAnimator : MonoBehaviour
     const float FlipEpsilon = 0.1f;       // |velocity.x| above this drives the sprite flip
     const float MoveEpsilon = 0.1f;
     const float BobFloatSpeedMax = 0.15f;
+    const float SwimmingRippleInterval = 0.55f;
 
     [SerializeField] private float defendProximityRadius = 1.5f; // enemy carrier this close → defend pose
 
@@ -28,10 +29,17 @@ public class BotAnimator : MonoBehaviour
     [SerializeField] private PlayerFlipbookSet flipbookSet;
     [SerializeField, Range(1f, 30f)] private float flipbookFramesPerSecond = 12f;
 
-    [Header("Swimming direction (presentation only)")]
-    [Tooltip("Rotate the current swimming sheet toward the bot's full 2D travel direction without rotating its Rigidbody2D or collider.")]
-    [SerializeField] private bool rotateSwimmingToMovement = true;
-    [SerializeField, Range(90f, 1440f)] private float swimmingDirectionTurnSpeed = 720f;
+    [Header("Per-animation visual size")]
+    [Tooltip("Overall local X/Y scale for current bot flipbook art. Defaults to 1, preserving the bot root's existing scene scale.")]
+    [SerializeField] private Vector2 flipbookRendererLocalScale = Vector2.one;
+    [Tooltip("Extra size multiplier used only by idle/floating frames.")]
+    [SerializeField] private Vector2 idleSizeMultiplier = Vector2.one;
+    [Tooltip("Extra size multiplier used only by swimming frames, including sprinting and moving with the ball.")]
+    [SerializeField] private Vector2 swimmingSizeMultiplier = Vector2.one;
+    [Tooltip("Extra size multiplier used only by stopped holding frames.")]
+    [SerializeField] private Vector2 holdingSizeMultiplier = Vector2.one;
+    [Tooltip("Extra size multiplier used only by throwing frames.")]
+    [SerializeField] private Vector2 throwingSizeMultiplier = Vector2.one;
 
     [Header("Bot team default palette")]
     [SerializeField] private Color blueTeamCapTint = new Color(0.05f, 0.25f, 1f, 1f);
@@ -57,7 +65,8 @@ public class BotAnimator : MonoBehaviour
     private bool lastFacingLeft;
     private bool flipbookArtFacesLeft;
     private PlayerFlipbookVisualState flipbookVisualState = PlayerFlipbookVisualState.Legacy;
-    private Quaternion flipbookBaseLocalRotation = Quaternion.identity;
+    private Vector3 flipbookBaseLocalScale = Vector3.one;
+    private float nextSwimmingRippleTime;
 
     void Awake()
     {
@@ -91,20 +100,26 @@ public class BotAnimator : MonoBehaviour
     {
         if (animator == null || body == null) return; // missing pieces → do nothing
 
-        float speed = body.Body != null ? body.Body.linearVelocity.magnitude : 0f;
+        Vector2 velocity = body.Body != null ? body.Body.linearVelocity : Vector2.zero;
+        if (SprintDuel.TryGetPresentationVelocity(transform, out Vector2 duelVelocity) &&
+            duelVelocity.sqrMagnitude > velocity.sqrMagnitude)
+            velocity = duelVelocity;
+        float speed = velocity.magnitude;
         bool isHolding = body.IsHolding;
         bool isMovingWithBall = isHolding && speed > MoveEpsilon;
-        bool showStaticHold = isHolding && !isMovingWithBall;
-        bool isSprinting = !isHolding && body.IsDriving;
+        bool isStunned = FoulStun.IsStunned(transform);
+        bool presentationHolding = isHolding && !isStunned;
+        bool showStaticHold = presentationHolding && !isMovingWithBall;
+        bool isSprinting = !presentationHolding && !isStunned && body.IsDriving;
         bool isStealingVisual = Time.time < stealAnimUntil;
-        bool isDefending = !isHolding && !isStealingVisual && EnemyCarrierNearby();
+        bool isDefending = !presentationHolding && !isStunned && !isStealingVisual && EnemyCarrierNearby();
         bool isExcluded = ExclusionManager.Instance != null && ExclusionManager.Instance.IsExcluded(transform);
 
         // Sheets face RIGHT: flip when swimming left, unflip when swimming right,
         // and HOLD the last facing while x-velocity is near zero (no snap-back).
         if (spriteRenderer != null && body.Body != null)
         {
-            float vx = body.Body.linearVelocity.x;
+            float vx = velocity.x;
             if (vx < -FlipEpsilon) lastFacingLeft = true;
             else if (vx > FlipEpsilon) lastFacingLeft = false;
         }
@@ -112,18 +127,13 @@ public class BotAnimator : MonoBehaviour
         // Lost the ball this frame → treat the release as a shot. The existing edge is also the
         // throwing flipbook latch; target/decision logic remains entirely in WaterPoloBrain.
         if (wasHolding && !isHolding)
-        {
-            animator.SetTrigger(IsShootingParam);
-            float flipbookSeconds = flipbookSet != null
-                ? PlayerFlipbookSet.Duration(flipbookSet.ThrowingFrames, flipbookFramesPerSecond)
-                : 0f;
-            shootVisualUntil = Time.time + Mathf.Max(ShootVisualSeconds, flipbookSeconds);
-        }
+            TriggerThrow();
 
         bool isShootingVisual = Time.time < shootVisualUntil;
-        bool isFloating = speed < BobFloatSpeedMax && !isHolding && !isShootingVisual;
+        bool isFloating = speed < BobFloatSpeedMax && !presentationHolding && !isShootingVisual;
         SelectFlipbook(isFloating, isHolding, isMovingWithBall, isShootingVisual,
-                       isDefending, isStealingVisual, isExcluded, speed);
+                       isDefending, isStealingVisual, isExcluded, isStunned, speed);
+        TrySpawnSwimmingRipple();
         SetFlipbookRendererVisible(flipbookPlayback.Active);
 
         animator.SetFloat(SpeedParam, speed);
@@ -144,26 +154,34 @@ public class BotAnimator : MonoBehaviour
 
         if (!flipbookPlayback.Active)
         {
+            ApplyFlipbookRendererScale(false);
             spriteRenderer.flipX = lastFacingLeft; // legacy sheets face right
-            flipbookRenderer.transform.localRotation = flipbookBaseLocalRotation;
             return;
         }
 
+        ApplyFlipbookRendererScale(true);
         flipbookRenderer.flipX = flipbookArtFacesLeft ? !lastFacingLeft : lastFacingLeft;
         flipbookPlayback.Apply(flipbookRenderer, flipbookFramesPerSecond);
-        UpdateSwimmingDirectionRotation();
     }
 
     void SelectFlipbook(bool isFloating, bool isHolding, bool isMovingWithBall,
                         bool isShootingVisual,
-                        bool isDefending, bool isStealingVisual, bool isExcluded, float speed)
+                        bool isDefending, bool isStealingVisual, bool isExcluded, bool isStunned,
+                        float speed)
     {
         Sprite[] frames = null;
         bool loop = true;
         flipbookArtFacesLeft = false;
         PlayerFlipbookVisualState proposedState = PlayerFlipbookVisualState.Legacy;
 
-        if (flipbookSet != null && isShootingVisual)
+        // Stunned carriers always float visually; the procedural stars provide the distinct
+        // feedback while the body never drops into holding/defend/legacy presentation.
+        if (flipbookSet != null && isStunned)
+        {
+            frames = flipbookSet.IdleFrames;
+            proposedState = PlayerFlipbookVisualState.Idle;
+        }
+        else if (flipbookSet != null && isShootingVisual)
         {
             frames = flipbookSet.ThrowingFrames;
             loop = false;
@@ -204,13 +222,35 @@ public class BotAnimator : MonoBehaviour
         flipbookPlayback.Select(frames, loop);
     }
 
+    void TrySpawnSwimmingRipple()
+    {
+        if (flipbookVisualState != PlayerFlipbookVisualState.Swimming ||
+            !flipbookPlayback.Active || Time.time < nextSwimmingRippleTime) return;
+
+        BallFlight flight = BallFlight.Instance;
+        if (flight == null) return;
+        flight.SpawnSwimmingRipple(transform.position);
+        nextSwimmingRippleTime = Time.time + SwimmingRippleInterval;
+    }
+
+    // The shared release edge invokes this for both bot shots and bot passes. Their current
+    // six-frame throwing flipbook is intentionally the same visual state.
+    public void TriggerThrow()
+    {
+        if (animator != null) animator.SetTrigger(IsShootingParam);
+        float flipbookSeconds = flipbookSet != null
+            ? PlayerFlipbookSet.Duration(flipbookSet.ThrowingFrames, flipbookFramesPerSecond)
+            : 0f;
+        shootVisualUntil = Time.time + Mathf.Max(ShootVisualSeconds, flipbookSeconds);
+    }
+
     void CreateFlipbookRenderer()
     {
         if (spriteRenderer == null) return;
 
         GameObject visual = new GameObject("FlipbookBody (Runtime)");
         visual.transform.SetParent(transform, false);
-        flipbookBaseLocalRotation = visual.transform.localRotation;
+        flipbookBaseLocalScale = visual.transform.localScale;
         flipbookRenderer = visual.AddComponent<SpriteRenderer>();
         flipbookRenderer.sprite = spriteRenderer.sprite;
         flipbookRenderer.color = spriteRenderer.color;
@@ -229,23 +269,27 @@ public class BotAnimator : MonoBehaviour
         if (spriteRenderer != null) spriteRenderer.enabled = !visible;
     }
 
-    void UpdateSwimmingDirectionRotation()
+    void ApplyFlipbookRendererScale(bool flipbookActive)
     {
-        if (!rotateSwimmingToMovement || flipbookVisualState != PlayerFlipbookVisualState.Swimming ||
-            body == null || body.Body == null || body.Body.linearVelocity.sqrMagnitude <= MoveEpsilon * MoveEpsilon)
-        {
-            flipbookRenderer.transform.localRotation = flipbookBaseLocalRotation;
-            return;
-        }
+        if (flipbookRenderer == null) return;
 
-        Vector3 localTravel3 = transform.InverseTransformDirection(
-            new Vector3(body.Body.linearVelocity.x, body.Body.linearVelocity.y, 0f));
-        float travelAngle = Mathf.Atan2(localTravel3.y, localTravel3.x) * Mathf.Rad2Deg;
-        float displayedHorizontalAngle = lastFacingLeft ? 180f : 0f;
-        float turnFromDisplayedDirection = Mathf.DeltaAngle(displayedHorizontalAngle, travelAngle);
-        Quaternion target = flipbookBaseLocalRotation * Quaternion.Euler(0f, 0f, turnFromDisplayedDirection);
-        flipbookRenderer.transform.localRotation = Quaternion.RotateTowards(
-            flipbookRenderer.transform.localRotation, target, swimmingDirectionTurnSpeed * Time.deltaTime);
+        Vector2 stateMultiplier = SizeMultiplierForCurrentState();
+        Vector2 visualScale = Vector2.Scale(flipbookRendererLocalScale, stateMultiplier);
+        flipbookRenderer.transform.localScale = flipbookActive
+            ? new Vector3(visualScale.x, visualScale.y, flipbookBaseLocalScale.z)
+            : flipbookBaseLocalScale;
+    }
+
+    Vector2 SizeMultiplierForCurrentState()
+    {
+        switch (flipbookVisualState)
+        {
+            case PlayerFlipbookVisualState.Idle: return idleSizeMultiplier;
+            case PlayerFlipbookVisualState.Swimming: return swimmingSizeMultiplier;
+            case PlayerFlipbookVisualState.Holding: return holdingSizeMultiplier;
+            case PlayerFlipbookVisualState.Throwing: return throwingSizeMultiplier;
+            default: return Vector2.one;
+        }
     }
 
     void ApplyInitialIdleFrame()
@@ -261,6 +305,7 @@ public class BotAnimator : MonoBehaviour
         flipbookRenderer.flipX = lastFacingLeft;
         flipbookRenderer.sprite = idle[0];
         SetFlipbookRendererVisible(true);
+        ApplyFlipbookRendererScale(true);
     }
 
     void ApplyPaletteMaterial()
@@ -310,8 +355,18 @@ public class BotAnimator : MonoBehaviour
     void OnValidate()
     {
         flipbookFramesPerSecond = Mathf.Clamp(flipbookFramesPerSecond, 1f, 30f);
-        swimmingDirectionTurnSpeed = Mathf.Clamp(swimmingDirectionTurnSpeed, 90f, 1440f);
+        ClampSize(ref flipbookRendererLocalScale);
+        ClampSize(ref idleSizeMultiplier);
+        ClampSize(ref swimmingSizeMultiplier);
+        ClampSize(ref holdingSizeMultiplier);
+        ClampSize(ref throwingSizeMultiplier);
         if (Application.isPlaying) ApplyPaletteMaterial();
+    }
+
+    static void ClampSize(ref Vector2 value)
+    {
+        value.x = Mathf.Max(0.001f, value.x);
+        value.y = Mathf.Max(0.001f, value.y);
     }
 
     void OnDestroy()

@@ -8,9 +8,9 @@ using UnityEngine;
 public class TeammateAI : MonoBehaviour, IAgentBody
 {
     [SerializeField] private TeamSide myTeam;
-    [SerializeField] private float chaseSpeed = 3f;
-    [SerializeField] private float carrySpeed = 1.8f;
-    [SerializeField] private float supportSpeed = 2.5f;
+    [SerializeField] private float chaseSpeed = 1.2f;
+    [SerializeField] private float carrySpeed = 0.9f;
+    [SerializeField] private float supportSpeed = 1.2f;
     [SerializeField] private float grabDistance = 1f;
     [SerializeField] private float holdOffset = 0.6f;
     [SerializeField] private float shootRange = 4f;

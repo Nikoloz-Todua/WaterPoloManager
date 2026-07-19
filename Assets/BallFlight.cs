@@ -463,6 +463,14 @@ public class BallFlight : MonoBehaviour
         if (go != null) Destroy(go);
     }
 
+    // Reuses the loose-ball settle ripple renderer/coroutine for swimmers' stroke cue.
+    // This is deliberately a single, smaller wave (not a second effect system): callers only
+    // invoke it while their flipbook is actively in the Swimming state.
+    public void SpawnSwimmingRipple(Vector3 pos)
+    {
+        StartCoroutine(RippleWave(pos, 0f, 0.16f, 0.22f, 0.34f));
+    }
+
     // Normalized arc height this frame: 0 on the water, 1 at the peak, 0 again right at the
     // landing frame. Pass/Lob use the symmetric parabola (peak at the midpoint of the travel
     // distance — ground speed is constant, so time-mid == distance-mid); Shot uses its own

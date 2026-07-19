@@ -33,6 +33,7 @@ public class PlayerAnimator : MonoBehaviour
     const float BobFrequency = 1.1f;           // cycles per second
     const float BobReturnSeconds = 0.15f;      // time to ease the offset back to 0 when swimming resumes
     const float BobFloatSpeedMax = 0.15f;      // Speed below this (and not holding) reads as floating — high enough that slow drift still floats
+    const float SwimmingRippleInterval = 0.55f;
 
     [SerializeField] private float defendProximityRadius = 1.5f; // enemy carrier this close -> defend pose
 
@@ -61,12 +62,6 @@ public class PlayerAnimator : MonoBehaviour
     [SerializeField] private Vector2 holdingSizeMultiplier = Vector2.one;
     [Tooltip("Extra size multiplier used only by throwing frames.")]
     [SerializeField] private Vector2 throwingSizeMultiplier = Vector2.one;
-
-    [Header("Swimming direction (presentation only)")]
-    [Tooltip("Rotate the flat swimming art toward the swimmer's full 2D travel direction. This rotates only the visual child, never the player root or collider.")]
-    [SerializeField] private bool rotateSwimmingToMovement = true;
-    [Tooltip("How quickly the swimming visual turns toward movement, in degrees per second.")]
-    [SerializeField, Range(90f, 1440f)] private float swimmingDirectionTurnSpeed = 720f;
 
     [Header("State depth (presentation only)")]
     [Tooltip("Local Y offset applied to every body while carrying. Negative makes the swimmer sit lower without moving its collider or changing gameplay position.")]
@@ -109,10 +104,10 @@ public class PlayerAnimator : MonoBehaviour
     private Transform frontBody, backBody;        // body transforms == the front/back animator transforms
     private Vector3 frontBodyBasePos, backBodyBasePos; // rest localPosition each bob is layered on top of
     private Vector3 frontBodyBaseScale, backBodyBaseScale;
-    private Quaternion frontBodyBaseRotation, backBodyBaseRotation;
     private float bobPhase;                        // per-player random phase, so idlers don't bob in sync
     private float bobOffset;                       // current Y offset, lerped to 0 when not floating
     private float bodyDepthOffsetY;                // current state-driven visual depth, eased every frame
+    private float nextSwimmingRippleTime;
 
     // Read by presentation code only. The gameplay transform/collider never moves for depth.
     public float VisualDepthOffsetY => bodyDepthOffsetY;
@@ -143,14 +138,12 @@ public class PlayerAnimator : MonoBehaviour
             frontBody = frontRenderer.transform;
             frontBodyBasePos = frontBody.localPosition;
             frontBodyBaseScale = frontBody.localScale;
-            frontBodyBaseRotation = frontBody.localRotation;
         }
         if (backRenderer != null)
         {
             backBody = backRenderer.transform;
             backBodyBasePos = backBody.localPosition;
             backBodyBaseScale = backBody.localScale;
-            backBodyBaseRotation = backBody.localRotation;
         }
 
         ApplyInitialIdleFrame();
@@ -165,15 +158,23 @@ public class PlayerAnimator : MonoBehaviour
         if (movement == null) return; // missing pieces -> do nothing
 
         Vector2 vel = rb != null ? rb.linearVelocity : Vector2.zero;
+        // SprintDuel moves frozen swimmers by writing rb.position, so its physical velocity is
+        // intentionally zero. Prefer that explicit presentation velocity only while the duel owns
+        // movement; ordinary AI/human movement continues to read the Rigidbody directly.
+        if (SprintDuel.TryGetPresentationVelocity(transform, out Vector2 duelVelocity) &&
+            duelVelocity.sqrMagnitude > vel.sqrMagnitude)
+            vel = duelVelocity;
         float speed = vel.magnitude;
         bool isHolding = movement.IsHolding;
+        bool isStunned = FoulStun.IsStunned(transform);
         bool isMovingWithBall = movement.IsMovingWithBall;
-        bool showStaticHold = isHolding && !isMovingWithBall;
+        bool presentationHolding = isHolding && !isStunned;
+        bool showStaticHold = presentationHolding && !isMovingWithBall;
         bool isShootingVisual = Time.time < shootVisualUntil;
 
         // Floating = idle and not carrying the ball (matches the controllers' floating rule).
         // Keep the throwing flipbook selected for the short release window before returning to idle.
-        bool isFloating = speed < BobFloatSpeedMax && !isHolding && !isShootingVisual;
+        bool isFloating = speed < BobFloatSpeedMax && !presentationHolding && !isShootingVisual;
         // Despite the legacy front/back asset names, the presentation is a horizontal split:
         // moving LEFT shows the so-called BACK body; moving RIGHT shows FRONT. Exactly one body is
         // visible at a time. vel.x collapses to ~0 the instant the player stops,
@@ -201,15 +202,16 @@ public class PlayerAnimator : MonoBehaviour
             else if (vel.x > FlipEpsilon) frontRenderer.flipX = false;
         }
 
-        bool isSprinting = !isHolding &&
+        bool isSprinting = !presentationHolding && !isStunned &&
             ((movement.SprintCharge > SprintChargeThreshold && speed > MoveEpsilon) || speed > SprintSpeed);
         bool isStealingVisual = Time.time < stealAnimUntil;
-        bool isDefending = !isHolding && !isStealingVisual && EnemyCarrierNearby();
+        bool isDefending = !presentationHolding && !isStunned && !isStealingVisual && EnemyCarrierNearby();
         bool isExcluded = ExclusionManager.Instance != null && ExclusionManager.Instance.IsExcluded(transform);
 
         SelectFlipbook(isFloating, isHolding, isMovingWithBall, isShootingVisual,
-                       isDefending, isStealingVisual, isExcluded, speed);
-        UpdateBodyDepth(isHolding, showBack, isFloating);
+                       isDefending, isStealingVisual, isExcluded, isStunned, speed);
+        TrySpawnSwimmingRipple();
+        UpdateBodyDepth(presentationHolding, showBack, isFloating);
 
         // Do not let a legacy controller continue writing m_Sprite behind a current flipbook.
         // Besides avoiding a one-frame race, this makes the retired swim-back/sprint clips truly
@@ -249,7 +251,6 @@ public class PlayerAnimator : MonoBehaviour
         if (!flipbookPlayback.Active)
         {
             ApplyFlipbookRendererScale(false);
-            RestoreBodyRotations();
             if (backRenderer != null) backRenderer.flipX = backRendererBaseFlipX;
             return;
         }
@@ -265,51 +266,26 @@ public class PlayerAnimator : MonoBehaviour
         bool wantsLeft = visibleRenderer == backRenderer;
         visibleRenderer.flipX = flipbookArtFacesLeft ? !wantsLeft : wantsLeft;
         flipbookPlayback.Apply(visibleRenderer, FramesPerSecondForCurrentState());
-        UpdateSwimmingDirectionRotation(visibleRenderer);
-    }
-
-    void UpdateSwimmingDirectionRotation(SpriteRenderer visibleRenderer)
-    {
-        if (!rotateSwimmingToMovement || flipbookVisualState != PlayerFlipbookVisualState.Swimming ||
-            rb == null || rb.linearVelocity.sqrMagnitude <= MoveEpsilon * MoveEpsilon)
-        {
-            RestoreBodyRotations();
-            return;
-        }
-
-        Transform visibleBody = visibleRenderer.transform;
-        bool showingBack = visibleRenderer == backRenderer;
-        Transform hiddenBody = showingBack ? frontBody : backBody;
-        Quaternion visibleBase = showingBack ? backBodyBaseRotation : frontBodyBaseRotation;
-        Quaternion hiddenBase = showingBack ? frontBodyBaseRotation : backBodyBaseRotation;
-        if (hiddenBody != null) hiddenBody.localRotation = hiddenBase;
-
-        Vector3 localTravel3 = transform.InverseTransformDirection(
-            new Vector3(rb.linearVelocity.x, rb.linearVelocity.y, 0f));
-        float travelAngle = Mathf.Atan2(localTravel3.y, localTravel3.x) * Mathf.Rad2Deg;
-        float displayedHorizontalAngle = showingBack ? 180f : 0f;
-        float turnFromDisplayedDirection = Mathf.DeltaAngle(displayedHorizontalAngle, travelAngle);
-        Quaternion target = visibleBase * Quaternion.Euler(0f, 0f, turnFromDisplayedDirection);
-        visibleBody.localRotation = Quaternion.RotateTowards(
-            visibleBody.localRotation, target, swimmingDirectionTurnSpeed * Time.deltaTime);
-    }
-
-    void RestoreBodyRotations()
-    {
-        if (frontBody != null) frontBody.localRotation = frontBodyBaseRotation;
-        if (backBody != null) backBody.localRotation = backBodyBaseRotation;
     }
 
     void SelectFlipbook(bool isFloating, bool isHolding, bool isMovingWithBall,
                         bool isShootingVisual,
-                        bool isDefending, bool isStealingVisual, bool isExcluded, float speed)
+                        bool isDefending, bool isStealingVisual, bool isExcluded, bool isStunned,
+                        float speed)
     {
         Sprite[] frames = null;
         bool loop = true;
         bool artFacesLeft = false;
         PlayerFlipbookVisualState proposedState = PlayerFlipbookVisualState.Legacy;
 
-        if (flipbookSet != null && isShootingVisual)
+        // A successful steal's action lock is deliberately a calm floating/idle presentation:
+        // stars are the feedback, while the body must never fall through to defend/hold/legacy art.
+        if (flipbookSet != null && isStunned)
+        {
+            frames = flipbookSet.IdleFrames;
+            proposedState = PlayerFlipbookVisualState.Idle;
+        }
+        else if (flipbookSet != null && isShootingVisual)
         {
             frames = flipbookSet.ThrowingFrames;
             loop = false;
@@ -359,7 +335,7 @@ public class PlayerAnimator : MonoBehaviour
             (flipbookVisualState == PlayerFlipbookVisualState.Idle && proposedState == PlayerFlipbookVisualState.Swimming) ||
             (flipbookVisualState == PlayerFlipbookVisualState.Swimming && proposedState == PlayerFlipbookVisualState.Idle);
 
-        if (idleSwimPair && idleSwimmingTransitionDelay > 0f)
+        if (!isStunned && idleSwimPair && idleSwimmingTransitionDelay > 0f)
         {
             if (!hasPendingFlipbookTransition || pendingFlipbookVisualState != proposedState)
             {
@@ -376,6 +352,17 @@ public class PlayerAnimator : MonoBehaviour
         flipbookVisualState = proposedState;
         flipbookArtFacesLeft = artFacesLeft;
         flipbookPlayback.Select(frames, loop);
+    }
+
+    void TrySpawnSwimmingRipple()
+    {
+        if (flipbookVisualState != PlayerFlipbookVisualState.Swimming ||
+            !flipbookPlayback.Active || Time.time < nextSwimmingRippleTime) return;
+
+        BallFlight flight = BallFlight.Instance;
+        if (flight == null) return;
+        flight.SpawnSwimmingRipple(transform.position);
+        nextSwimmingRippleTime = Time.time + SwimmingRippleInterval;
     }
 
     void ResolveBodyReferences()
@@ -483,6 +470,13 @@ public class PlayerAnimator : MonoBehaviour
     // could be mistaken for one. The explicit signal is presentation-only and changes no ball aim.
     public void TriggerShoot()
     {
+        TriggerThrow();
+    }
+
+    // Shots and passes intentionally share the one throwing flipbook. Kept public so the
+    // release owners can signal presentation without creating separate pass/shoot poses.
+    public void TriggerThrow()
+    {
         // Only queue the legacy trigger if the replacement throw sheet is unavailable. Queuing it
         // while the controllers are disabled would make the old shot fire later when a fallback
         // state wakes them again.
@@ -532,7 +526,6 @@ public class PlayerAnimator : MonoBehaviour
         swimmingFramesPerSecond = Mathf.Clamp(swimmingFramesPerSecond, 1f, 30f);
         holdingFramesPerSecond = Mathf.Clamp(holdingFramesPerSecond, 1f, 30f);
         throwingFramesPerSecond = Mathf.Clamp(throwingFramesPerSecond, 1f, 30f);
-        swimmingDirectionTurnSpeed = Mathf.Clamp(swimmingDirectionTurnSpeed, 90f, 1440f);
         idleSwimmingTransitionDelay = Mathf.Clamp(idleSwimmingTransitionDelay, 0f, 0.5f);
         flipbookRendererLocalScale.x = Mathf.Max(0.001f, flipbookRendererLocalScale.x);
         flipbookRendererLocalScale.y = Mathf.Max(0.001f, flipbookRendererLocalScale.y);

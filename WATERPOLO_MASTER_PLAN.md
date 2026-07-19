@@ -3534,3 +3534,233 @@ legacy defending/stealing/exclusion placeholders unchanged until replacement art
    the ball upright. Shoot/pass and verify their existing trajectories are unchanged.
 5. Trigger a defend/steal/exclusion fallback and confirm its existing placeholder still renders;
    no defending art was replaced in this pass.
+
+---
+
+## SESSION LOG — 2026-07-19e (directional rotation reverted; bot state-size controls)
+
+- Reverted the full-direction swimming-art rotation added in 2026-07-19d for both human players
+  and bots. Moving vertically or diagonally once again keeps the authored swimmer horizontal; the
+  established left/right renderer selection and horizontal sprite flipping remain unchanged.
+- Preserved the rest of 2026-07-19d: bots still use the current swimming sheet while
+  driving/sprinting, and moving carriers retain the subtle held-ball distance pulse and rock.
+- Added human-equivalent bot flipbook sizing controls to `BotAnimator`: overall
+  `Flipbook Renderer Local Scale` plus independent `Idle`, `Swimming`, `Holding`, and `Throwing Size
+  Multiplier` X/Y values. Defaults are all `(1,1)`, preserving each bot root's existing scene scale.
+  These values resize only the runtime flipbook visual child, never the bot root, collider, or
+  Rigidbody2D. Legacy defend/steal/exclusion placeholder scale remains unchanged.
+
+**Files changed:** `Assets/PlayerAnimator.cs`, `Assets/BotAnimator.cs`, and this master plan.
+
+**Verification:** `dotnet build Assembly-CSharp.csproj` completed with **0 errors** and the 22
+existing obsolete-Unity-API/unused-field warnings. In Play mode, verify vertical movement remains
+horizontal, sprinting bots still use the current swimming sheet, and changing one bot's four state
+size multipliers affects only that state and only that bot's visual.
+
+---
+
+## SESSION LOG — 2026-07-19f (stun idle, unified throwing, swimming ripples, empirical motion/pass audit)
+
+This session began by reading the full current master plan, then the complete current
+`PlayerAnimator.cs`, `PlayerVisualRuntime.cs`, `BotAnimator.cs`, `WaterPoloAI.cs`, and
+`PlayerMovement.cs`, before tracing the requested runtime owners. The existing flipbook
+infrastructure, palette-swap shader, bone-rig removal, and bot per-animation size multipliers were
+left intact.
+
+**TASK 1 — successful-steal dizzy/stun now uses the idle/floating flipbook:**
+- The stun owner is `FoulStun` in `ExclusionManager.cs`: it supplies stars plus an action/movement
+  lock, but it did not explicitly tell either field-player animator which body state to use. A stunned
+  player could therefore fall through to holding/defending/legacy selection during the short lock.
+- `PlayerAnimator` and `BotAnimator` now read `FoulStun.IsStunned(transform)` before normal visual
+  selection. While true, both force the current six-frame `IdleFrames` loop, suppress defend/sprint/
+  hold presentation, skip the player idle↔swim debounce, and keep the existing stars. Gameplay
+  possession, the stun duration, and all foul/steal odds are unchanged.
+
+**TASK 2 — passes and shots share exactly one throwing animation:**
+- Human shooting already called `PlayerAnimator.TriggerShoot`; human charged passing had no equivalent
+  throw signal. Added generic `TriggerThrow()` (with `TriggerShoot()` retained as its compatibility
+  wrapper) and call it from `PlayerMovement.ChargedPass`.
+- Bots already used one release edge (`wasHolding && !isHolding`) for BOTH bot shots and bot passes.
+  That edge now calls the same named `BotAnimator.TriggerThrow()` helper, which selects the existing
+  six-frame `ThrowingFrames` sequence. There is no distinct pass pose/flipbook.
+
+**TASK 3 — swimming-only water ripple:**
+- Reused `BallFlight`'s existing pale-cyan `RippleWave` coroutine and renderer pattern; no new VFX
+  system, asset, material, or scene reference was created. `SpawnSwimmingRipple` emits one smaller
+  wave.
+- Both field-player animators request it only while their active flipbook state is `Swimming`, with a
+  per-swimmer 0.55s throttle. Idle, holding, throwing, defend, steal, exclusion, and stun states do
+  not call it.
+
+**TASK 4 — pass-target investigation (NO blind weight change):**
+- `BestPassTarget` already finds genuinely open field teammates: it applies the live `openRadius`
+  1.6 gate, distance-scaled lane risk (`passLaneRadius 0.7 + distance*0.05`), forward gain,
+  openness, receiver shot quality, Centre bonuses, and the pressured clear-lane least-bad outlet.
+  No evidence supported changing those weights.
+- The measurable remaining gap is **arrival prediction**, not target discovery: target openness and
+  lane safety are evaluated at `mate.position` now, and `WaterPoloBrain.Pass` launches at that same
+  current position. There is no receiver-velocity or future-position term anywhere in either path.
+  In the live scene a support swimmer moves at 1.5 u/s (2.55 u/s when the >2u sprint multiplier
+  applies); a 5u bot pass travels for about 0.455s at 11u/s, so that receiver can move about 0.68u
+  or 1.16u before arrival. Even the 0.32s minimum arc time permits 0.48u / 0.82u of drift. A target
+  can therefore be truly open at release but be behind the landing point or into a closing lane at
+  arrival. Weights were deliberately not changed; lead-pass/arrival-lane prediction is the next
+  correctly scoped improvement if this remains visible in play.
+
+**TASK 5 — moving swimmers showing idle: root cause confirmed with real values:**
+- This is NOT an over-permissive floating threshold. Both animators switch at 0.1u/s (float below
+  0.15u/s). In ordinary AI movement the actual live scene values are 1.5u/s support cruising,
+  2.55u/s support sprinting, and 1.7u/s ball pursuit (`chaseSpeed 1 * SprintMult 1.7`), all far
+  above those thresholds; their Rigidbody2D damping is 0.
+- The failing shared path is movement written directly by `SprintDuel.MoveTowardsTarget`: it advances
+  `Rigidbody2D.position` at the authored 3u/s formation pace, 4u/s bot-sprinter pace, or 3-6u/s
+  human-sprinter pace while `PlayFrozen` makes every normal body `FixedUpdate` keep
+  `linearVelocity = (0,0)`. Both animators used that zero physical velocity and selected idle while
+  the transform visibly moved.
+- `SprintDuel` now records this direct-motion velocity in a transient presentation-only map. Both
+  animators prefer that value only while the duel is racing; normal physics/AI values remain the
+  source everywhere else. This fixes genuine visible movement selecting floating without changing
+  the gameplay speed, AI, Rigidbody, or animation thresholds.
+
+**TASK 6 — immediate swimming at sprint-duel GO: root cause and fix:**
+- Plain root cause: at GO the duel starts moving sprinters and formation joggers through
+  `rb.position`, but their `linearVelocity` stays exactly zero for the whole frozen race. The old
+  animation state was therefore stuck on idle until the duel ended and normal physics-owned AI
+  movement resumed.
+- The same presentation velocity map is populated on the first racing `FixedUpdate` and cleared on
+  `Finish`. As soon as the GO race produces visible movement, both sprinters and every formation
+  jogger select `SwimmingFrames`; no delayed wait for the duel to unfreeze is required.
+
+**Files changed:**
+- `Assets/PlayerAnimator.cs`
+- `Assets/BotAnimator.cs`
+- `Assets/PlayerMovement.cs`
+- `Assets/BallFlight.cs`
+- `Assets/SprintDuel.cs`
+- `WATERPOLO_MASTER_PLAN.md` (this log)
+
+**Build:** `dotnet build Assembly-CSharp.csproj` -> **0 errors, 22 warnings**. The warnings are the
+existing obsolete-API/unused-field baseline; no new compile error was introduced.
+
+**Exact Play-mode tests:**
+1. **Stun idle:** win a legal close-range steal against a human player, AI teammate, bot, and keeper
+   carrier. For the full ~1.4s stars/action lock, the stripped swimmer must loop only the floating/
+   idle flipbook—never holding, defend, steal, legacy art, or a blank body—then resume normally.
+2. **Unified throw:** make a stationary pass, moving pass, stationary shot, and moving shot with a
+   human player. Each release must start `throwing_0`, play the same six frames once, then return to
+   idle/swimming. Watch several bot passes and bot shots: both must use that same throwing sequence,
+   never a separate pose.
+3. **Swimming ripple:** swim continuously for several seconds as a human and watch a bot swim. Expect
+   one small pale-cyan ripple roughly every 0.55s only under active swimming. Stop, hold the ball
+   motionless, throw/pass, defend, steal, get excluded, and get stunned: no swimming ripple may spawn.
+4. **Pass-target audit:** observe a receiver running laterally/forward during a 4-6u bot pass. Record
+   whether the ball lands behind its current movement line or into a defender who closes after
+   release; this specifically validates the measured arrival-prediction gap before any lead-pass work.
+   Also confirm currently wide-open, clear-lane mates are still selected and pressured bots retain the
+   existing least-bad outlet behavior.
+5. **Active movement animation:** outside the duel, watch a presser chase a loose ball and an
+   off-ball swimmer cover a distant formation spot. At the measured 1.7/1.5-2.55u/s speeds the
+   swimming sheet must be active, never floating. Then repeat while the sprint duel moves them by
+   direct position; the visible swim must remain active there too.
+6. **Duel GO transition:** start Q1 and each later quarter. At the exact GO transition, the human
+   sprinter, bot sprinter, and all non-sprinters jogging into formation must switch to swimming on
+   their first visible motion frame, while countdown statues remain idle. When a sprinter wins and
+   normal play resumes, there must be no stuck swim/idle state or movement/physics change.
+
+---
+
+## SESSION LOG — 2026-07-19g (core gameplay tuning pass)
+
+This pass began with the complete master plan and the complete current `TeammateAI.cs`,
+`WaterPoloAI.cs`, `TeamSide.cs`, and `PlayerMovement.cs`. It deliberately leaves animation,
+flipbook, palette, shader, and visual presentation code untouched.
+
+**Measurement record before changes:**
+- The live `SampleScene_PoolB` components, not their C# defaults, measured as: all AI swimmers
+  `chaseSpeed=1`, `supportSpeed=1.5`, bot `carrySpeed=1`, player-team AI `carrySpeed=0.5`,
+  `shootRange=20`, `shootPower=12`, and `stealChance=0.4`; active human field players measured
+  `moveSpeed=1`, `holdMoveSpeed=0.5`, `sprintMultiplier=2`, `maxShootPower=30`,
+  `minShootSpeed=8`, `stealDistance=1`, and `stealChance=0.4`.
+- Those values produce real body commands of 1.7u/s for an AI ball chase (`1 * 1.7`), 1.5u/s for
+  nearby support, and 2.55u/s for a distant support target (`1.5 * 1.7`). That made support faster
+  than pursuit, while the human can sprint at 2u/s without the ball and 1u/s with it.
+- A direct automated Play-mode measurement could not be completed against the user-open Unity
+  project because it owns `Temp/UnityLockfile`. An isolated copy was used instead; its headless
+  PlayMode test runner exited with Unity return code 1 before scene/test execution and emitted no
+  telemetry. No invented Play-mode result is recorded here; the exact live serialized values and
+  the runtime velocity/reaction paths above are the measurement basis. Manual verification below
+  remains required.
+
+**1. Steal fairness — verified, intentionally unchanged:**
+- Player and bot ordinary front-on steals both use `0.40 * staminaStealMultiplier` inside the same
+  1u centre-to-centre reach and the same 0.6s cooldown. This confirms the old stray Player3 value
+  is gone.
+- A rear/blindside attempt is an automatic exclusion for both sides, not a random chance. The
+  player touch Block remains the deliberate safer option at 0.20 success and only 50% foul on a
+  miss. A bot attacking a Shift-sprinting loose hold gets its designed 0.15 bonus (0.55 normal,
+  0.35 inside 2m); this is the explicit risk attached to that player-only sprint state, not a
+  parity regression.
+
+**2. Shot power/range — range made honest; power retained:**
+- Human tap speed is 10.8u/s (`max(currentPower,8) * 1.35`); a full high shot is 46.6u/s
+  (`30 * 1.35 * 1.15`). A bot shot remains 12u/s. At the live keeper settings, an ordinary hard
+  shot has 50% save chance, a human high hard shot 25%, and a full-speed skip shot 15%. The
+  human's stronger full charge is therefore a deliberate timing/height skill reward rather than a
+  hidden bot disadvantage; `maxShootPower 30`, bot `shootPower 12`, and keeper values stay put.
+- The actual bot non-forced range had silently been 3.5u despite every scene component displaying
+  `shootRange=20`; the hard cap made that inspector value inert. Changed all 12 scene
+  `shootRange` values **20 -> 4** and `CloseShootDistance` / `MaxShootDistance` **3.5 -> 4**.
+  Bots now take a good, clear shot one half-unit earlier, but never shoot from the old placeholder
+  20u range. Human aim is manual and has no random accuracy term, so no artificial accuracy spread
+  was introduced.
+
+**3. AI swim speeds — tuned hierarchy (all live field-AI components):**
+- `chaseSpeed` **1.0 -> 1.2**, so a loose-ball/ball-carrier pursuit is **1.7 -> 2.04u/s**.
+- `supportSpeed` **1.5 -> 1.2**, so close formation/mark movement is **1.5 -> 1.2u/s** and the
+  existing distant-target sprint path is **2.55 -> 2.04u/s**. Recovery no longer outruns a true
+  chase, and both match a sprinting human's 2u/s pace instead of creating a rubber-band burst.
+- Bot `carrySpeed` **1.0 -> 0.9u/s**. This keeps a ball carrier visibly slower than a 2.04u/s
+  chaser, while allowing a sprinting human carrier (1u/s) a small, skillful escape margin.
+  Player-team AI carry remains **0.5** because player-team carriers are immediately handed to the
+  human and never run the autonomous carry routine.
+- `TeammateAI` component defaults were also aligned from **3/1.8/2.5 -> 1.2/0.9/1.2**
+  (chase/carry/support), so newly created swimmers cannot silently reintroduce placeholder values.
+
+**4. Pass targeting scope decision:**
+- Arrival prediction remains a real, separate behavior task. `BestPassTarget` and `Pass` still
+  score/aim at a receiver's current position; there is no velocity lead or arrival-time lane check.
+  It should not be solved by a tuning weight, and was intentionally kept out of this values-only
+  pass. The next scoped change should predict receiver position from pass flight time and validate
+  the lane at that predicted point.
+
+**5. Holistic finding:**
+- The principal feel correction is the removal of the 2.55u/s off-ball rubber-band versus the
+  1.7u/s chase. Remaining visible risk to watch is a running receiver being passed behind because
+  of the separate no-lead gap; do not compensate for it by changing openness/lane weights.
+
+**Files changed:**
+- `Assets/TeammateAI.cs`
+- `Assets/WaterPoloAI.cs`
+- `Assets/Scenes/SampleScene_PoolB.unity`
+- `WATERPOLO_MASTER_PLAN.md` (this log)
+
+**Exact Play-mode tests:**
+1. **Steals:** attempt at least 20 legal front-on player steals and 20 bot steals at 1u or closer,
+   with full stamina. Both should convert near 40%; test rear attempts separately and confirm both
+   become exclusions. Hold sprint with the ball and confirm bot pressure is visibly riskier; test
+   touch Block separately for its lower success/lower-foul feel.
+2. **Shots:** from the same 4u lane, fire human tap, mid, high, and skip shots and record keeper
+   saves/goals; observe bot shots from the same range. Full high/skip attempts should be powerful
+   high-reward choices, while taps and bot 12u/s shots remain saveable and readable.
+3. **Bot range:** set up a clear bot carrier at 3.8-4.0u from goal and confirm it can settle and
+   shoot. Repeat at 4.1u with no open pass: it should drive/pass rather than non-forced shoot. A
+   blocked or bad-angle 3.8u look must still pass/drive because shot quality is unchanged.
+4. **Speed hierarchy:** time a bot over a long clear chase and a long recovery route: both should
+   peak near 2.04u/s. Watch a near formation adjustment settle at about 1.2u/s and a bot carrier at
+   about 0.9u/s. A human without the ball should sprint at 2u/s; with the ball, at 1u/s.
+5. **Whole possession:** play at least two full possessions each way. Check that teams spread and
+   recover without rubber-banding, loose balls are contested, bot carriers can be caught, and a
+   laterally running pass receiver is explicitly watched for the documented no-lead behavior.
+
+**Build:** `dotnet build Assembly-CSharp.csproj` completed with **0 errors** and the existing
+22 obsolete-API/unused-field warnings.
