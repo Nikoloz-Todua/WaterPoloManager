@@ -28,6 +28,11 @@ public class MatchContext : MonoBehaviour
     // used by the out-of-bounds rule to award possession to the OTHER team.
     public TeamSide LastTouchTeam { get; private set; }
 
+    // Non-null only when the MOST RECENT loose-ball physical touch was a goalkeeper. The
+    // goal-line rule uses this distinction for a true keeper-deflection corner; ordinary
+    // possession/releases and later field-player touches clear it.
+    public TeamSide LastKeeperTouchTeam { get; private set; }
+
     // the last SWIMMER to release the ball (shot / pass / drop) — lets ScoreManager
     // credit a goal to a specific player (Centre-goal tracking for the bot's adaptive D).
     public Transform LastReleaser { get; private set; }
@@ -106,6 +111,7 @@ public class MatchContext : MonoBehaviour
         // team that just let go (read the OLD possessor before overwriting it).
         if (team != null) LastTouchTeam = team;
         else if (prev != null) LastTouchTeam = prev;
+        if (team != null || prev != null) LastKeeperTouchTeam = null;
 
         PossessingTeam = team;
         if (team != null) BallTouchedSinceReset = true;      // first grab → camera leaves the overview shot
@@ -308,7 +314,18 @@ public class MatchContext : MonoBehaviour
     // opponent is credited to them). Does NOT change possession.
     public void NoteTouch(TeamSide team)
     {
-        if (team != null) LastTouchTeam = team;
+        if (team == null) return;
+        LastTouchTeam = team;
+        LastKeeperTouchTeam = null;
+    }
+
+    // A physical goalkeeper contact while the ball remains loose. This is deliberately
+    // separate from a keeper catch/distribution so only a real deflection can create a corner.
+    public void NoteKeeperTouch(TeamSide team)
+    {
+        if (team == null) return;
+        LastTouchTeam = team;
+        LastKeeperTouchTeam = team;
     }
 
     public bool TeamHasBall(TeamSide team) => PossessingTeam == team;

@@ -50,6 +50,8 @@ public class CameraFollow : MonoBehaviour
     const float ShotShakeMag = 0.05f, ShotShakeDur = 0.15f;
     const float ShotSpeedThreshold = 10f;   // ball speed crossing above this (rising edge) = a powerful shot
     const float ShotShakeCooldown  = 0.2f;  // don't re-fire the shot shake within this window
+    const float GoalFocusSize      = 4.35f; // ball, net and the final shooting lane remain visible
+    const float GoalFocusSpeed     = 8f;
 
     private Camera cam;
     private Vector2 followVelocity;     // SmoothDamp state
@@ -62,6 +64,8 @@ public class CameraFollow : MonoBehaviour
     private int lastScoreTotal;
     private float prevBallSpeed;
     private float nextShotShakeTime;
+    private Vector2 goalFocusPoint;
+    private float goalFocusUntil = -10f;
 
     // active shake state
     private float shakeTimeLeft, shakeTotalDur, shakeMag;
@@ -100,6 +104,23 @@ public class CameraFollow : MonoBehaviour
             lastActivePlayer = player;
             if (ScoreManager.Instance != null)
                 lastScoreTotal = ScoreManager.Instance.HomeScore + ScoreManager.Instance.AwayScore;
+            return;
+        }
+
+        // A validated goal gets a short live broadcast hold aimed just behind the impact point.
+        // This runs before the ordinary overview/follow branches so the camera does not drift
+        // back toward the controlled swimmer while the ball is visibly entering the net.
+        if (Time.unscaledTime < goalFocusUntil)
+        {
+            float focusDt = Time.unscaledDeltaTime;
+            Vector2 focused = Vector2.SmoothDamp(transform.position, goalFocusPoint,
+                ref followVelocity, SmoothTime(GoalFocusSpeed), Mathf.Infinity, focusDt);
+            focused.x = Mathf.Clamp(focused.x, boundsMinX, boundsMaxX);
+            focused.y = Mathf.Clamp(focused.y, boundsMinY, boundsMaxY);
+            currentSize = Mathf.Lerp(currentSize, GoalFocusSize, zoomSpeed * focusDt);
+            initialized = true;
+            UpdateShakeTriggers(ctx);
+            ApplyTransform(focused, TickShake(focusDt));
             return;
         }
 
@@ -177,6 +198,18 @@ public class CameraFollow : MonoBehaviour
         Vector2 shakeOffset = TickShake(dt);
 
         ApplyTransform(basePos, shakeOffset);
+    }
+
+    // Called only after ScoreManager validates a true line crossing. The look-behind offset keeps
+    // both the mouth and the final shooting lane in frame instead of centring behind the net.
+    public void FocusOnScoringBall(Vector2 impactWorld, float goalSign, float duration)
+    {
+        float sign = goalSign >= 0f ? 1f : -1f;
+        goalFocusPoint = new Vector2(
+            Mathf.Clamp(impactWorld.x - sign * 1.15f, boundsMinX, boundsMaxX),
+            Mathf.Clamp(impactWorld.y * 0.62f, boundsMinY, boundsMaxY));
+        goalFocusUntil = Time.unscaledTime + Mathf.Max(0f, duration);
+        followVelocity = Vector2.zero;
     }
 
     // The "speed" tunables are expressed as SmoothDamp's smoothTime inverse, so a higher number

@@ -31,7 +31,7 @@ public class CameramanFX : MonoBehaviour
         try { cameramen = GameObject.FindGameObjectsWithTag("Cameraman"); }
         catch (UnityException) { return; } // tag not defined in this project — nothing to do
         if (cameramen.Length == 0) return;
-        if (FindFirstObjectByType<CameramanFX>() != null) return; // already installed this scene
+        if (FindAnyObjectByType<CameramanFX>() != null) return; // already installed this scene
 
         GameObject go = new GameObject("CameramanFX");
         CameramanFX fx = go.AddComponent<CameramanFX>();

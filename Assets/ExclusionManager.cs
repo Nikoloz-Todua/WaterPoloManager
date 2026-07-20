@@ -27,7 +27,7 @@ public class ExclusionManager : MonoBehaviour
     [SerializeField] private int minPlayersToContinue = 4;    // below this (after removals) → forfeit
     [SerializeField] private float foulStealLockout = 1.5f;   // steal lockout applied to a fouling agent
     [SerializeField] private float penaltyZoneX = 4.28f;      // victim |x| ≥ this (goal-side) → penalty, not exclusion
-    [SerializeField] private bool centerFoulBoost = true;     // fouls on an inside-water Centre escalate faster
+    [SerializeField] private bool centerFoulBoost = false;    // optional virtual-foul double-count; off by default to prevent first-contact penalties
 
     [Header("Ordinary-foul presentation (2026-07-09f)")]
     [Tooltip("REAL seconds after an ordinary foul during which nobody may steal from the fouled carrier. Other players keep moving and marking normally. Lapses early if they release the ball.")]

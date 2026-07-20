@@ -14,8 +14,14 @@ public class ScoreManager : MonoBehaviour
     [SerializeField] private float goalFreezeSeconds = 1f; // Phase 1: celebration settle right after a goal
     [Tooltip("Phase 3: silent restart pause AFTER the conceding team is set up with the ball at centre — players still, no UI, no countdown. A goal is NOT a quarter start, so there is NO sprint duel here (Task 2).")]
     [SerializeField] private float postGoalPauseSeconds = 3f;
-    [Tooltip("HANG TIME (Phase 0): hold this long the instant the ball hits the net — everyone frozen where they stand, ball IN the net, camera still on the action — BEFORE the normal reset sequence (ball to centre, overview camera, formations) begins.")]
+    [Tooltip("Fallback Phase 0 hold used only if a goal replay could not be captured.")]
     [SerializeField] private float goalHangSeconds = 3.5f;
+
+    [Header("Goal replay")]
+    [Tooltip("Live in-net beat before the broadcast replay cuts in, leaving time for the net reaction and goal shake to read.")]
+    [SerializeField] private float replayLeadInSeconds = 0.55f;
+    [Tooltip("Short return to the live in-net shot after replay, before the normal centre restart begins.")]
+    [SerializeField] private float replayReturnHoldSeconds = 0.2f;
 
     // Hang-time buoyancy (Task 3): while resting in the net the ball keeps a gentle float instead
     // of freezing solid — a small vertical bob plus a tinier horizontal sway around where it settled.
@@ -36,6 +42,7 @@ public class ScoreManager : MonoBehaviour
     private Vector3 pulseScale0, pulsePos0;
     private Transform netRippleTransform;
     private SpriteRenderer netRippleRenderer;
+    private CameraFollow goalCamera;
 
     // 2026-07-09d: re-entrancy latch. A goal starts a ~7.5s restart during which the ball is
     // parked loose in the net (bobbing), reset to centre, handed out — plenty of collider
@@ -52,7 +59,10 @@ public class ScoreManager : MonoBehaviour
     void Awake()
     {
         Instance = this;
+        GoalReplaySystem.EnsureExists(gameObject);
         PrepareNetRipple();
+        Camera mainCamera = Camera.main;
+        if (mainCamera != null) goalCamera = mainCamera.GetComponent<CameraFollow>();
     }
 
     void Start()
@@ -114,6 +124,23 @@ public class ScoreManager : MonoBehaviour
         if (scorer != null && conceding != null && shooter != null &&
             scorer.Contains(shooter) && scorer.RoleOf(shooter) == TeamSide.Role.Center)
             conceding.goalsConcededFromCenter++;
+
+        // Snapshot the exact validated scoring frame BEFORE RestartAfterGoal parks the ball in
+        // the net and freezes physics. The recorder already owns the preceding rolling history.
+        GoalReplaySystem replay = GoalReplaySystem.Instance;
+        if (replay != null)
+        {
+            // LastReleaser can be stale after an opponent's loose deflection. Only print a name
+            // when that transform genuinely belongs to the team credited with this goal.
+            Transform creditedShooter = scorer != null && shooter != null && scorer.Contains(shooter)
+                ? shooter : null;
+            replay.CaptureGoalReplay(scorer == playerTeam, creditedShooter, homeScore, awayScore,
+                                     netSign);
+        }
+
+        if (goalCamera != null)
+            goalCamera.FocusOnScoringBall(impactWorld, netSign,
+                                          Mathf.Max(0.1f, replayLeadInSeconds + 0.1f));
 
         Vector2 hangAnchor = new Vector2(netSign * (GoalLineX + 0.22f),
                                          Mathf.Clamp(yAtLine, -GoalMouthHalfHeight + 0.08f,
@@ -189,8 +216,8 @@ public class ScoreManager : MonoBehaviour
     }
 
     // Goal restart flow, no sprint duel:
-    //   Phase 0  HANG TIME (goalHangSeconds): frozen in place, ball IN the net, camera on the
-    //            action (the overview only starts with Phase 1) — the celebration hold
+    //   Phase 0  live goal beat → skippable cinematic replay → brief return to the live net.
+    //            If recording was unavailable, the original goalHangSeconds hold is retained.
     //   Phase 1  celebration settle at the wide overview (goalFreezeSeconds), ball at centre
     //   Phase 2  natural restart spread inside each half; the CONCEDING team takes the ball at centre
     //   Phase 3  silent restart pause (postGoalPauseSeconds): no movement / pass / shoot / steal
@@ -199,13 +226,21 @@ public class ScoreManager : MonoBehaviour
     {
         MatchContext ctx = MatchContext.Instance;
 
-        // Phase 0 — hang time. The ball stays physics-off inside the net, everyone stays put,
-        // the camera keeps its
-        // normal follow + goal shake on the net instead of cutting straight to the overview.
-        // The ball keeps a subtle buoyancy bob for the whole hang
-        // (Task 3) — a light float, not a frozen screenshot. Everything else about the hang time
-        // (duration, player freeze, camera hold, net squash) is unchanged.
-        yield return StartCoroutine(BallNetBob(Mathf.Max(0f, goalHangSeconds)));
+        // Phase 0 — first let the live goal reaction read, then replay the actual rolling match
+        // history while gameplay remains frozen. GoalReplaySystem restores this exact in-net
+        // state before returning, so the established centre restart below is untouched. A clip
+        // can always be skipped; if capture was unavailable, retain the proven old hang instead.
+        GoalReplaySystem replay = GoalReplaySystem.Instance;
+        if (replay != null && replay.HasCapturedGoalReplay)
+        {
+            yield return StartCoroutine(BallNetBob(Mathf.Max(0f, replayLeadInSeconds)));
+            yield return replay.StartCoroutine(replay.PlayCapturedGoalReplay());
+            yield return StartCoroutine(BallNetBob(Mathf.Max(0f, replayReturnHoldSeconds)));
+        }
+        else
+        {
+            yield return StartCoroutine(BallNetBob(Mathf.Max(0f, goalHangSeconds)));
+        }
 
         // ---- the original reset sequence begins only now ----
         ResetBall();                              // ball loose at exact (0,0)

@@ -59,8 +59,13 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private float highShotSpeedBonus = 1.15f; // height > 0.7 → shot flies this much faster
     [SerializeField] private float skipShotHeight = 0.15f;     // Q+Space skip shot is locked to this LOW height
 
+    [Header("Loose-ball deflection shot")]
+    [Tooltip("Shoot pressed this close to a grounded loose ball redirects it immediately without first taking possession.")]
+    [SerializeField] private float deflectionShotDistance = 0.75f;
+    [Tooltip("Speed of a no-hold deflection. Kept below the 10.8u/s settled tap-shot floor.")]
+    [SerializeField] private float deflectionShotSpeed = 6f;
+
     [Header("Passing")]
-    [SerializeField] private float passFactor = 2.5f; // (legacy; pass speed is charge-based now)
     [Tooltip("Even an untimed tap-pass has enough pace to leave the hand; distance is controlled separately by charge.")]
     [SerializeField] private float minPassSpeed = 6f;  // aligned to the live scene
     [SerializeField] private float maxPassSpeed = 13f; // aligned to the live scene
@@ -96,7 +101,6 @@ public class PlayerMovement : MonoBehaviour
 
     [Header("Aim line")]
     [SerializeField] private LineRenderer aimLine;
-    [SerializeField] private float aimLineLength = 2.5f; // (legacy; triangle uses the fields below)
 
     [Header("Aim triangle")]
     [SerializeField] private float aimTriangleLength = 0.4f; // tip distance from the base
@@ -440,14 +444,22 @@ public class PlayerMovement : MonoBehaviour
                 else TryGrabBall();
             }
 
+            bool shootPressed = Input.GetKeyDown(KeyCode.Space) || touchShootDown;
+
+            // A deliberate Shoot press at a loose grounded ball is a weak one-touch redirect,
+            // not an invisible auto-catch followed by a full settled shot. Run this BEFORE the
+            // normal auto-collect so the input has one unambiguous owner for this frame.
+            bool deflectionShot = !isHolding && shootPressed && TryDeflectionShot();
+            if (deflectionShot) stealConsumedSpace = true; // release before another shot can charge
+
             // AUTO-COLLECT: a loose, grabbable ball within reach is picked up automatically — no E
             // press needed. Guarantees you can always reclaim your own bad pass/drop just by swimming
             // back to it (TryGrabBall still enforces the loose + cooldown + grab-ban gates).
-            if (!isHolding) TryGrabBall();
+            if (!isHolding && !deflectionShot) TryGrabBall();
 
             // Space with no ball = attempt steal. If it succeeds, consume this press
             // so releasing Space doesn't instantly fire a shot.
-            if (!isHolding && (Input.GetKeyDown(KeyCode.Space) || touchShootDown))
+            if (!isHolding && !deflectionShot && shootPressed)
             {
                 TrySteal();
                 if (isHolding) stealConsumedSpace = true;
@@ -638,6 +650,36 @@ public class PlayerMovement : MonoBehaviour
         {
             GrabBall();
         }
+    }
+
+    // Weak one-touch redirect of a grounded LOOSE ball. This is intentionally not a possession:
+    // no charge, high arc, skip, pass assist, or settled-shot minimum applies. It does still count
+    // as our team's physical touch for goals/out rules and starts the normal release grab delay.
+    bool TryDeflectionShot()
+    {
+        if (ball == null) return false;
+
+        MatchContext ctx = MatchContext.Instance;
+        if (ctx == null || ctx.PlayFrozen || !ctx.BallIsLoose || !ctx.CanGrab(ctx.PlayerTeam))
+            return false;
+        if (ball.transform.parent != null || !ball.simulated) return false;
+
+        BallFlight flight = BallFlight.Instance;
+        if (flight != null && flight.HighBallActive) return false; // never strike an overhead ball
+        if (Vector2.Distance(transform.position, ball.position) > deflectionShotDistance) return false;
+
+        Vector2 dir = lastDirection.sqrMagnitude > 1e-4f ? lastDirection.normalized : Vector2.up;
+        if (playerAnimator != null) playerAnimator.TriggerShoot();
+
+        ctx.IgnoreReleaseCollision(transform);
+        ball.linearVelocity = dir * Mathf.Max(0f, deflectionShotSpeed);
+        shotHeight = 0.15f; // a water-level redirect, not an airborne/high shot
+        if (flight != null) flight.NoteShot(shotHeight, false);
+
+        ctx.NoteRelease(transform);
+        ctx.NoteTouch(ctx.PlayerTeam);
+        ctx.SetPossession(null); // starts the standard post-release grab delay; preserves NoteTouch
+        return true;
     }
 
     void GrabBall()

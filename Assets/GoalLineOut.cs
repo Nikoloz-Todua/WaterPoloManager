@@ -2,7 +2,7 @@ using UnityEngine;
 
 // Goal-line out rule (plan B16.11), modeled on BallOutOfBounds. Possession goes to the
 // nearest player of the OTHER team (the team that didn't touch the ball last) in two cases:
-//   (a) a LOOSE, grabbable ball crosses a goal line (|x| >= goalLineX) outside the goal
+//   (a) a LOOSE, grounded ball crosses a goal line (|x| >= goalLineX) outside the goal
 //       mouth (|y| > goalMouthHalfHeight) → re-enters just inside the line.
 //   (b) a CARRIER presses the ball against the line (|x| >= carrierOutX) → corner restart:
 //       the ball + the receiving player are placed at that end's corner.
@@ -35,12 +35,25 @@ public class GoalLineOut : MonoBehaviour
             return; // held → only the carrier rule applies
         }
 
-        // (a) LOOSE ball behind the goal line, outside the mouth.
+        // (a) LOOSE grounded ball behind the goal line, outside the mouth.
         Vector2 p = ctx.Ball.position;
-        if (Mathf.Abs(p.x) < goalLineX) return;
-        if (Mathf.Abs(p.y) <= goalMouthHalfHeight) return; // inside the mouth → the Goal trigger's job
-        if (!ctx.BallGrabbable) return;                    // still in the no-grab window → ignore
-        LooseOut(ctx);
+        if (!OwnsLooseOut(ctx, p)) return;
+        if (WasKeeperDeflectionAtThisEnd(ctx, p)) KeeperCornerOut(ctx);
+        else LooseOut(ctx);
+    }
+
+    // Shared boundary ownership test. BallOutOfBounds asks this before starting its broader
+    // full-escape/top-bottom recovery so the two rules cannot claim the same diagonal exit.
+    // A dead-ball ruling should not wait for the post-release GRAB cooldown; only a genuinely
+    // airborne/physics-off ball remains owned by BallFlight or another match-flow system.
+    public bool OwnsLooseOut(MatchContext ctx, Vector2 p)
+    {
+        if (ctx == null || ctx.Ball == null || ctx.PlayFrozen) return false;
+        if (PenaltyManager.Instance != null && PenaltyManager.Instance.Active) return false;
+        if (!ctx.BallIsLoose || ctx.Ball.transform.parent != null || !ctx.Ball.simulated) return false;
+        if (Mathf.Abs(p.x) < goalLineX || Mathf.Abs(p.y) <= goalMouthHalfHeight) return false;
+        BallFlight flight = BallFlight.Instance;
+        return flight == null || !flight.HighBallActive;
     }
 
     // Loose ball over the line → re-enter just inside the line, nearest of the other team.
@@ -63,7 +76,39 @@ public class GoalLineOut : MonoBehaviour
         Transform receiver = award.ClosestMemberTo(ball.position);
         if (receiver != null) ctx.GiveBallTo(receiver, award);
 
-        Finish(ctx, award);
+        Finish(ctx, award, false);
+    }
+
+    // A defending keeper was the most recent physical toucher before the loose ball crossed
+    // this keeper's goal line: restart at the corner with the attacking team.
+    void KeeperCornerOut(MatchContext ctx)
+    {
+        if (ctx.Ball == null) return;
+        Vector2 p = ctx.Ball.position;
+        TeamSide award = OtherTeam(ctx);
+        if (award == null) return;
+
+        float sx = p.x >= 0f ? 1f : -1f;
+        float sy = p.y >= 0f ? 1f : -1f;
+        Vector2 corner = new Vector2(sx * cornerInsetX, sy * cornerY);
+        Transform receiver = award.ClosestMemberTo(p);
+
+        Rigidbody2D ball = ctx.Ball;
+        ball.transform.SetParent(null);
+        ball.simulated = true;
+        ball.linearVelocity = Vector2.zero;
+        ball.position = corner;
+        ctx.SetPossession(null);
+
+        if (receiver != null)
+        {
+            receiver.position = new Vector3(corner.x, corner.y, receiver.position.z);
+            Rigidbody2D rrb = receiver.GetComponent<Rigidbody2D>();
+            if (rrb != null) { rrb.position = corner; rrb.linearVelocity = Vector2.zero; }
+            ctx.GiveBallTo(receiver, award);
+        }
+
+        Finish(ctx, award, true);
     }
 
     // Carrier pressing the line → drop it, restart at that end's corner with the other team.
@@ -98,7 +143,18 @@ public class GoalLineOut : MonoBehaviour
             ctx.GiveBallTo(receiver, award);
         }
 
-        Finish(ctx, award);
+        Finish(ctx, award, true);
+    }
+
+    // The keeper flag is meaningful only at the physical end that keeper currently defends.
+    // This side check prevents a keeper's own long distribution going out at the far end from
+    // ever being misread as a corner (distributions do not set the flag, but keep the rule safe).
+    bool WasKeeperDeflectionAtThisEnd(MatchContext ctx, Vector2 ballPos)
+    {
+        TeamSide keeperTeam = ctx.LastKeeperTouchTeam;
+        if (keeperTeam == null || keeperTeam.defendGoal == null) return false;
+        float outSign = ballPos.x >= 0f ? 1f : -1f;
+        return Mathf.Sign(keeperTeam.defendGoal.position.x) == outSign;
     }
 
     // The team that did NOT touch the ball last (deflection-aware via MatchContext.NoteTouch).
@@ -108,10 +164,11 @@ public class GoalLineOut : MonoBehaviour
         return award != null ? award : ctx.PlayerTeam;
     }
 
-    void Finish(MatchContext ctx, TeamSide award)
+    void Finish(MatchContext ctx, TeamSide award, bool corner)
     {
         if (ShotClock.Instance != null) ShotClock.Instance.ResetClock();
         if (EventFeed.Instance != null)
-            EventFeed.Instance.AddEvent("Goal-line out - " + (award == ctx.PlayerTeam ? "YOU" : "BOT"));
+            EventFeed.Instance.AddEvent((corner ? "Corner" : "Goal-line out") + " - " +
+                                        (award == ctx.PlayerTeam ? "YOU" : "BOT"));
     }
 }

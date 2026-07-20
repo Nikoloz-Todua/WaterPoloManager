@@ -33,9 +33,11 @@ public class BallOutOfBounds : MonoBehaviour
     private bool recovering; // a full-escape sequence is running — all rules stand down
     private BoxCollider2D topWall;
     private BoxCollider2D bottomWall;
+    private GoalLineOut goalLineOut;
 
     void Start()
     {
+        goalLineOut = GetComponent<GoalLineOut>();
         FindPlayableEdgeColliders();
     }
 
@@ -67,6 +69,12 @@ public class BallOutOfBounds : MonoBehaviour
         // FULL ESCAPE first: checked before the wall rule because a violent ball can jump
         // from inside to far outside between physics steps — the wall rule must not grab it.
         Vector2 pos = ctx.BallPosition;
+
+        // GoalLineOut owns every grounded loose exit beyond a goal line and outside the mouth,
+        // including a diagonal full escape. It is serialized after this component in the live
+        // scene, so stand down explicitly instead of racing its FixedUpdate.
+        if (goalLineOut != null && goalLineOut.OwnsLooseOut(ctx, pos)) return;
+
         if (Mathf.Abs(pos.x) > escapeXThreshold || Mathf.Abs(pos.y) > escapeYThreshold)
         {
             StartCoroutine(RecoverEscapedBall(ctx));

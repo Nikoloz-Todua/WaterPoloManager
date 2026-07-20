@@ -835,7 +835,7 @@ public static class WaterPoloBrain
         return active.SprintCharge > 0.5f ? TeammateSprintFollowMult : 1f;
     }
 
-    // Anti-stacking: if a HIGHER-priority teammate (closer to the ball; instance id
+    // Anti-stacking: if a HIGHER-priority teammate (closer to the ball; entity id
     // breaks ties) is within MinTeammateSeparation, steer our movement away from him.
     // Only MoveTo/IdleDrift route through here, so carriers and pressers — who set
     // their velocity directly — are never deflected off the ball.
@@ -858,7 +858,7 @@ public static class WaterPoloBrain
             float mateBallDist = Vector2.Distance(m.position, ctx.BallPosition);
             bool iYield = myBallDist > mateBallDist ||
                           (Mathf.Approximately(myBallDist, mateBallDist) &&
-                           a.Tf.GetInstanceID() > m.GetInstanceID());
+                           EntityOrder(a.Tf) > EntityOrder(m));
             if (!iYield) continue;
 
             // push away harder the deeper the overlap
@@ -870,11 +870,11 @@ public static class WaterPoloBrain
     }
 
     // Arrived at our spot: instead of freezing, gently float around it. Each agent
-    // gets a phase offset seeded from its instance id so they don't bob in sync, and
+    // gets a phase offset seeded from its entity id so they don't bob in sync, and
     // the drift always steers back toward the spot so it can't wander off-assignment.
     static void IdleDrift(IAgentBody a, Vector2 spot, float speed)
     {
-        float seed = (a.Tf.GetInstanceID() & 0xFFFF) * 0.137f;
+        float seed = (EntityOrder(a.Tf) & 0xFFFFL) * 0.137f;
         float t = Time.time * IdleFreq + seed;
         Vector2 bob = spot + new Vector2(Mathf.Cos(t), Mathf.Sin(t * 0.8f + seed)) * IdleRadius;
 
@@ -888,6 +888,11 @@ public static class WaterPoloBrain
 
         a.Body.linearVelocity = vel;
         if (vel.sqrMagnitude > 1e-4f) a.LastDirection = vel.normalized;
+    }
+
+    static long EntityOrder(Transform tf)
+    {
+        return unchecked((long)EntityId.ToULong(tf.GetEntityId()));
     }
 
     // ---- ball handling ----
@@ -1067,8 +1072,14 @@ public static class WaterPoloBrain
             return;
         }
 
-        Vector2 dir = ((Vector2)target.position - a.Body.position).normalized;
-        float dist = Vector2.Distance(a.Body.position, target.position);
+        Vector2 from = ctx.Ball != null ? (Vector2)ctx.Ball.transform.position : a.Body.position;
+        Vector2 landing = PredictPassLanding(from, target, a.Team, ctx.EnemyOf(a.Team),
+                                             out bool wantLob);
+        Vector2 toLanding = landing - from;
+        Vector2 dir = toLanding.sqrMagnitude > 1e-6f
+            ? toLanding.normalized
+            : (a.LastDirection.sqrMagnitude > 1e-6f ? a.LastDirection.normalized : Vector2.right);
+        float dist = toLanding.magnitude;
         a.LastDirection = dir;
 
         ctx.NoteRelease(a.Tf);
@@ -1078,13 +1089,10 @@ public static class WaterPoloBrain
         //   LONG ball, or a lane a defender is squatting in (the drive kick-out / kickoff
         //   routes pick targets without a lane check) = ArcKind.Lob — the big slow ball
         //   OVER the field. Nobody on either team can pick either off until it lands.
-        // Only a point-blank throw (LaunchHighBall refuses < 2u) stays flat.
+        // Only a degenerate near-zero throw (LaunchHighBall refuses < 0.05u) stays flat.
         float speed = Mathf.Clamp(dist * PassFactor, MinPassSpeed, MaxPassSpeed);
-        bool wantLob = dist >= AILobMinDistance ||
-                       !a.Team.LaneClear(a.Body.position, target.position, ctx.EnemyOf(a.Team),
-                                         AILobLaneRadius);
         if (BallFlight.Instance != null &&
-            BallFlight.Instance.LaunchHighBall(target.position,
+            BallFlight.Instance.LaunchHighBall(landing,
                                                wantLob ? speed * AILobSpeedFactor : speed,
                                                wantLob ? 0.9f : 0.5f,
                                                wantLob ? BallFlight.ArcKind.Lob
@@ -1101,6 +1109,61 @@ public static class WaterPoloBrain
         if (BallFlight.Instance != null) BallFlight.Instance.NotePass(); // point-blank flat pass → no swell/trail
         a.IsHolding = false;
         ctx.SetPossession(null); // receiver collects it after the cooldown
+    }
+
+    // Predict where a moving AI receiver will be when the pass lands. Three fixed-point passes
+    // account for the fact that leading farther also changes distance, speed and airtime. The
+    // real BallFlight clamp/timing is reused, and a lob is recalculated at its slower flight speed.
+    // This changes only the evaluated/aimed point; BestPassTarget's tactical weights stay intact.
+    public static Vector2 PredictPassLanding(Vector2 from, Transform target, TeamSide passingTeam,
+                                             TeamSide enemy, out bool wantLob)
+    {
+        wantLob = false;
+        if (target == null) return from;
+
+        Rigidbody2D targetBody = target.GetComponent<Rigidbody2D>();
+        Vector2 targetPosition = target.position;
+        Vector2 targetVelocity = targetBody != null ? targetBody.linearVelocity : Vector2.zero;
+
+        Vector2 landing = PredictPassLandingForMode(from, targetPosition, targetVelocity, false);
+        float predictedDistance = Vector2.Distance(from, landing);
+        wantLob = predictedDistance >= AILobMinDistance ||
+                  (passingTeam != null &&
+                   !passingTeam.LaneClear(from, landing, enemy, AILobLaneRadius));
+
+        return wantLob
+            ? PredictPassLandingForMode(from, targetPosition, targetVelocity, true)
+            : landing;
+    }
+
+    static Vector2 PredictPassLandingForMode(Vector2 from, Vector2 targetPosition,
+                                             Vector2 targetVelocity, bool lob)
+    {
+        Vector2 landing = BallFlight.ClampLandingPoint(from, targetPosition);
+        if (targetVelocity.sqrMagnitude < 1e-6f) return landing;
+
+        for (int i = 0; i < 3; i++)
+        {
+            float dist = Vector2.Distance(from, landing);
+            float baseSpeed = Mathf.Clamp(dist * PassFactor, MinPassSpeed, MaxPassSpeed);
+            float flightTime;
+            if (BallFlight.Instance != null)
+            {
+                float launchSpeed = lob ? baseSpeed * AILobSpeedFactor : baseSpeed;
+                BallFlight.ArcKind kind = lob ? BallFlight.ArcKind.Lob : BallFlight.ArcKind.Pass;
+                flightTime = BallFlight.EstimateFlightTime(from, landing, launchSpeed, kind);
+            }
+            else
+            {
+                // The live scene always has BallFlight; preserve the existing flat fallback if a
+                // stripped-down test scene does not.
+                flightTime = baseSpeed > 0f ? dist / baseSpeed : 0f;
+            }
+
+            if (flightTime <= 0f) break;
+            landing = BallFlight.ClampLandingPoint(from, targetPosition + targetVelocity * flightTime);
+        }
+        return landing;
     }
 
     static void Release(IAgentBody a, MatchContext ctx)

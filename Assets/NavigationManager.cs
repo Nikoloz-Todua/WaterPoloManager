@@ -1865,7 +1865,7 @@ public class NavigationManager : MonoBehaviour
     // to "MY TEAM" (per spec).
     static string PlayerTeamName()
     {
-        TeamSide ts = FindFirstObjectByType<TeamSide>();
+        TeamSide ts = FindAnyObjectByType<TeamSide>();
         if (ts != null && !string.IsNullOrEmpty(ts.teamName) && ts.teamName != "Team") return ts.teamName;
         return "MY TEAM";
     }
@@ -2321,7 +2321,7 @@ public class NavigationManager : MonoBehaviour
 
     static void EnsureEventSystem()
     {
-        if (Object.FindFirstObjectByType<EventSystem>() != null) return;
+        if (Object.FindAnyObjectByType<EventSystem>() != null) return;
         GameObject es = new GameObject("EventSystem");
         es.AddComponent<EventSystem>();
         es.AddComponent<StandaloneInputModule>();

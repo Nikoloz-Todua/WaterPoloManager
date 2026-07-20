@@ -220,7 +220,7 @@ public class QuarterBreakUI : MonoBehaviour
 
     static void EnsureEventSystem()
     {
-        if (UnityEngine.Object.FindFirstObjectByType<EventSystem>() != null) return;
+        if (UnityEngine.Object.FindAnyObjectByType<EventSystem>() != null) return;
         GameObject es = new GameObject("EventSystem");
         es.AddComponent<EventSystem>();
         es.AddComponent<StandaloneInputModule>();

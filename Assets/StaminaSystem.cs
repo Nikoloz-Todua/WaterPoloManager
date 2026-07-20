@@ -92,11 +92,11 @@ public class StaminaSystem : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void AutoInstall()
     {
-        foreach (PlayerMovement p in Object.FindObjectsByType<PlayerMovement>(FindObjectsSortMode.None))
+        foreach (PlayerMovement p in Object.FindObjectsByType<PlayerMovement>())
             EnsureOn(p.gameObject);                       // the 6 player-team swimmers
-        foreach (Goalkeeper gk in Object.FindObjectsByType<Goalkeeper>(FindObjectsSortMode.None))
+        foreach (Goalkeeper gk in Object.FindObjectsByType<Goalkeeper>())
             EnsureOn(gk.gameObject);                       // the 2 keepers (usually already have one)
-        foreach (MonoBehaviour mb in Object.FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None))
+        foreach (MonoBehaviour mb in Object.FindObjectsByType<MonoBehaviour>())
             if (mb is IAgentBody) EnsureOn(mb.gameObject); // bots + player-team AI swimmers
     }
 

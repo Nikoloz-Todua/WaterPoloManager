@@ -481,7 +481,7 @@ public class TeamSide : MonoBehaviour
     Transform OwnKeeper()
     {
         if (defendGoal == null) return null;
-        if (keepersCache == null) keepersCache = FindObjectsByType<Goalkeeper>(FindObjectsSortMode.None);
+        if (keepersCache == null) keepersCache = FindObjectsByType<Goalkeeper>();
         float side = Mathf.Sign(defendGoal.position.x);
         foreach (Goalkeeper gk in keepersCache)
             if (gk != null && Mathf.Sign(gk.transform.position.x) == side) return gk.transform;
@@ -491,7 +491,8 @@ public class TeamSide : MonoBehaviour
     // Best open teammate to pass to. Prefers forward progress; when the carrier is
     // pressured it will accept any open mate (incl. lateral/back) to keep possession.
     // Returns null when keeping the ball is better.
-    public Transform BestPassTarget(Transform carrier, TeamSide enemy, bool pressured)
+    public Transform BestPassTarget(Transform carrier, TeamSide enemy, bool pressured,
+                                    bool predictArrival = true)
     {
         if (members == null || attackGoal == null || carrier == null) return null;
 
@@ -509,16 +510,20 @@ public class TeamSide : MonoBehaviour
         {
             if (mate == null || mate == carrier) continue;
 
-            // must be open (not tightly marked)
-            float openness = NearestDistance(mate.position, enemy);
+            // Judge the lane/open water where this moving receiver will be when the pass lands,
+            // not where it was at release. Scoring weights below intentionally stay unchanged.
+            Vector2 arrival = predictArrival
+                ? WaterPoloBrain.PredictPassLanding(carrier.position, mate, this, enemy, out _)
+                : (Vector2)mate.position;
+            float openness = NearestDistance(arrival, enemy);
             if (openness >= KeeperLastResortOpenness) allOthersCovered = false;
             if (openness < openRadius) continue;
 
             // PASS RISK: longer passes give defenders more time to step into the lane, so
             // the danger radius grows with the pass distance.
-            float passDist = Vector2.Distance(carrier.position, mate.position);
+            float passDist = Vector2.Distance(carrier.position, arrival);
             float laneR = passLaneRadius + passDist * 0.05f;
-            if (!LaneClear(carrier.position, mate.position, enemy, laneR)) continue;
+            if (!LaneClear(carrier.position, arrival, enemy, laneR)) continue;
 
             float mateGoalDist = Vector2.Distance(mate.position, goal);
             float forwardGain = carrierGoalDist - mateGoalDist;
@@ -553,10 +558,13 @@ public class TeamSide : MonoBehaviour
             foreach (Transform mate in members)
             {
                 if (mate == null || mate == carrier) continue;
-                float openness = NearestDistance(mate.position, enemy);
+                Vector2 arrival = predictArrival
+                    ? WaterPoloBrain.PredictPassLanding(carrier.position, mate, this, enemy, out _)
+                    : (Vector2)mate.position;
+                float openness = NearestDistance(arrival, enemy);
                 if (openness <= bestOpen) continue;
-                float passDist = Vector2.Distance(carrier.position, mate.position);
-                if (!LaneClear(carrier.position, mate.position, enemy, passLaneRadius + passDist * 0.05f)) continue;
+                float passDist = Vector2.Distance(carrier.position, arrival);
+                if (!LaneClear(carrier.position, arrival, enemy, passLaneRadius + passDist * 0.05f)) continue;
                 bestOpen = openness;
                 best = mate;
             }
@@ -573,9 +581,12 @@ public class TeamSide : MonoBehaviour
             Transform keeper = OwnKeeper();
             if (keeper != null && keeper != carrier)
             {
-                float kOpen = NearestDistance(keeper.position, enemy);
-                float kDist = Vector2.Distance(carrier.position, keeper.position);
-                if (LaneClear(carrier.position, keeper.position, enemy, passLaneRadius + kDist * 0.05f))
+                Vector2 keeperArrival = predictArrival
+                    ? WaterPoloBrain.PredictPassLanding(carrier.position, keeper, this, enemy, out _)
+                    : (Vector2)keeper.position;
+                float kOpen = NearestDistance(keeperArrival, enemy);
+                float kDist = Vector2.Distance(carrier.position, keeperArrival);
+                if (LaneClear(carrier.position, keeperArrival, enemy, passLaneRadius + kDist * 0.05f))
                 {
                     float kGoalDist = Vector2.Distance(keeper.position, goal);
                     float kForward = carrierGoalDist - kGoalDist; // negative — the keeper is behind us

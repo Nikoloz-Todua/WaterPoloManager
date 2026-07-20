@@ -2,8 +2,8 @@ using UnityEngine;
 
 // Sits on the BALL. When the loose ball physically touches a field player, record that
 // player's team as the last toucher — so a shot/pass that deflects off an opponent and
-// goes out is awarded correctly. Keeper touches and held-ball contacts are ignored
-// (a keeper deflection must NOT flip the out-of-bounds award).
+// goes out is awarded correctly. A physical keeper touch is recorded distinctly so
+// GoalLineOut can award a corner; held-ball contacts are ignored.
 [RequireComponent(typeof(Rigidbody2D))]
 public class BallTouchTracker : MonoBehaviour
 {
@@ -19,7 +19,13 @@ public class BallTouchTracker : MonoBehaviour
 
         GameObject other = collision.collider.gameObject;
         if (other == null) return;
-        if (other.GetComponent<Goalkeeper>() != null) return; // keeper deflection: leave the award alone
+
+        Goalkeeper keeper = other.GetComponentInParent<Goalkeeper>();
+        if (keeper != null)
+        {
+            ctx.NoteKeeperTouch(keeper.DefendingTeam);
+            return;
+        }
 
         IAgentBody body = other.GetComponent<IAgentBody>();
         if (body != null) ctx.NoteTouch(body.Team); // bot or (player-team) teammate

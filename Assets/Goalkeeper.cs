@@ -69,6 +69,7 @@ public class Goalkeeper : MonoBehaviour
     //      identically with no StaminaSystem attached — nothing here references StaminaSystem. ----
     public bool IsHolding => holding;                       // read by StaminaSystem for drain
     public bool LeftSafeZone => keeperLeftSafeZone;         // Task 5: true once it carried the ball out of its safe zone
+    public TeamSide DefendingTeam => KeeperTeam();           // physical-touch attribution for keeper-deflection corners
     public float StaminaPercent01 { get; set; } = 1f;       // 0..1; gates the save penalty (Task 4)
     public bool StaminaSprintBlocked { get; set; } = false; // true at 0% stamina → keeper can't sprint
 
@@ -672,7 +673,10 @@ public class Goalkeeper : MonoBehaviour
                 target = team.DeepestMember(transform);
             if (target == null)
             {
-                target = team.BestPassTarget(transform, ctx != null ? ctx.EnemyOf(team) : null, false);
+                // Keeper distribution keeps its established current-position selection/aim.
+                // Moving-receiver lead prediction is scoped to WaterPoloBrain field-player passes.
+                target = team.BestPassTarget(transform, ctx != null ? ctx.EnemyOf(team) : null,
+                                             false, false);
                 if (target == null) target = team.DeepestMember(transform);
             }
         }

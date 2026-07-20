@@ -418,6 +418,24 @@ public class BallFlight : MonoBehaviour
         return from + d * Mathf.Clamp01(t);
     }
 
+    // Shared with AI pass prediction so selection and the real launch use the same pool clamp
+    // and airtime floor/cap. These are calculations only; they do not start or alter a flight.
+    public static Vector2 ClampLandingPoint(Vector2 from, Vector2 land)
+    {
+        return ClampLanding(from, land);
+    }
+
+    public static float EstimateFlightTime(Vector2 from, Vector2 land, float groundSpeed, ArcKind kind)
+    {
+        land = ClampLanding(from, land);
+        float dist = Vector2.Distance(from, land);
+        if (dist < MinHighBallDistance || groundSpeed < 1f) return 0f;
+
+        float flightTime = dist / groundSpeed;
+        if (kind != ArcKind.Shot) flightTime = Mathf.Max(flightTime, MinFlightTime);
+        return Mathf.Min(flightTime, MaxFlightTime);
+    }
+
     void SuppressBallPhysics()
     {
         if (physicsSuppressed || rb == null) return;

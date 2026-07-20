@@ -297,8 +297,7 @@ public static class AnimatorBuilder
         Sprite backRest  = LoadSprite("test-back");
 
         // Only the human red-team swimmers carry PlayerAnimator (bots/blue use BotAnimator).
-        PlayerAnimator[] players = Object.FindObjectsByType<PlayerAnimator>(
-            FindObjectsInactive.Include, FindObjectsSortMode.None);
+        PlayerAnimator[] players = Object.FindObjectsByType<PlayerAnimator>(FindObjectsInactive.Include);
         if (players.Length == 0)
         {
             Debug.LogWarning("[AnimatorBuilder] No PlayerAnimator in the open scene. Open " +

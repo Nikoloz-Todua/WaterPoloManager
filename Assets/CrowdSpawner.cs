@@ -120,6 +120,13 @@ public class CrowdSpawner : MonoBehaviour
     int lastScoreTotal;     // a goal = this rising (polled from ScoreManager — no ScoreManager edit)
     float celebrateEndTime; // unscaled-time deadline to revert
     bool celebrating;
+    bool celebrationBuildPending;
+    int celebrationStandIndex;
+    int celebrationSeatIndex;
+
+    // Swapping hundreds of crowd sprites on the same frame as the goal caused a repeatable
+    // scoring hitch. This keeps the same ~50% result but spreads the scan over about 6-8 frames.
+    const int GoalCheerChecksPerFrame = 96;
 
     // Ball X cached ONCE per frame (in Update) for the front/back fans' tracking tilt, so the
     // ~700 FanIdle.Update calls read a cached float instead of hitting MatchContext.Instance each.
@@ -149,6 +156,9 @@ public class CrowdSpawner : MonoBehaviour
         SpawnCrowd("FanSeatSide", fanVariantsSide, fanVariantsSideCele, celebrantsSide, true, false, sideFanHeightInRows, sideSeatLineInRow01, null, null,
                    "fanSideL1..fanSideL8 from Assets/Sprites/Pool/fans/side/");
 
+        int totalCelebrants = celebrantsFront.Count + celebrantsBack.Count + celebrantsSide.Count;
+        if (activeCelebrants.Capacity < totalCelebrants) activeCelebrants.Capacity = totalCelebrants;
+
         // Baseline for goal detection (a goal = the score total rising above this).
         lastScoreTotal = ScoreTotal();
     }
@@ -167,6 +177,8 @@ public class CrowdSpawner : MonoBehaviour
         if (total > lastScoreTotal) { lastScoreTotal = total; StartCelebration(); }
         else if (total < lastScoreTotal) lastScoreTotal = total;
 
+        if (celebrationBuildPending) AdvanceCelebrationBuild();
+
         // Revert once the cheer window elapses. Unscaled time so the goal-hang freeze or a pause
         // can never strand a fan mid-cheer.
         if (celebrating && Time.unscaledTime >= celebrateEndTime) StopCelebration();
@@ -184,18 +196,31 @@ public class CrowdSpawner : MonoBehaviour
     void StartCelebration()
     {
         RevertActive();
-        PickHalf(celebrantsFront);
-        PickHalf(celebrantsBack);
-        PickHalf(celebrantsSide);
-        celebrating = activeCelebrants.Count > 0;
+        celebrationStandIndex = 0;
+        celebrationSeatIndex = 0;
+        celebrationBuildPending = true;
+        celebrating = true;
         celebrateEndTime = Time.unscaledTime + Mathf.Max(0.1f, celebrateSeconds);
     }
 
-    // ~50% of THIS stand's fans (independent per stand) flip to their same-index cheer pose.
-    void PickHalf(List<Celebrant> stand)
+    // Incrementally inspect all three stands. The selection rule and same-index art mapping are
+    // unchanged; only the expensive burst of renderer sprite assignments is amortized.
+    void AdvanceCelebrationBuild()
     {
-        foreach (Celebrant c in stand)
+        int checkedSeats = 0;
+        while (checkedSeats < GoalCheerChecksPerFrame && celebrationStandIndex < 3)
         {
+            List<Celebrant> stand = celebrationStandIndex == 0 ? celebrantsFront
+                : celebrationStandIndex == 1 ? celebrantsBack : celebrantsSide;
+            if (celebrationSeatIndex >= stand.Count)
+            {
+                celebrationStandIndex++;
+                celebrationSeatIndex = 0;
+                continue;
+            }
+
+            Celebrant c = stand[celebrationSeatIndex++];
+            checkedSeats++;
             if (c.sr == null || c.celebrate == null) continue; // no cheer art for this fan → skip
             if (Random.value < 0.5f)
             {
@@ -204,10 +229,17 @@ public class CrowdSpawner : MonoBehaviour
                 activeCelebrants.Add(c);
             }
         }
+
+        if (celebrationStandIndex >= 3)
+        {
+            celebrationBuildPending = false;
+            celebrating = activeCelebrants.Count > 0;
+        }
     }
 
     void StopCelebration()
     {
+        celebrationBuildPending = false;
         RevertActive();
         celebrating = false;
     }

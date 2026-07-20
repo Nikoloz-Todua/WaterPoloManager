@@ -344,8 +344,9 @@ public class TouchControls : MonoBehaviour
         sprDefend = LoadButtonSprite("Defend"); // capital D on disk
         sprSwitch = LoadButtonSprite("switch");
         sprBlock  = LoadButtonSprite("block");
-        sprLob    = LoadButtonSprite("lob");        // optional dedicated art...
-        if (sprLob == null) sprLob = sprPass;       // ...else reuse the pass icon (LOB is a pass variant)
+        // No dedicated lob art exists in the project. Reuse the real pass icon directly—the
+        // separate LOB caption distinguishes the variant without a guaranteed missing-load warning.
+        sprLob    = sprPass;
 
         // --- 3 action buttons (own group so we can hide them as a set); start in ATTACK icons ---
         actionGroup = MakeFullStretchGroup("ActionButtons");
@@ -490,7 +491,7 @@ public class TouchControls : MonoBehaviour
 
     static void EnsureEventSystem()
     {
-        if (Object.FindFirstObjectByType<EventSystem>() != null) return;
+        if (Object.FindAnyObjectByType<EventSystem>() != null) return;
         GameObject es = new GameObject("EventSystem");
         es.AddComponent<EventSystem>();
         es.AddComponent<StandaloneInputModule>(); // handles both mouse and multi-touch
