@@ -33,6 +33,10 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private float movingHoldBallForwardOffset = 0.58f;
     [Tooltip("Small in/out distance change while swimming with the ball, to suggest repeated hand pushes through the water.")]
     [SerializeField, Range(0f, 0.2f)] private float movingHoldBallPushAmplitude = 0.06f;
+    [Tooltip("How much closer the ball sits during diagonal swimming. Prevents an upper/lower-left travel vector from pushing it unrealistically far away from the horizontal swim art's head.")]
+    [SerializeField, Range(0.4f, 1f)] private float diagonalHeldBallDistanceMultiplier = 0.72f;
+    [Tooltip("How strongly diagonal held-ball placement biases toward the visible left/right head direction instead of pointing fully into the diagonal travel vector.")]
+    [SerializeField, Range(0f, 1f)] private float diagonalHeldBallHeadBias = 0.65f;
     [Tooltip("How many gentle held-ball push cycles play per second while swimming.")]
     [SerializeField, Range(0.1f, 5f)] private float movingHoldBallPushCyclesPerSecond = 1.7f;
     [Tooltip("Maximum clockwise/counter-clockwise rocking of the held ball while swimming.")]
@@ -1070,8 +1074,7 @@ public class PlayerMovement : MonoBehaviour
             float motion = Mathf.Sin(
                 Time.time * movingHoldBallPushCyclesPerSecond * Mathf.PI * 2f + heldBallMotionPhase);
             Vector2 visualOffset = movingWithBall
-                ? rb.linearVelocity.normalized *
-                  (movingHoldBallForwardOffset + motion * movingHoldBallPushAmplitude)
+                ? MovingHeldBallOffset(rb.linearVelocity, motion)
                 : HeldBallHandOffset();
             Vector3 p = transform.position + (Vector3)visualOffset;
             p.z = ball.transform.position.z;
@@ -1080,6 +1083,26 @@ public class PlayerMovement : MonoBehaviour
                 ? Quaternion.Euler(0f, 0f, motion * movingHoldBallRockDegrees)
                 : Quaternion.identity;
         }
+    }
+
+    // Horizontal swim art has a left/right head even when the body travels diagonally. A raw
+    // diagonal velocity used to place the ball too far above/below that head, especially moving
+    // up-left or down-left. Keep pure cardinal travel unchanged; only diagonal travel shortens
+    // and leans toward the visible horizontal head.
+    Vector2 MovingHeldBallOffset(Vector2 velocity, float motion)
+    {
+        Vector2 travel = velocity.normalized;
+        float absX = Mathf.Abs(travel.x);
+        float absY = Mathf.Abs(travel.y);
+        float diagonal = Mathf.Clamp01(2f * Mathf.Min(absX, absY));
+        Vector2 headDirection = absX > 0.01f
+            ? new Vector2(Mathf.Sign(travel.x), 0f)
+            : travel;
+        Vector2 visualDirection = Vector2.Lerp(travel, headDirection,
+            diagonal * diagonalHeldBallHeadBias).normalized;
+        float distance = (movingHoldBallForwardOffset + motion * movingHoldBallPushAmplitude) *
+                         Mathf.Lerp(1f, diagonalHeldBallDistanceMultiplier, diagonal);
+        return visualDirection * distance;
     }
 
     // Legacy world-space hand offsets, now used only while the carrier is stationary. The down/idle

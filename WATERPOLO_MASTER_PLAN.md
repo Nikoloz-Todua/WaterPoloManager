@@ -1841,6 +1841,87 @@ sprites were preserved untouched.
 
 **Build:** `dotnet build Assembly-CSharp.csproj` → **0 errors** (22 pre-existing warnings).
 
+---
+
+## SESSION LOG — 2026-07-20b (BallDropRipple invisibility root cause + generic ripple removal)
+
+Investigation began by rereading the complete master plan and complete current `BallFlight.cs` before
+touching code. This was traced from the live `SampleScene_PoolB` YAML and a project-wide search of
+every ripple/splash renderer owner, rather than treating the previous implementation as proven.
+
+**Observed root causes:**
+
+1. **The supplied sprite sheet was being made effectively invisible by inherited Ball scale.** The
+   live Ball transform is authored at **0.04 × 0.04**, while every `BallDropRipple.png` slice is
+   176 pixels at 100 PPU (**1.76 world units** at scale 1). The previous `BuildSettleRipple()` made
+   `BallDropRipple` a child of Ball, so its actual world size was only **1.76 × 0.04 = 0.0704u**.
+   That is why no visible sheet ripple appeared despite a valid frame set: it was rendered as a
+   tiny 7%-of-a-unit sprite under the ball.
+2. **The unrelated "weird symbols" came from the active legacy generic water-effect owner.**
+   `WaterEffectsSystem` was serialized directly on the live Ball and constructed five runtime
+   ParticleSystem GameObjects: `Water Ripples (Pooled)`, `Water Foam (Pooled)`, `Water Bubbles
+   (Pooled)`, `Water Splashes (Pooled)`, and `Water Side Displacement (Pooled)`. Its procedural
+   ring/soft placeholder textures were still emitted by ball, swimmer, skip/landing, and goalkeeper
+   paths, so they could render independently of the new sheet. This was a real parallel renderer,
+   not a disabled leftover.
+
+**Changes:**
+
+- `BallDropRipple` is now a world-space renderer at **1 × 1** scale instead of a Ball child, placed
+  at the settle contact point and drawn at sorting order **2** (the live Ball is order **1**).
+- The old `WaterEffectsSystem` script, its Ball scene component, all five generic particle-system
+  construction paths, and every Player/Bot/Goalkeeper/BallFlight call site were removed. A complete
+  post-removal source search leaves only `ScoreManager`'s goal-only `NetRippleRoutine`, which runs
+  solely after a confirmed goal and cannot render for a loose ball settling on open water.
+- Added one-shot `[BallDropRipple VERIFY]` logs. On the first real settle they print the actual
+  Resource frame-set, frame-1/frame-9 sprite and texture names, trigger speed/position, renderer
+  enabled state, world scale, and sorting layer/order. A missing frame set produces an explicit
+  error instead of silently falling back to a generic impact effect.
+
+**Verification status:** the root-cause values above are observed from the live scene and active
+renderer inventory. An isolated batch-mode Unity Play probe was also attempted, but Unity's copied
+project failed while compiling package source (`ShaderGraph` missing `GUID` type) before it could
+enter Play mode; no false runtime-trigger result is recorded. The in-project runtime logs remain
+the required final confirmation: make one fast loose ball settle and look for the first
+`[BallDropRipple VERIFY] TRIGGER` line. Do not call the visual verification complete until that line
+reports the expected `BallDropRipple_8` / `BallDropRipple.png`, enabled renderer, `worldScale=(1,1,1)`,
+and sorting order 2.
+
+---
+
+## SESSION LOG — 2026-07-20c (BallDropRipple animation disabled)
+
+Per direct dev feedback, the BallDropRipple two-phase settle animation is disabled in
+`BallFlight.cs` (`settleRippleEnabled = false`). `BallFlight` no longer creates the ripple renderer,
+loads the frame sheet, or evaluates the settle-ripple trigger. The supplied `BallDropRipple.png`
+and its frame-set asset are retained untouched for a future art pass, but no loose-ball settling
+ripple can render now. The generic `WaterEffectsSystem` removal from 2026-07-20b remains in effect.
+
+---
+
+## SESSION LOG — 2026-07-20d (field-player sprite animation disabled)
+
+Per direct dev request, the old field-player sprite/flipbook animation presentation is disabled for
+both sides. `PlayerAnimator` and `BotAnimator` now default `playerSpriteAnimationsEnabled` to
+**false**: no runtime flipbook body is created, no old `Assets/Sprites/Players/Parts` animation frame
+is played, and legacy Animator controllers are disabled for the human field players. Each swimmer
+keeps one static default scene sprite visible so the match does not lose player bodies entirely.
+
+This is presentation-only. Keyboard and mobile action-button input, movement, shooting, passing,
+stealing, possession, AI, and all button press feedback remain unchanged. The Part PNGs are retained
+on disk (not destructively deleted) for a future art decision; they are simply no longer animated at
+runtime. Re-enable either component's **Player Sprite Animations Enabled** Inspector checkbox only
+if this visual system is deliberately wanted again.
+
+---
+
+## SESSION LOG — 2026-07-20e (field-player animation disable reverted)
+
+The 2026-07-20d field-player animation disable was immediately reverted on direct dev feedback.
+`PlayerAnimator` and `BotAnimator` again run their existing flipbook and legacy presentation paths
+exactly as before; no static-only override or new Inspector toggle remains. PC/mobile controls were
+never changed. The Parts/flipbook assets remain enabled and working.
+
 **Slot re-check (CrowdSpawner object in SampleScene_PoolB):** `Fan Variants` should still show the 8
 sprites (verify — the script was replaced!); new tunables `Fans Per Bench` 4, `Rows In Bench Art` 7,
 `Fan Height In Rows` 1.5, `Seat Surface 01` 0.48, `Fan Seat Anchor 01` 0.34. To seat fans on a
@@ -3764,3 +3845,165 @@ flipbook, palette, shader, and visual presentation code untouched.
 
 **Build:** `dotnet build Assembly-CSharp.csproj` completed with **0 errors** and the existing
 22 obsolete-API/unused-field warnings.
+
+---
+
+## SESSION LOG — 2026-07-19i (horizontal swim fallback, held-ball anchor, pooled water VFX)
+
+**Vertical swim fallback:**
+- Kept both supplied `swimming_up.png` and `swimming_down.png` sheets, their slices, and the
+  separate per-direction playback/size controls intact for future art replacement.
+- Added the shared `PlayerFlipbookSet.useDirectionalSwimmingFrames` switch and set it to **off**.
+  Both human and bot selection paths now require that switch before they can use a vertical sheet,
+  so every swimming direction is presently rendered with the established horizontal `swimming.png`
+  and its existing mirror logic. This is a reversible content setting, not an asset deletion.
+
+**Held-ball placement:**
+- The old moving-held-ball placement used the full diagonal velocity direction at the full forward
+  distance. On left diagonals that placed the ball beyond the side/head silhouette, especially
+  while moving up-left or down-left.
+- Human and bot carriers now use the same visual-only diagonal correction: exact diagonals shorten
+  the forward distance to **72%** and bias the offset **65%** toward the horizontal head-facing
+  direction. Cardinal movement remains unchanged. The human values are Inspector controls on
+  `PlayerMovement`; the matching bot logic remains synchronized in `WaterPoloAI`.
+
+**Water VFX system:**
+- Added `WaterEffectsSystem` to the existing Ball object as the one persistent scene owner. It
+  creates five shared, pre-warmed built-in Particle Systems once (ripples, foam, bubbles, splashes,
+  and subtle side displacement) and uses `ParticleSystem.Emit` thereafter. There is no gameplay
+  instantiate/destroy path for temporary water effects and no per-frame collection allocation.
+- The simple soft and ring particle textures are generated once in code rather than requiring new
+  raster assets; this keeps the mobile asset/draw-call footprint compact while sharing particle
+  materials. Stroke emission randomizes size, lifetime, opacity, rotation, position, and velocity.
+- Swimmer wake emission is called only while the existing animator has selected its real Swimming
+  state. It emits small foam, bubbles, alternating foot splashes, and restrained side waves behind
+  the travel direction; it fades naturally and stops emitting when the swimmer stops or leaves that
+  state. Strength/cadence respond to measured Rigidbody velocity.
+- Ball paths now feed the same system: fast grounded passes/skips create a light trail, a loose
+  floating ball creates an infrequent gentle ripple, landing high balls and skips create an impact
+  splash/ripple, and settling loose balls create a small impact. The goalkeeper's incoming-shot
+  transition emits the largest foam/splash/ripple burst. Each of the swimmer wake, side
+  displacement, ball effects, and goalkeeper-dive modules has an independent Ball Inspector toggle
+  plus tunable cadence/strength values.
+
+**Files changed:**
+- `Assets/WaterEffectsSystem.cs` and `.meta`
+- `Assets/Scenes/SampleScene_PoolB.unity`
+- `Assets/BallFlight.cs`
+- `Assets/Goalkeeper.cs`
+- `Assets/PlayerAnimator.cs`
+- `Assets/BotAnimator.cs`
+- `Assets/PlayerFlipbookSet.cs`
+- `Assets/Resources/PlayerFlipbookSet.asset`
+- `Assets/PlayerMovement.cs`
+- `Assets/WaterPoloAI.cs`
+- `WATERPOLO_MASTER_PLAN.md` (this log)
+
+**Exact Play-mode tests:**
+1. Move a player and a bot in all eight directions. Every direction must use the original
+   horizontal swimming sheet and mirror behavior; neither vertical sheet should appear. Later,
+   enable `Use Directional Swimming Frames` on `Resources/PlayerFlipbookSet` only after replacing
+   the art to restore the already-wired vertical feature.
+2. Carry the ball up-left and down-left with both a human and a bot. The ball should remain close
+   to the head/leading shoulder rather than floating far to the left. Compare each cardinal route
+   to confirm its prior placement is unchanged. Adjust the two `PlayerMovement` diagonal fields
+   only if the human visual needs further art-specific refinement.
+3. Swim at a slow pace, sprint, then stop. Foam/bubbles/side wake should strengthen with speed,
+   disappear naturally after stopping, and never emit in idle, hold, throw, stun, or other states.
+4. Let a loose ball settle, pass it quickly across the water, fire a strong shot/high ball, and
+   leave it floating. Verify respectively: small impact ripple, restrained moving wake, stronger
+   impact splash/ripple, and rare near-invisible idle ripples. No effect should loop permanently.
+5. Trigger a goalkeeper response to a shot. Verify it produces the largest but still readable
+   water burst. Toggle each Water Effects System module on the Ball independently and confirm only
+   its named category stops.
+6. Profile a crowded possession on target mobile hardware. After the one-time scene setup, verify
+   no temporary water-effect GameObjects are created/destroyed and inspect GC allocations while
+   swimmers and the ball are active.
+
+**Build:** `dotnet build Assembly-CSharp.csproj` completed with **0 errors** and the existing
+**22 warnings**.
+
+---
+
+## SESSION LOG — 2026-07-19h (directional swimming flipbooks)
+
+This session re-read the complete master plan, then the complete current `PlayerAnimator.cs` and
+`PlayerVisualRuntime.cs`, before tracing the shared `PlayerFlipbookSet` and bot presentation path.
+
+**Directional swimming:**
+- Added `swimmingUpFrames` and `swimmingDownFrames` to the shared `PlayerFlipbookSet`, wired to
+  all six sliced sprites in the supplied `swimming_up.png` and `swimming_down.png` sheets.
+- Both `PlayerAnimator` and `BotAnimator` now choose vertical art only while movement is genuinely
+  vertical-primary: `abs(velocity.y) > abs(velocity.x)`. Positive Y selects `swimming_up` (the
+  authored back/up-screen stroke); negative Y selects `swimming_down` (the authored front/down-
+  screen stroke). Exact diagonals stay horizontal, so the existing left/right behavior wins ties.
+- Vertical sheets are never horizontally mirrored from a stale left/right latch. Human players use
+  the existing back visual body while moving up and front visual body while moving down; bots keep
+  their single runtime flipbook renderer. Horizontal swimming remains the original `swimming.png`
+  path with its existing renderer/body mirror logic unchanged. If either vertical frame array is
+  absent or incomplete, the code safely falls back to that horizontal sheet.
+- No gameplay movement, collider, palette, shader, flipbook playback timing, or state-size setting
+  was changed.
+
+**Files changed:**
+- `Assets/PlayerFlipbookSet.cs`
+- `Assets/Resources/PlayerFlipbookSet.asset`
+- `Assets/PlayerAnimator.cs`
+- `Assets/BotAnimator.cs`
+- `WATERPOLO_MASTER_PLAN.md` (this log)
+
+**Exact Play-mode tests:**
+1. Move a human player straight up-screen: only the six-frame back/up `swimming_up` loop should
+   render, with no horizontal mirror or old horizontal swim art.
+2. Move straight down-screen: only the six-frame front/down `swimming_down` loop should render,
+   unmirrored. Repeat both directions while carrying the ball and while sprinting.
+3. Move straight left and right: the original horizontal `swimming.png` loop and its established
+   left/right mirror behavior must be visually unchanged.
+4. Move diagonally with more vertical than horizontal velocity: expect up/down art. Move at an
+   exact 45-degree diagonal or with more horizontal velocity: expect the original horizontal art.
+   Cross the boundary repeatedly and confirm there is no blank frame or stuck sheet.
+5. Watch bots perform each of the four cardinal directions, including a loose-ball chase and a
+   moving carrier. Verify the same sheet choices as the human and confirm idle, hold, throw,
+   defend, steal, exclusion, and stun states remain unchanged.
+
+**Build:** `dotnet build Assembly-CSharp.csproj` completed with **0 errors** and the existing
+22 obsolete-API/unused-field warnings.
+
+---
+
+## SESSION LOG — 2026-07-20 (two-phase loose-ball drop ripple)
+
+Read the full master plan and current `BallFlight.cs` before changing the effect. The existing
+`UpdateSettleRipples()` trigger already exactly owned the required event: it arms only after a
+LOOSE simulated ball exceeds **2.5u/s**, then fires once when that same unclaimed ball slows below
+**1u/s**. The trigger remains suppressed for held, airborne, pre-bounce skip, physics-off,
+goal-net, and frozen-ball states.
+
+- **New supplied sheet wired automatically:** `Assets/Sprites/Effects/BallDropRipple.png` is already
+  sliced as a 3×3 grid in row-major frame order. `BallDropRippleFrameSet` is a Resources asset that
+  references those nine sprites, so `BallFlight` (which is added to the Ball at runtime) can load
+  them without a scene reference or Inspector drag-and-drop step.
+- **Phase 1 — impact burst:** on the existing one-time settle trigger, the effect shows frames
+  **9 → 8 → 7** at 0.07s each: the large ripple visibly collapses toward the water.
+- **Phase 2 — idle rest:** immediately after frame 7, it switches to a repeating **1 → 2 → 3**
+  loop at 0.18s per frame. It remains visible only while the ball stays loose, simulated, slow,
+  unfrozen, and in open water.
+- **Hard stop:** pickup/parenting, a throw or any speed above the resting threshold, an airborne
+  state, freeze, or leaving the eligible water area hides the loop in the same update. It cannot
+  continue under a held or moving ball. `WaterEffectsSystem` also suppresses its older occasional
+  particle idle ripple while this sheet loop is active, preventing doubled resting-ripple visuals.
+- **No gameplay change:** settle thresholds and re-arm behavior are unchanged; skip, high-ball,
+  landing, goalkeeper, and swimmer water effects remain on their existing paths.
+
+**Files changed:** `Assets/BallFlight.cs`, `Assets/WaterEffectsSystem.cs`,
+`Assets/BallDropRippleFrameSet.cs`, `Assets/Resources/BallDropRippleFrameSet.asset`, and this log.
+
+**Exact Play-mode test:** (1) throw or shoot the ball into open water, let it slow unclaimed, and
+confirm one quick **9 → 8 → 7** collapse plays first; it must then immediately repeat only
+**1 → 2 → 3** while the ball sits. (2) Pick the ball up during the loop: the ripple must hide on
+that pickup frame and never follow the carrier. (3) Repeat by throwing, passing, or nudging the
+ball above 1u/s: the loop must stop at once, then may start a single new impact only after a new
+fast-to-rest settle. (4) Confirm no drop ripple appears during an airborne pass/shot, goal hang,
+or in the net area.
+
+**Build:** `dotnet build Assembly-CSharp.csproj` → **0 errors** (22 pre-existing warnings).

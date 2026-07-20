@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4f5adf70c4d94d3e9f1ca7f4d830d1a6, type: 3}
+  m_Name: BallDropRippleFrameSet
+  m_EditorClassIdentifier: Assembly-CSharp::BallDropRippleFrameSet
+  frames:
+  - {fileID: 972664946896930761, guid: 6b11e3ac9c54f36449bb064dbc2d84bb, type: 3}
+  - {fileID: 3689294326606176844, guid: 6b11e3ac9c54f36449bb064dbc2d84bb, type: 3}
+  - {fileID: 7456351951185885689, guid: 6b11e3ac9c54f36449bb064dbc2d84bb, type: 3}
+  - {fileID: 3918679198540191752, guid: 6b11e3ac9c54f36449bb064dbc2d84bb, type: 3}
+  - {fileID: 3023671799882466650, guid: 6b11e3ac9c54f36449bb064dbc2d84bb, type: 3}
+  - {fileID: 984857950298418737, guid: 6b11e3ac9c54f36449bb064dbc2d84bb, type: 3}
+  - {fileID: -7502632610514043012, guid: 6b11e3ac9c54f36449bb064dbc2d84bb, type: 3}
+  - {fileID: 8335673771863605817, guid: 6b11e3ac9c54f36449bb064dbc2d84bb, type: 3}
+  - {fileID: 3581978418704425328, guid: 6b11e3ac9c54f36449bb064dbc2d84bb, type: 3}

@@ -33,7 +33,6 @@ public class PlayerAnimator : MonoBehaviour
     const float BobFrequency = 1.1f;           // cycles per second
     const float BobReturnSeconds = 0.15f;      // time to ease the offset back to 0 when swimming resumes
     const float BobFloatSpeedMax = 0.15f;      // Speed below this (and not holding) reads as floating — high enough that slow drift still floats
-    const float SwimmingRippleInterval = 0.55f;
 
     [SerializeField] private float defendProximityRadius = 1.5f; // enemy carrier this close -> defend pose
 
@@ -42,8 +41,12 @@ public class PlayerAnimator : MonoBehaviour
     [SerializeField] private PlayerFlipbookSet flipbookSet;
     [Tooltip("Floating loop speed. Lower this to make the idle motion calmer.")]
     [SerializeField, Range(1f, 30f)] private float idleFramesPerSecond = 8f;
-    [Tooltip("Swimming loop speed, including sprinting and swimming while carrying the ball.")]
+    [Tooltip("Horizontal swimming.png loop speed, including left/right sprinting and carrying.")]
     [SerializeField, Range(1f, 30f)] private float swimmingFramesPerSecond = 8f;
+    [Tooltip("Up-screen swimming_up.png loop speed.")]
+    [SerializeField, Range(1f, 30f)] private float swimmingUpFramesPerSecond = 8f;
+    [Tooltip("Down-screen swimming_down.png loop speed.")]
+    [SerializeField, Range(1f, 30f)] private float swimmingDownFramesPerSecond = 8f;
     [Tooltip("Stopped-with-ball holding loop speed.")]
     [SerializeField, Range(1f, 30f)] private float holdingFramesPerSecond = 8f;
     [Tooltip("Throwing playback speed. This can be faster than the looping states.")]
@@ -56,8 +59,12 @@ public class PlayerAnimator : MonoBehaviour
     [SerializeField] private Vector2 flipbookRendererLocalScale = new Vector2(0.3f, 0.3f);
     [Tooltip("Extra size multiplier used only by idle/floating frames.")]
     [SerializeField] private Vector2 idleSizeMultiplier = Vector2.one;
-    [Tooltip("Extra size multiplier used only by swimming frames, including backward movement and sprinting.")]
+    [Tooltip("Extra size multiplier used only by horizontal swimming.png frames.")]
     [SerializeField] private Vector2 swimmingSizeMultiplier = Vector2.one;
+    [Tooltip("Extra size multiplier used only by up-screen swimming_up.png frames.")]
+    [SerializeField] private Vector2 swimmingUpSizeMultiplier = Vector2.one;
+    [Tooltip("Extra size multiplier used only by down-screen swimming_down.png frames. Defaults larger because this sheet's rendered body is narrower.")]
+    [SerializeField] private Vector2 swimmingDownSizeMultiplier = new Vector2(1.35f, 1.35f);
     [Tooltip("Extra size multiplier used only by stopped holding frames.")]
     [SerializeField] private Vector2 holdingSizeMultiplier = Vector2.one;
     [Tooltip("Extra size multiplier used only by throwing frames.")]
@@ -99,6 +106,8 @@ public class PlayerAnimator : MonoBehaviour
     private bool lastShowBack;        // latched facing; held while stopped so release doesn't snap to front
     private bool backRendererBaseFlipX;
     private bool flipbookArtFacesLeft;
+    private bool flipbookArtUsesHorizontalFacing;
+    private PlayerSwimmingDirection swimmingDirection = PlayerSwimmingDirection.Horizontal;
 
     // Idle-bob state (code-only, never written to the Animator).
     private Transform frontBody, backBody;        // body transforms == the front/back animator transforms
@@ -107,7 +116,6 @@ public class PlayerAnimator : MonoBehaviour
     private float bobPhase;                        // per-player random phase, so idlers don't bob in sync
     private float bobOffset;                       // current Y offset, lerped to 0 when not floating
     private float bodyDepthOffsetY;                // current state-driven visual depth, eased every frame
-    private float nextSwimmingRippleTime;
 
     // Read by presentation code only. The gameplay transform/collider never moves for depth.
     public float VisualDepthOffsetY => bodyDepthOffsetY;
@@ -181,13 +189,18 @@ public class PlayerAnimator : MonoBehaviour
         // which would snap the back body to front on release, so latch the facing: only update the
         // latch while actually moving, hold it through a brief stop, and reset to front when floating
         // idle (not holding) so an idler always faces the camera.
-        bool movingLeft = vel.x < -FlipEpsilon;
         bool isMoving = vel.magnitude > MoveEpsilon;
+        // Directional sheets stay opt-in on the shared set. While disabled, preserve the exact
+        // established horizontal left/right body and mirror behavior even during vertical travel.
+        bool swimmingVertically = flipbookSet != null && flipbookSet.UseDirectionalSwimmingFrames &&
+                                 isMoving && Mathf.Abs(vel.y) > Mathf.Abs(vel.x);
+        bool movingUp = swimmingVertically && vel.y > 0f;
+        bool movingLeft = vel.x < -FlipEpsilon;
 
-        if (isMoving) lastShowBack = movingLeft;
+        if (isMoving) lastShowBack = swimmingVertically ? movingUp : movingLeft;
         else if (!isHolding) lastShowBack = false; // floating idle always faces front
 
-        bool showBack = isMoving ? movingLeft : lastShowBack;
+        bool showBack = isMoving ? (swimmingVertically ? movingUp : movingLeft) : lastShowBack;
 
         if (frontRenderer != null) frontRenderer.enabled = !showBack;
         if (backRenderer != null) backRenderer.enabled = showBack;
@@ -209,8 +222,8 @@ public class PlayerAnimator : MonoBehaviour
         bool isExcluded = ExclusionManager.Instance != null && ExclusionManager.Instance.IsExcluded(transform);
 
         SelectFlipbook(isFloating, isHolding, isMovingWithBall, isShootingVisual,
-                       isDefending, isStealingVisual, isExcluded, isStunned, speed);
-        TrySpawnSwimmingRipple();
+                       isDefending, isStealingVisual, isExcluded, isStunned, speed,
+                       swimmingVertically, movingUp);
         UpdateBodyDepth(presentationHolding, showBack, isFloating);
 
         // Do not let a legacy controller continue writing m_Sprite behind a current flipbook.
@@ -263,19 +276,25 @@ public class PlayerAnimator : MonoBehaviour
 
         // The swim source sheet faces left; the throwing source sheet faces right. Preserve the
         // existing front/back renderer toggle and only correct the selected sheet's orientation.
-        bool wantsLeft = visibleRenderer == backRenderer;
-        visibleRenderer.flipX = flipbookArtFacesLeft ? !wantsLeft : wantsLeft;
+        if (flipbookArtUsesHorizontalFacing)
+        {
+            bool wantsLeft = visibleRenderer == backRenderer;
+            visibleRenderer.flipX = flipbookArtFacesLeft ? !wantsLeft : wantsLeft;
+        }
+        else visibleRenderer.flipX = false;
         flipbookPlayback.Apply(visibleRenderer, FramesPerSecondForCurrentState());
     }
 
     void SelectFlipbook(bool isFloating, bool isHolding, bool isMovingWithBall,
                         bool isShootingVisual,
                         bool isDefending, bool isStealingVisual, bool isExcluded, bool isStunned,
-                        float speed)
+                        float speed, bool swimmingVertically, bool movingUp)
     {
         Sprite[] frames = null;
         bool loop = true;
         bool artFacesLeft = false;
+        bool artUsesHorizontalFacing = false;
+        PlayerSwimmingDirection proposedSwimmingDirection = PlayerSwimmingDirection.Horizontal;
         PlayerFlipbookVisualState proposedState = PlayerFlipbookVisualState.Legacy;
 
         // A successful steal's action lock is deliberately a calm floating/idle presentation:
@@ -301,8 +320,9 @@ public class PlayerAnimator : MonoBehaviour
                     // Possession changes gameplay, not the swimmer's stroke: a moving carrier uses
                     // the same current six-frame swim sheet while PlayerMovement keeps the ball
                     // pinned ahead of travel. Only a stopped carrier uses the holding sheet.
-                    frames = flipbookSet.SwimmingFrames;
-                    artFacesLeft = true;
+                    frames = SwimmingFramesForDirection(swimmingVertically, movingUp,
+                                                        out artFacesLeft, out artUsesHorizontalFacing,
+                                                        out proposedSwimmingDirection);
                     proposedState = PlayerFlipbookVisualState.Swimming;
                 }
                 else
@@ -318,8 +338,9 @@ public class PlayerAnimator : MonoBehaviour
             }
             else if (speed > MoveEpsilon)
             {
-                frames = flipbookSet.SwimmingFrames;
-                artFacesLeft = true;
+                frames = SwimmingFramesForDirection(swimmingVertically, movingUp,
+                                                    out artFacesLeft, out artUsesHorizontalFacing,
+                                                    out proposedSwimmingDirection);
                 proposedState = PlayerFlipbookVisualState.Swimming;
             }
         }
@@ -351,18 +372,34 @@ public class PlayerAnimator : MonoBehaviour
         hasPendingFlipbookTransition = false;
         flipbookVisualState = proposedState;
         flipbookArtFacesLeft = artFacesLeft;
+        flipbookArtUsesHorizontalFacing = artUsesHorizontalFacing;
+        swimmingDirection = proposedState == PlayerFlipbookVisualState.Swimming
+            ? proposedSwimmingDirection : PlayerSwimmingDirection.Horizontal;
         flipbookPlayback.Select(frames, loop);
     }
 
-    void TrySpawnSwimmingRipple()
+    // A strictly primary vertical velocity owns the new up/down art. If a sheet is ever absent,
+    // retain the established horizontal six-frame sheet rather than falling back to legacy art.
+    Sprite[] SwimmingFramesForDirection(bool swimmingVertically, bool movingUp,
+                                        out bool artFacesLeft, out bool usesHorizontalFacing,
+                                        out PlayerSwimmingDirection direction)
     {
-        if (flipbookVisualState != PlayerFlipbookVisualState.Swimming ||
-            !flipbookPlayback.Active || Time.time < nextSwimmingRippleTime) return;
+        artFacesLeft = false;
+        usesHorizontalFacing = false;
+        direction = PlayerSwimmingDirection.Horizontal;
+        if (swimmingVertically)
+        {
+            Sprite[] vertical = movingUp ? flipbookSet.SwimmingUpFrames : flipbookSet.SwimmingDownFrames;
+            if (PlayerFlipbookSet.ValidFrames(vertical))
+            {
+                direction = movingUp ? PlayerSwimmingDirection.Up : PlayerSwimmingDirection.Down;
+                return vertical;
+            }
+        }
 
-        BallFlight flight = BallFlight.Instance;
-        if (flight == null) return;
-        flight.SpawnSwimmingRipple(transform.position);
-        nextSwimmingRippleTime = Time.time + SwimmingRippleInterval;
+        artFacesLeft = true;
+        usesHorizontalFacing = true;
+        return flipbookSet.SwimmingFrames;
     }
 
     void ResolveBodyReferences()
@@ -386,6 +423,7 @@ public class PlayerAnimator : MonoBehaviour
         flipbookPlayback.Select(idle, true);
         flipbookVisualState = PlayerFlipbookVisualState.Idle;
         flipbookArtFacesLeft = false;
+        flipbookArtUsesHorizontalFacing = false;
         if (frontRenderer != null)
         {
             frontRenderer.enabled = true;
@@ -423,9 +461,19 @@ public class PlayerAnimator : MonoBehaviour
         switch (flipbookVisualState)
         {
             case PlayerFlipbookVisualState.Idle: return idleFramesPerSecond;
-            case PlayerFlipbookVisualState.Swimming: return swimmingFramesPerSecond;
+            case PlayerFlipbookVisualState.Swimming: return SwimmingFramesPerSecondForDirection();
             case PlayerFlipbookVisualState.Holding: return holdingFramesPerSecond;
             case PlayerFlipbookVisualState.Throwing: return throwingFramesPerSecond;
+            default: return swimmingFramesPerSecond;
+        }
+    }
+
+    float SwimmingFramesPerSecondForDirection()
+    {
+        switch (swimmingDirection)
+        {
+            case PlayerSwimmingDirection.Up: return swimmingUpFramesPerSecond;
+            case PlayerSwimmingDirection.Down: return swimmingDownFramesPerSecond;
             default: return swimmingFramesPerSecond;
         }
     }
@@ -435,10 +483,20 @@ public class PlayerAnimator : MonoBehaviour
         switch (flipbookVisualState)
         {
             case PlayerFlipbookVisualState.Idle: return idleSizeMultiplier;
-            case PlayerFlipbookVisualState.Swimming: return swimmingSizeMultiplier;
+            case PlayerFlipbookVisualState.Swimming: return SwimmingSizeMultiplierForDirection();
             case PlayerFlipbookVisualState.Holding: return holdingSizeMultiplier;
             case PlayerFlipbookVisualState.Throwing: return throwingSizeMultiplier;
             default: return Vector2.one;
+        }
+    }
+
+    Vector2 SwimmingSizeMultiplierForDirection()
+    {
+        switch (swimmingDirection)
+        {
+            case PlayerSwimmingDirection.Up: return swimmingUpSizeMultiplier;
+            case PlayerSwimmingDirection.Down: return swimmingDownSizeMultiplier;
+            default: return swimmingSizeMultiplier;
         }
     }
 
@@ -524,6 +582,8 @@ public class PlayerAnimator : MonoBehaviour
     {
         idleFramesPerSecond = Mathf.Clamp(idleFramesPerSecond, 1f, 30f);
         swimmingFramesPerSecond = Mathf.Clamp(swimmingFramesPerSecond, 1f, 30f);
+        swimmingUpFramesPerSecond = Mathf.Clamp(swimmingUpFramesPerSecond, 1f, 30f);
+        swimmingDownFramesPerSecond = Mathf.Clamp(swimmingDownFramesPerSecond, 1f, 30f);
         holdingFramesPerSecond = Mathf.Clamp(holdingFramesPerSecond, 1f, 30f);
         throwingFramesPerSecond = Mathf.Clamp(throwingFramesPerSecond, 1f, 30f);
         idleSwimmingTransitionDelay = Mathf.Clamp(idleSwimmingTransitionDelay, 0f, 0.5f);
@@ -531,6 +591,8 @@ public class PlayerAnimator : MonoBehaviour
         flipbookRendererLocalScale.y = Mathf.Max(0.001f, flipbookRendererLocalScale.y);
         ClampSizeMultiplier(ref idleSizeMultiplier);
         ClampSizeMultiplier(ref swimmingSizeMultiplier);
+        ClampSizeMultiplier(ref swimmingUpSizeMultiplier);
+        ClampSizeMultiplier(ref swimmingDownSizeMultiplier);
         ClampSizeMultiplier(ref holdingSizeMultiplier);
         ClampSizeMultiplier(ref throwingSizeMultiplier);
     }

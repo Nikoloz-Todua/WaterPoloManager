@@ -493,21 +493,42 @@ public static class WaterPoloBrain
         const float pushAmplitude = 0.06f;
         const float pushCyclesPerSecond = 1.7f;
         const float rockDegrees = 7f;
+        const float diagonalHeldBallDistanceMultiplier = 0.72f;
+        const float diagonalHeldBallHeadBias = 0.65f;
 
         Vector2 velocity = a.Body != null ? a.Body.linearVelocity : Vector2.zero;
         bool moving = velocity.sqrMagnitude > movingThreshold * movingThreshold;
-        Vector2 forward = moving ? velocity.normalized : a.LastDirection.normalized;
+        Vector2 forward = moving ? HeldBallVisualForward(velocity, diagonalHeldBallHeadBias)
+                                 : a.LastDirection.normalized;
         if (forward.sqrMagnitude < 1e-4f) forward = Vector2.right;
 
         // A stable per-swimmer phase prevents every carrier from pulsing in lock-step. This is
         // presentation only: shooting/passing still use LastDirection and their existing physics.
         float phase = Mathf.Abs(Animator.StringToHash(a.Tf.name) % 360) * Mathf.Deg2Rad;
         float motion = Mathf.Sin(Time.time * pushCyclesPerSecond * Mathf.PI * 2f + phase);
-        float distance = a.HoldOffset + (moving ? motion * pushAmplitude : 0f);
+        float diagonal = moving ? DiagonalAmount(velocity.normalized) : 0f;
+        float distance = (a.HoldOffset + (moving ? motion * pushAmplitude : 0f)) *
+                         Mathf.Lerp(1f, diagonalHeldBallDistanceMultiplier, diagonal);
         ctx.Ball.transform.localPosition = (Vector3)(forward * distance);
         ctx.Ball.transform.localRotation = moving
             ? Quaternion.Euler(0f, 0f, motion * rockDegrees)
             : Quaternion.identity;
+    }
+
+    static Vector2 HeldBallVisualForward(Vector2 velocity, float diagonalHeadBias)
+    {
+        Vector2 travel = velocity.normalized;
+        float diagonal = DiagonalAmount(travel);
+        Vector2 headDirection = Mathf.Abs(travel.x) > 0.01f
+            ? new Vector2(Mathf.Sign(travel.x), 0f)
+            : travel;
+        return Vector2.Lerp(travel, headDirection, diagonal * diagonalHeadBias).normalized;
+    }
+
+    static float DiagonalAmount(Vector2 normalizedDirection)
+    {
+        return Mathf.Clamp01(2f * Mathf.Min(Mathf.Abs(normalizedDirection.x),
+                                             Mathf.Abs(normalizedDirection.y)));
     }
 
     // ---- carrier: shoot, pass, or dribble ----

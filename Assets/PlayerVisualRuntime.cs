@@ -62,6 +62,15 @@ public enum PlayerFlipbookVisualState
     Throwing
 }
 
+// Direction is separate from the broad Swimming state: it lets each authored movement sheet have
+// its own playback speed and visual scale without changing gameplay movement or state selection.
+public enum PlayerSwimmingDirection
+{
+    Horizontal,
+    Up,
+    Down
+}
+
 // Tiny non-MonoBehaviour playback helper shared by PlayerAnimator and BotAnimator.
 public sealed class PlayerFlipbookPlayback
 {

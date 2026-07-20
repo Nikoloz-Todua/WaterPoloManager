@@ -12,6 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0aee8b3e4af64d40a32fe82422b16f09, type: 3}
   m_Name: PlayerFlipbookSet
   m_EditorClassIdentifier: Assembly-CSharp::PlayerFlipbookSet
+  useDirectionalSwimmingFrames: 0
   idleFrames:
   - {fileID: -1275021665, guid: 4530cf0a0b046ea4f84ad35be7f693df, type: 3}
   - {fileID: -671669281, guid: 4530cf0a0b046ea4f84ad35be7f693df, type: 3}
@@ -26,6 +27,20 @@ MonoBehaviour:
   - {fileID: -3557246394154682295, guid: 672a09caab981274e88f6d9848cbffeb, type: 3}
   - {fileID: -2440048924440684925, guid: 672a09caab981274e88f6d9848cbffeb, type: 3}
   - {fileID: 4958918873472830762, guid: 672a09caab981274e88f6d9848cbffeb, type: 3}
+  swimmingUpFrames:
+  - {fileID: -1622912644, guid: 13ff09cb253aa2f45809479f210c7455, type: 3}
+  - {fileID: -7938722, guid: 13ff09cb253aa2f45809479f210c7455, type: 3}
+  - {fileID: -569491520, guid: 13ff09cb253aa2f45809479f210c7455, type: 3}
+  - {fileID: 510077461, guid: 13ff09cb253aa2f45809479f210c7455, type: 3}
+  - {fileID: -1032498204, guid: 13ff09cb253aa2f45809479f210c7455, type: 3}
+  - {fileID: 398316526, guid: 13ff09cb253aa2f45809479f210c7455, type: 3}
+  swimmingDownFrames:
+  - {fileID: -5282433469009088283, guid: 86c16bf015b36844ca572c4b7a2d44cf, type: 3}
+  - {fileID: -2282440636621277923, guid: 86c16bf015b36844ca572c4b7a2d44cf, type: 3}
+  - {fileID: 4238387242234136029, guid: 86c16bf015b36844ca572c4b7a2d44cf, type: 3}
+  - {fileID: -8778701165061284330, guid: 86c16bf015b36844ca572c4b7a2d44cf, type: 3}
+  - {fileID: -3268184837626341138, guid: 86c16bf015b36844ca572c4b7a2d44cf, type: 3}
+  - {fileID: 76386733508694726, guid: 86c16bf015b36844ca572c4b7a2d44cf, type: 3}
   holdingFrames:
   - {fileID: 2767496150357596284, guid: d61ed25fbaa985e448d9a977255f5d73, type: 3}
   - {fileID: 3831271297870293176, guid: d61ed25fbaa985e448d9a977255f5d73, type: 3}

@@ -105,25 +105,20 @@ public class BallFlight : MonoBehaviour
     const float GlowSeconds = 0.2f;
     static readonly Color GlowColor = new Color(1f, 1f, 0.6f, 1f);
 
-    // ---- settle ripples (2026-07-09c): a loose ball flopping to rest on the water ----
-    // Armed while a loose ball moves fast; the moment it slows to a float (nobody has picked
-    // it up, not mid-arc) 3 expanding ring waves radiate once from the contact point — first
-    // wave largest, each following one smaller and fainter. Latched: never re-fires while the
-    // ball just sits there; re-arms only after it moves fast again.
+    // ---- settle ripple (2026-07-20): a loose ball resting on the water ----
+    // Reuses the established fast-loose-ball settle trigger. The supplied 3x3 sheet plays an
+    // impact collapse (frames 9 -> 7) once, then loops its small resting ripple (frames 1 -> 3)
+    // until the ball is claimed or moves again.
     const float SettleArmSpeed = 2.5f;     // loose + faster than this = armed
     const float SettleTriggerSpeed = 1f;   // armed + slower than this = the splash
-    // 2026-07-09d: the first pass drew the waves as WHITE ball-sprites up to 9x the ball's
-    // size — screenshots read them as "an oversized duplicate ball stuck in the net". Now
-    // sub-ball-scale, faint, water-cyan, and suppressed near the goal mouths entirely.
     const float SettleMaxX = 6f;           // no splash this close to a goal line (net area)
-    static readonly Color SettleTint = new Color(0.75f, 0.95f, 1f); // pale water cyan
+    const float SettleImpactFrameSeconds = 0.07f;
+    const float SettleIdleFrameSeconds = 0.18f;
+    private bool settleRippleEnabled = false; // art pass disabled at dev request (2026-07-20c)
 
     // ---- skip bounce ----
     const float SquashSeconds = 0.1f;
     const float BounceScale = 0.9f; // brief UNIFORM impact pulse (never a stretch); was a non-uniform squash
-    const float RippleSeconds = 0.3f;
-    const float RippleMaxScale = 0.8f;
-
     // ---- arc shadow (ball rises → shadow shrinks; that contrast IS the height read) ----
     // The on-water (launch/landing) size is per-kind — see *ShadowGround above.
     const float ShadowPeakSize = 0.4f;       // at the arc peak (ball big + shadow small = high)
@@ -169,6 +164,14 @@ public class BallFlight : MonoBehaviour
     private bool passActive; // a plain pass: NO scale change and NO trail (gentle spin only)
 
     private bool settleArmed; // loose ball moved fast → the next slow-down splashes once
+    private Sprite[] settleRippleFrames;
+    private SpriteRenderer settleRippleSr;
+    private SettleRipplePhase settleRipplePhase;
+    private int settleRippleFrame;
+    private float settleRippleFrameStarted;
+    private bool settleRippleVerificationLogged;
+
+    private enum SettleRipplePhase { Hidden, Impact, Idle }
 
     private float baseScale = 1f;    // the ball's authored (uniform) localScale, captured in Awake
     private float scaleFactor = 1f;  // current uniform scale factor (1 = normal); eased every frame
@@ -186,6 +189,7 @@ public class BallFlight : MonoBehaviour
     // True while a high ball is overhead. MatchContext.BallGrabbable reads this: an airborne
     // ball can NOT be grabbed, stolen, saved or picked off by ANYONE until it lands.
     public bool HighBallActive => highBallActive;
+    public bool SettleRippleActive => settleRipplePhase != SettleRipplePhase.Hidden;
 
     void Awake()
     {
@@ -198,6 +202,7 @@ public class BallFlight : MonoBehaviour
         BuildShadow();
         BuildAirSprite();
         BuildTrail();
+        if (settleRippleEnabled) BuildSettleRipple();
     }
 
     // Soft shadow pinned to the water surface under the ball — the ball's own circle
@@ -251,6 +256,34 @@ public class BallFlight : MonoBehaviour
         trail.endColor = TrailEndColor;
         trail.sortingOrder = sr != null ? sr.sortingOrder - 2 : 0; // under ball AND shadow
         trail.emitting = false;
+    }
+
+    // BallFlight is auto-added at runtime, so the sheet is supplied through a Resources asset
+    // rather than a scene-only Inspector reference. The effect itself must stay in WORLD space:
+    // the Ball is authored at 0.04 scale, which would make a parented 1.76u sheet invisible.
+    void BuildSettleRipple()
+    {
+        BallDropRippleFrameSet frameSet = Resources.Load<BallDropRippleFrameSet>("BallDropRippleFrameSet");
+        if (frameSet == null || frameSet.frames == null || frameSet.frames.Length < 9)
+        {
+            Debug.LogError("[BallDropRipple VERIFY] Frame set load FAILED: " +
+                "Resources/BallDropRippleFrameSet is missing or has fewer than 9 frames.");
+            return;
+        }
+
+        settleRippleFrames = frameSet.frames;
+        GameObject go = new GameObject("BallDropRipple");
+        go.transform.position = transform.position;
+        go.transform.localScale = Vector3.one;
+        settleRippleSr = go.AddComponent<SpriteRenderer>();
+        if (sr != null) settleRippleSr.sortingLayerID = sr.sortingLayerID;
+        settleRippleSr.sortingOrder = sr != null ? sr.sortingOrder + 1 : 1;
+        settleRippleSr.enabled = false;
+        Debug.Log($"[BallDropRipple VERIFY] Loaded frame set='{frameSet.name}', frames={settleRippleFrames.Length}, " +
+            $"frame1='{settleRippleFrames[0].name}' texture='{settleRippleFrames[0].texture.name}', " +
+            $"frame9='{settleRippleFrames[8].name}' texture='{settleRippleFrames[8].texture.name}', " +
+            $"ballWorldScale={transform.lossyScale}, rippleWorldScale={go.transform.lossyScale}, " +
+            $"sortingLayer={settleRippleSr.sortingLayerID}, sortingOrder={settleRippleSr.sortingOrder}.");
     }
 
     // Called on every FLAT shot release (skip / mid / point-blank high; human, bot or keeper).
@@ -414,61 +447,92 @@ public class BallFlight : MonoBehaviour
         ApplyVisuals();
     }
 
-    // Fire the settle splash exactly once when a fast loose ball slows to a float and nobody
-    // has collected it (a landed shot/pass decelerating in open water). Held / airborne /
-    // physics-off balls disarm or wait; PlayFrozen (goal hang-time, restarts) suppresses it.
+    // Start the two-phase ripple exactly once when a fast loose ball slows to a float. Held,
+    // airborne, moving, physics-off, and frozen balls stop and hide it immediately.
     void UpdateSettleRipples()
     {
+        if (!settleRippleEnabled) return;
         bool loose = transform.parent == null && rb != null && rb.simulated;
-        if (!loose) { settleArmed = false; return; }
-        if (highBallActive || (skipActive && !bounced)) return; // airborne — it settles at the landing
+        MatchContext ctx = MatchContext.Instance;
+        if (!loose || highBallActive || (skipActive && !bounced) || (ctx != null && ctx.PlayFrozen))
+        {
+            settleArmed = false;
+            StopSettleRipple();
+            return;
+        }
 
         float speed = rb.linearVelocity.magnitude;
-        if (speed > SettleArmSpeed) { settleArmed = true; return; }
-        if (!settleArmed || speed > SettleTriggerSpeed) return;
+        if (speed > SettleTriggerSpeed)
+        {
+            if (speed > SettleArmSpeed) settleArmed = true;
+            StopSettleRipple();
+            return;
+        }
+        if (!settleArmed) return;
 
         settleArmed = false;
-        MatchContext ctx = MatchContext.Instance;
-        if (ctx != null && ctx.PlayFrozen) return; // e.g. the ball dying in the net during hang-time
         if (Mathf.Abs(transform.position.x) > SettleMaxX) return; // never splash inside the net area
-
-        Vector3 p = transform.position;
-        StartCoroutine(RippleWave(p, 0f,    0.3f,  0.4f, 0.5f));   // first wave: biggest, strongest
-        StartCoroutine(RippleWave(p, 0.18f, 0.2f,  0.3f, 0.45f));  // second: smaller, fainter
-        StartCoroutine(RippleWave(p, 0.36f, 0.13f, 0.2f, 0.4f));   // third: a last soft lap
+        StartSettleRipple();
     }
 
-    // One expanding, fading ring at a fixed world point (the ball's contact spot), optionally
-    // delayed. World-space like SpawnRipple — it stays where the ball touched down.
-    IEnumerator RippleWave(Vector3 pos, float delay, float maxScale, float alpha, float seconds)
+    void StartSettleRipple()
     {
-        if (delay > 0f) yield return new WaitForSeconds(delay);
-        if (sr == null) yield break;
-
-        GameObject go = new GameObject("SettleRipple");
-        go.transform.position = pos;
-        SpriteRenderer rs = go.AddComponent<SpriteRenderer>();
-        rs.sprite = sr.sprite;
-        rs.sortingOrder = sr.sortingOrder - 1; // under the ball, over the water
-        rs.color = new Color(SettleTint.r, SettleTint.g, SettleTint.b, alpha);
-
-        float t0 = Time.time;
-        while (Time.time - t0 < seconds && go != null)
+        if (settleRippleSr == null || settleRippleFrames == null || settleRippleFrames.Length < 9)
         {
-            float t = (Time.time - t0) / seconds;
-            go.transform.localScale = Vector3.one * (maxScale * t);
-            rs.color = new Color(SettleTint.r, SettleTint.g, SettleTint.b, alpha * (1f - t));
-            yield return null;
+            Debug.LogError("[BallDropRipple VERIFY] Settle trigger fired but no valid BallDropRipple renderer/frame list exists.");
+            return;
         }
-        if (go != null) Destroy(go);
+
+        settleRipplePhase = SettleRipplePhase.Impact;
+        settleRippleFrame = 8; // frame 9: largest impact ring
+        settleRippleFrameStarted = Time.time;
+        settleRippleSr.transform.position = transform.position;
+        settleRippleSr.transform.localScale = Vector3.one;
+        settleRippleSr.sprite = settleRippleFrames[settleRippleFrame];
+        settleRippleSr.enabled = true;
+        if (!settleRippleVerificationLogged)
+        {
+            settleRippleVerificationLogged = true;
+            Debug.Log($"[BallDropRipple VERIFY] TRIGGER speed={rb.linearVelocity.magnitude:F3}, " +
+                $"position={transform.position}, sprite='{settleRippleSr.sprite.name}', " +
+                $"texture='{settleRippleSr.sprite.texture.name}', rendererEnabled={settleRippleSr.enabled}, " +
+                $"worldScale={settleRippleSr.transform.lossyScale}, sortingLayer={settleRippleSr.sortingLayerID}, " +
+                $"sortingOrder={settleRippleSr.sortingOrder}.");
+        }
     }
 
-    // Reuses the loose-ball settle ripple renderer/coroutine for swimmers' stroke cue.
-    // This is deliberately a single, smaller wave (not a second effect system): callers only
-    // invoke it while their flipbook is actively in the Swimming state.
-    public void SpawnSwimmingRipple(Vector3 pos)
+    void StopSettleRipple()
     {
-        StartCoroutine(RippleWave(pos, 0f, 0.16f, 0.22f, 0.34f));
+        settleRipplePhase = SettleRipplePhase.Hidden;
+        if (settleRippleSr != null) settleRippleSr.enabled = false;
+    }
+
+    void LateUpdate()
+    {
+        if (settleRipplePhase == SettleRipplePhase.Hidden || settleRippleSr == null) return;
+
+        float frameSeconds = settleRipplePhase == SettleRipplePhase.Impact
+            ? SettleImpactFrameSeconds : SettleIdleFrameSeconds;
+        if (Time.time - settleRippleFrameStarted < frameSeconds) return;
+
+        settleRippleFrameStarted += frameSeconds;
+        if (settleRipplePhase == SettleRipplePhase.Impact)
+        {
+            if (settleRippleFrame > 6)
+            {
+                settleRippleFrame--;
+            }
+            else
+            {
+                settleRipplePhase = SettleRipplePhase.Idle;
+                settleRippleFrame = 0; // immediately begin the small resting loop at frame 1
+            }
+        }
+        else
+        {
+            settleRippleFrame = settleRippleFrame == 2 ? 0 : settleRippleFrame + 1;
+        }
+        settleRippleSr.sprite = settleRippleFrames[settleRippleFrame];
     }
 
     // Normalized arc height this frame: 0 on the water, 1 at the peak, 0 again right at the
@@ -596,7 +660,6 @@ public class BallFlight : MonoBehaviour
         KeeperFooled = Random.value < FoolKeeperChance;
 
         squashUntil = Time.time + SquashSeconds; // flat squash, springs back in ApplyVisuals
-        SpawnRipple();
     }
 
     // Spin rate depends on the flight type: shots spin fast, normal passes slowly, the arcing
@@ -711,35 +774,6 @@ public class BallFlight : MonoBehaviour
         if (airSr == null || !airSr.enabled || !highBallActive) return;
         airSr.transform.position = transform.position + new Vector3(0f, highBallPeak * arc01, 0f);
         if (sr != null) { airSr.sprite = sr.sprite; airSr.color = sr.color; } // mirror tint/glow
-    }
-
-    // Expanding, fading water ring at the skip-shot bounce point. Lives in world space
-    // (not parented) so it stays where the ball touched down.
-    void SpawnRipple()
-    {
-        GameObject go = new GameObject("SkipRipple");
-        go.transform.position = transform.position;
-        SpriteRenderer rs = go.AddComponent<SpriteRenderer>();
-        if (sr != null)
-        {
-            rs.sprite = sr.sprite;
-            rs.sortingOrder = sr.sortingOrder - 1;
-        }
-        rs.color = Color.white;
-        StartCoroutine(RippleRoutine(go.transform, rs));
-    }
-
-    IEnumerator RippleRoutine(Transform ring, SpriteRenderer rs)
-    {
-        float t0 = Time.time;
-        while (Time.time - t0 < RippleSeconds && ring != null)
-        {
-            float t = (Time.time - t0) / RippleSeconds;
-            ring.localScale = Vector3.one * (RippleMaxScale * t); // expand 0 → 0.8
-            rs.color = new Color(1f, 1f, 1f, 1f - t);             // fade out
-            yield return null;
-        }
-        if (ring != null) Destroy(ring.gameObject);
     }
 
     // Set the ball's scale ABSOLUTELY from a clean base every frame so it can NEVER accumulate
