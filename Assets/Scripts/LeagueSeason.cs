@@ -1,122 +1,265 @@
+using System;
 using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 
-// Session-persistent state for one division's tournament. A plain static holder (not a MonoBehaviour)
-// so it survives scene transitions within a play session without saving to disk. Team 0 is always
-// the player.
-//
-// Format (identical for all four divisions, just a different random draw of clubs):
-//   • Group stage: 16 teams in two groups of 8 (player in Group A, index 0). Each team plays the
-//     others in its group once — 7 rounds. Recording the player's result also simulates that round's
-//     other fixtures in BOTH groups, so both tables evolve in lockstep.
-//   • Knockout: top 4 of each group seed a single-elimination bracket —
-//     QF: A1 vs B4, A2 vs B3, B1 vs A4, B2 vs A3 → SF (QF1 vs QF2 winners, QF3 vs QF4 winners) → Final.
-//     Knockout matches can't draw: level placeholder scores get a sudden-death goal.
-//   • If the player misses the top 4 or loses a knockout tie, the rest of the bracket simulates
-//     instantly, so the tournament always ends Completed with a champion. Winning the Final makes
-//     the player champion (NavigationManager persists the next-division unlock).
+// Persistent, offline-first championship state. Each competition has exactly ten fixed clubs:
+// two groups of five, a five-round schedule with byes, top two semifinals, placement ties and final.
+// Gameplay still uses the existing Player/Bot scene sides; this class only owns tournament identity/results.
+[Serializable]
 public class LeagueSeason
 {
-    public enum Phase { GroupStage, Quarterfinal, Semifinal, Final, Completed }
+    public enum Phase { GroupStage, Semifinal, Final, Completed }
 
-    // One knockout tie. Team slots hold global team indices; -1 = not yet decided (bracket TBD).
-    public class KnockoutMatch
+    [Serializable]
+    public class Fixture
     {
-        public int teamA = -1, teamB = -1;
-        public int scoreA, scoreB;
+        public int group = -1;       // 0/1 for group fixture, -1 for knockout/placement
+        public int round = -1;       // group calendar round 0..4
+        public string label;
+        public int teamA = -1;
+        public int teamB = -1;
+        public int scoreA;
+        public int scoreB;
         public bool played;
-        public int Winner => !played ? -1 : (scoreA > scoreB ? teamA : teamB);
+        public bool simulated;
+        public int Winner => !played ? -1 : (scoreA > scoreB ? teamA : scoreB > scoreA ? teamB : -1);
         public bool Has(int team) => team >= 0 && (teamA == team || teamB == team);
     }
 
-    public const int TeamCount = 16;
-    public const int GroupSize = 8;
-    public const int PlayerIndex = 0;   // player's group is A (indices 0..7); Group B is 8..15
-    public const int GroupRounds = 7;
+    [Serializable]
+    class SaveFile { public List<LeagueSeason> seasons = new List<LeagueSeason>(); }
 
-    // The active season (the one being viewed). Persists across scene loads within the session.
-    public static LeagueSeason Current;
+    public const int TeamCount = 10;
+    public const int GroupSize = 5;
+    public const int GroupRounds = 5; // includes one bye per club
+    public const int CurrentSchemaVersion = 3;
+    public const string PlayerClubSlot = "__MY_CLUB__";
 
-    // One retained tournament per competition, so switching competitions and coming back keeps progress.
+    public static LeagueSeason Current { get; private set; }
     static readonly Dictionary<int, LeagueSeason> cache = new Dictionary<int, LeagueSeason>();
+    static bool loaded;
+    const string SaveName = "championships.json";
 
+    public int schemaVersion = CurrentSchemaVersion;
     public int competitionIndex;
     public Phase phase = Phase.GroupStage;
-    public int groupRound;              // completed group rounds for everyone (0..7)
-    public string eliminatedIn;         // null while the player is alive; round name once knocked out
+    public int groupRound;
+    public int playerIndex = -1;
+    public string selectedClubId;
+    public string eliminatedIn;
+    public uint rngState;
+    public bool rewardsGranted;
+    public bool promotionGranted;
 
-    public readonly string[] teams = new string[TeamCount];   // [0] = player's club
-    public readonly int[] played = new int[TeamCount];        // group-stage stats only
-    public readonly int[] won = new int[TeamCount];
-    public readonly int[] drawn = new int[TeamCount];
-    public readonly int[] lost = new int[TeamCount];
-    public readonly int[] gf = new int[TeamCount];             // goals for
-    public readonly int[] ga = new int[TeamCount];             // goals against
-    public readonly int[] stars = new int[TeamCount];          // 1–5 star rating (display only)
+    public string[] teams = new string[TeamCount];
+    public int[] played = new int[TeamCount];
+    public int[] won = new int[TeamCount];
+    public int[] drawn = new int[TeamCount];
+    public int[] lost = new int[TeamCount];
+    public int[] gf = new int[TeamCount];
+    public int[] ga = new int[TeamCount];
+    public int[] stars = new int[TeamCount];
+    public int[] finalOrder = new int[TeamCount]; // 1st to 10th; -1 until completion
 
-    // Group round-robin fixtures [group, round, pair, side] as global team indices, built once with
-    // the circle method (slot 0 stays fixed) — so pair 0 of group 0 always contains the player.
-    readonly int[,,,] fixtures = new int[2, GroupRounds, GroupSize / 2, 2];
+    public List<Fixture> groupFixtures = new List<Fixture>();
+    public Fixture[] semifinals = { new Fixture { label = "SEMIFINAL 1" }, new Fixture { label = "SEMIFINAL 2" } };
+    public Fixture thirdPlace = new Fixture { label = "THIRD PLACE" };
+    public Fixture final = new Fixture { label = "FINAL" };
+    public Fixture placement5 = new Fixture { label = "5TH PLACE" };
+    public Fixture placement7 = new Fixture { label = "7TH PLACE" };
+    public Fixture placement9 = new Fixture { label = "9TH PLACE" };
 
-    public readonly KnockoutMatch[] quarterfinals =
-        { new KnockoutMatch(), new KnockoutMatch(), new KnockoutMatch(), new KnockoutMatch() };
-    public readonly KnockoutMatch[] semifinals = { new KnockoutMatch(), new KnockoutMatch() };
-    readonly KnockoutMatch[] finalRound = { new KnockoutMatch() }; // 1-element array so rounds share code
-    public KnockoutMatch Final => finalRound[0];
-
-    // 30 water-polo club names; 15 are drawn per division on first load of that competition.
-    static readonly string[] ClubPool =
+    static readonly string[][][] CompetitionGroups =
     {
-        "Olympiacos WPC", "Pro Recco", "Ferencváros", "Jug Dubrovnik", "Barceloneta", "Szolnoki",
-        "Brescia", "Hannover WP", "Spandau 04", "Vouliagmeni", "Primorac", "Jadran Split",
-        "Mladost Zagreb", "Wasserball Zürich", "AEK Athens", "Partizan Belgrade", "Dynamo Moscow",
-        "CN Marseille", "Savona WP", "Ortigia",
-        "Vasas Budapest", "Sabadell", "AN Brescia", "Torino 81", "Stella Rossa",
-        "Noisy-le-Sec", "Catania WP", "Montpellier WP", "Crvena Zvezda", "Sintez Kazan"
+        new[]
+        {
+            new[] { PlayerClubSlot, "Arenna", "Didi-Orod", "Ineri", "Locomoco" },
+            new[] { "Tbili", "Astinna", "Dinamo", "Poseidon", "Alnguard" }
+        },
+        new[]
+        {
+            new[] { PlayerClubSlot, "Aurelio-Posillipo", "Barcelona", "Mularis-Dubonic", "Piranias" },
+            new[] { "Randolla", "Red-Star", "Spartakus", "Stu-Bucha", "Apollon" }
+        },
+        new[]
+        {
+            new[] { PlayerClubSlot, "Dabrovnik", "Marselo", "Matador", "mlodest" },
+            new[] { "Prianik", "Radni", "Saas-Planka", "Vipa-Pospo", "Crab" }
+        },
+        new[]
+        {
+            new[] { PlayerClubSlot, "Jordani", "New-Grand", "Olimpi", "Pru-Rico" },
+            new[] { "Sebedel", "WP-Lions", "WTC", "Crab", "Matador" }
+        }
     };
 
+    static readonly Dictionary<string, int> Strength = new Dictionary<string, int>(StringComparer.Ordinal)
+    {
+        { "Arenna", 1 }, { "Didi-Orod", 1 }, { "Ineri", 1 }, { "Locomoco", 1 }, { "Tbili", 1 },
+        { "Astinna", 2 }, { "Dinamo", 2 }, { "Poseidon", 2 },
+        { "Alnguard", 3 }, { "Aurelio-Posillipo", 3 }, { "Barcelona", 3 }, { "Mularis-Dubonic", 3 },
+        { "Piranias", 3 }, { "Red-Star", 3 }, { "Spartakus", 3 }, { "Randolla", 3 },
+        { "Apollon", 4 }, { "Dabrovnik", 4 }, { "Marselo", 4 }, { "Matador", 4 }, { "mlodest", 4 },
+        { "Prianik", 4 }, { "Radni", 4 }, { "Saas-Planka", 4 }, { "Vipa-Pospo", 4 },
+        { "Crab", 5 }, { "Jordani", 5 }, { "New-Grand", 5 }, { "Olimpi", 5 }, { "Pru-Rico", 5 },
+        { "Sebedel", 5 }, { "WP-Lions", 5 }, { "WTC", 5 }
+    };
+
+    public int PlayerIndex => playerIndex;
     public bool IsComplete => phase == Phase.Completed;
-    public int Champion => Final.Winner;
-    public bool PlayerIsChampion => IsComplete && Champion == PlayerIndex;
+    public Fixture Final => final;
+    public int Champion => final != null ? final.Winner : -1;
+    public bool PlayerIsChampion => IsComplete && Champion == playerIndex;
+    public int PlayerMatchWins
+    {
+        get
+        {
+            if (playerIndex < 0) return 0;
+            int count = 0;
+            foreach (Fixture fixture in groupFixtures)
+                if (fixture != null && fixture.played && fixture.Has(playerIndex) && fixture.Winner == playerIndex)
+                    count++;
+            foreach (Fixture fixture in semifinals)
+                if (fixture != null && fixture.played && fixture.Has(playerIndex) && fixture.Winner == playerIndex)
+                    count++;
+            if (final != null && final.played && final.Has(playerIndex) && final.Winner == playerIndex)
+                count++;
+            return count;
+        }
+    }
     public int GoalDiff(int i) => gf[i] - ga[i];
     public int Points(int i) => won[i] * 3 + drawn[i];
-    public static int GroupOf(int team) => team / GroupSize;
+    public bool PlayerHasBye => phase == Phase.GroupStage && FindPlayerGroupFixture(groupRound) == null;
 
-    // The player's next opponent (global team index), across every phase. -1 once the run is over.
+    public static IReadOnlyList<string> ClubsForCompetition(int competition)
+    {
+        int c = Mathf.Clamp(competition, 0, CompetitionGroups.Length - 1);
+        List<string> clubs = new List<string>(TeamCount);
+        clubs.AddRange(CompetitionGroups[c][0]);
+        clubs.AddRange(CompetitionGroups[c][1]);
+        return clubs;
+    }
+
+    public static IReadOnlyList<string> ClubsForGroup(int competition, int group)
+    {
+        int c = Mathf.Clamp(competition, 0, CompetitionGroups.Length - 1);
+        return CompetitionGroups[c][Mathf.Clamp(group, 0, 1)];
+    }
+
+    public static bool IsPlayerClubSlot(string clubId) => clubId == PlayerClubSlot;
+
+    public static bool HasRun(int competition)
+    {
+        LoadAll();
+        return cache.ContainsKey(competition);
+    }
+
+    // Used by information-only locked competition screens. A saved run is never allowed to make a
+    // currently locked competition playable (for example after preferences were cleared/restored).
+    public static void ClearCurrentSelection()
+    {
+        Current = null;
+    }
+
+    // Loads an existing run only. Starting a new run automatically injects the saved My Club.
+    public static void Ensure(int competitionIndex, string playerTeamName = null)
+    {
+        LoadAll();
+        cache.TryGetValue(competitionIndex, out LeagueSeason season);
+        if (season != null && season.playerIndex >= 0 && season.playerIndex < TeamCount &&
+            !string.IsNullOrWhiteSpace(playerTeamName))
+        {
+            season.teams[season.playerIndex] = playerTeamName.Trim();
+            season.selectedClubId = PlayerClubSlot;
+            SaveAll();
+        }
+        Current = season;
+    }
+
+    public static LeagueSeason StartNew(int competitionIndex, string playerTeamName)
+    {
+        LoadAll();
+        if (competitionIndex < 0 || competitionIndex >= CompetitionGroups.Length)
+            throw new ArgumentOutOfRangeException(nameof(competitionIndex));
+        if (string.IsNullOrWhiteSpace(playerTeamName))
+            throw new ArgumentException("The player's saved club needs a name.", nameof(playerTeamName));
+
+        LeagueSeason s = new LeagueSeason
+        {
+            competitionIndex = competitionIndex,
+            selectedClubId = PlayerClubSlot,
+            rngState = (uint)(DateTime.UtcNow.Ticks ^ (competitionIndex + 1) * 2654435761L)
+        };
+        if (s.rngState == 0) s.rngState = 0x6D2B79F5u;
+        Array.Fill(s.finalOrder, -1);
+
+        for (int g = 0; g < 2; g++)
+            for (int i = 0; i < GroupSize; i++)
+            {
+                int index = g * GroupSize + i;
+                string slot = CompetitionGroups[competitionIndex][g][i];
+                bool playerSlot = IsPlayerClubSlot(slot);
+                s.teams[index] = playerSlot ? playerTeamName.Trim() : slot;
+                s.stars[index] = playerSlot ? 3 : StrengthOf(slot);
+                if (playerSlot) s.playerIndex = index;
+            }
+
+        s.BuildGroupFixtures();
+        cache[competitionIndex] = s;
+        Current = s;
+        SaveAll();
+        return s;
+    }
+
+    public static void ResetCompletedRun(int competitionIndex)
+    {
+        LoadAll();
+        if (cache.TryGetValue(competitionIndex, out LeagueSeason s) && s.IsComplete)
+        {
+            cache.Remove(competitionIndex);
+            if (Current == s) Current = null;
+            SaveAll();
+        }
+    }
+
+    // Mid-run restart is deliberately gated behind one real win. It replaces only this competition
+    // save; currencies, unlock PlayerPrefs, and every other competition remain untouched.
+    public static bool RestartCurrent(int competitionIndex, string playerTeamName)
+    {
+        LoadAll();
+        if (!cache.TryGetValue(competitionIndex, out LeagueSeason current) ||
+            current == null || current.IsComplete || current.PlayerMatchWins < 1)
+            return false;
+        StartNew(competitionIndex, playerTeamName);
+        return true;
+    }
+
     public int NextOpponent
     {
         get
         {
-            if (IsComplete) return -1;
+            if (IsComplete || playerIndex < 0) return -1;
             if (phase == Phase.GroupStage)
             {
-                int a = fixtures[0, groupRound, 0, 0], b = fixtures[0, groupRound, 0, 1];
-                return a == PlayerIndex ? b : a;
+                Fixture f = FindPlayerGroupFixture(groupRound);
+                return f == null ? -1 : (f.teamA == playerIndex ? f.teamB : f.teamA);
             }
-            KnockoutMatch m = PlayerMatch(RoundMatches(phase));
-            if (m == null || m.played) return -1;
-            return m.teamA == PlayerIndex ? m.teamB : m.teamA;
+            Fixture mine = PlayerFixtureForPhase();
+            return mine == null || mine.played ? -1 : (mine.teamA == playerIndex ? mine.teamB : mine.teamA);
         }
     }
 
-    public string NextOpponentName
-    {
-        get { int o = NextOpponent; return o >= 0 ? teams[o] : null; }
-    }
-
-    // Pre-match header line: which match of the tournament the player is about to play.
+    public string NextOpponentName => NextOpponent >= 0 ? teams[NextOpponent] : null;
     public string MatchLabel
     {
         get
         {
-            switch (phase)
-            {
-                case Phase.GroupStage: return "GROUP MATCH " + (groupRound + 1) + " OF " + GroupRounds;
-                case Phase.Quarterfinal: return "QUARTERFINAL";
-                case Phase.Semifinal: return "SEMIFINAL";
-                case Phase.Final: return "FINAL";
-                default: return "TOURNAMENT COMPLETE";
-            }
+            if (phase == Phase.GroupStage)
+                return PlayerHasBye ? "GROUP STAGE — BYE ROUND" : "GROUP MATCH " + (groupRound + 1) + " OF " + GroupRounds;
+            if (phase == Phase.Semifinal) return "SEMIFINAL";
+            if (phase == Phase.Final) return "FINAL";
+            return "CHAMPIONSHIP COMPLETE";
         }
     }
 
@@ -125,191 +268,29 @@ public class LeagueSeason
         switch (p)
         {
             case Phase.GroupStage: return "GROUP STAGE";
-            case Phase.Quarterfinal: return "QUARTERFINALS";
-            case Phase.Semifinal: return "SEMIFINALS";
-            default: return "FINAL";
+            case Phase.Semifinal: return "SEMIFINAL";
+            case Phase.Final: return "FINAL";
+            default: return "CHAMPIONSHIP";
         }
     }
 
-    // Make sure a tournament exists for this competition. Reuses the running one (so progress is
-    // kept when re-opening the same competition); builds a fresh draw the first time.
-    public static void Ensure(int competitionIndex, string playerTeamName)
-    {
-        string player = string.IsNullOrEmpty(playerTeamName) ? "MY TEAM" : playerTeamName;
-        if (!cache.TryGetValue(competitionIndex, out LeagueSeason s))
-        {
-            s = Create(competitionIndex, player);
-            cache[competitionIndex] = s;
-        }
-        s.teams[PlayerIndex] = player; // keep the club name fresh
-        Current = s;
-    }
-
-    static LeagueSeason Create(int competitionIndex, string player)
-    {
-        LeagueSeason s = new LeagueSeason { competitionIndex = competitionIndex };
-        s.teams[PlayerIndex] = player;
-        s.stars[PlayerIndex] = 3;
-
-        // 15 distinct opponents drawn from the pool.
-        List<string> pool = new List<string>(ClubPool);
-        for (int i = 1; i < TeamCount; i++)
-        {
-            int r = Random.Range(0, pool.Count);
-            s.teams[i] = pool[r];
-            pool.RemoveAt(r);
-            s.stars[i] = Random.Range(2, 6); // 2–5
-        }
-
-        s.BuildGroupFixtures(0, 0);
-        s.BuildGroupFixtures(1, GroupSize);
-        return s;
-    }
-
-    // Circle-method round robin for one group: local slot 0 stays fixed, slots 1..7 rotate each
-    // round, so every team meets every other exactly once across the 7 rounds.
-    void BuildGroupFixtures(int group, int baseIndex)
-    {
-        const int n = GroupSize;
-        for (int r = 0; r < GroupRounds; r++)
-        {
-            int[] arr = new int[n];
-            arr[0] = 0;
-            for (int i = 0; i < n - 1; i++) arr[i + 1] = (i + r) % (n - 1) + 1;
-            for (int p = 0; p < n / 2; p++)
-            {
-                fixtures[group, r, p, 0] = baseIndex + arr[p];
-                fixtures[group, r, p, 1] = baseIndex + arr[n - 1 - p];
-            }
-        }
-    }
-
-    // Record the player's match for the current phase, then move the tournament along (simulate the
-    // rest of the round, advance the phase when the round is done). Called with a placeholder score
-    // for now (real match reporting is wired later).
     public void RecordPlayerResult(int playerGoals, int opponentGoals)
     {
-        switch (phase)
-        {
-            case Phase.GroupStage: PlayGroupRound(playerGoals, opponentGoals); break;
-            case Phase.Quarterfinal:
-            case Phase.Semifinal:
-            case Phase.Final: PlayKnockoutRound(playerGoals, opponentGoals); break;
-        }
+        if (IsComplete || playerIndex < 0) return;
+        if (phase == Phase.GroupStage) PlayGroupRound(playerGoals, opponentGoals);
+        else PlayPlayerKnockout(playerGoals, opponentGoals);
+        SaveAll();
     }
 
-    // One full group round: the player's fixture gets the real score, every other fixture in both
-    // groups gets a random one. After round 7, seed the knockout bracket.
-    void PlayGroupRound(int pg, int og)
+    public void SimulateByeRound()
     {
-        for (int g = 0; g < 2; g++)
-            for (int p = 0; p < GroupSize / 2; p++)
-            {
-                int a = fixtures[g, groupRound, p, 0], b = fixtures[g, groupRound, p, 1];
-                if (a == PlayerIndex) ApplyGroupResult(a, b, pg, og);
-                else if (b == PlayerIndex) ApplyGroupResult(a, b, og, pg);
-                else ApplyGroupResult(a, b, Random.Range(0, 13), Random.Range(0, 13));
-            }
+        if (phase != Phase.GroupStage || !PlayerHasBye) return;
+        foreach (Fixture f in FixturesForGroupRound(groupRound)) if (!f.played) Simulate(f, false);
         groupRound++;
-        if (groupRound >= GroupRounds) SetupKnockout();
+        if (groupRound >= GroupRounds) SetupFinalStage();
+        SaveAll();
     }
 
-    void ApplyGroupResult(int teamA, int teamB, int goalsA, int goalsB)
-    {
-        played[teamA]++; played[teamB]++;
-        gf[teamA] += goalsA; ga[teamA] += goalsB;
-        gf[teamB] += goalsB; ga[teamB] += goalsA;
-        if (goalsA > goalsB) { won[teamA]++; lost[teamB]++; }
-        else if (goalsA < goalsB) { won[teamB]++; lost[teamA]++; }
-        else { drawn[teamA]++; drawn[teamB]++; }
-    }
-
-    void SetupKnockout()
-    {
-        List<int> a = GroupStandings(0), b = GroupStandings(1);
-        SetTie(quarterfinals[0], a[0], b[3]); // A1 vs B4
-        SetTie(quarterfinals[1], a[1], b[2]); // A2 vs B3
-        SetTie(quarterfinals[2], b[0], a[3]); // B1 vs A4
-        SetTie(quarterfinals[3], b[1], a[2]); // B2 vs A3
-        phase = Phase.Quarterfinal;
-
-        if (PlayerMatch(quarterfinals) == null) // missed the top 4 → the bracket plays out without us
-        {
-            eliminatedIn = RoundName(Phase.GroupStage);
-            SimulateToEnd();
-        }
-    }
-
-    static void SetTie(KnockoutMatch m, int teamA, int teamB) { m.teamA = teamA; m.teamB = teamB; }
-
-    // The player's knockout tie: record their (draw-proofed) score, simulate the round's other ties,
-    // advance the bracket. A loss fast-forwards the rest of the tournament to Completed.
-    void PlayKnockoutRound(int pg, int og)
-    {
-        if (pg == og) { if (Random.value < 0.5f) pg++; else og++; } // sudden death — no knockout draws
-
-        KnockoutMatch[] round = RoundMatches(phase);
-        KnockoutMatch mine = PlayerMatch(round);
-        if (mine == null) return; // shouldn't happen — eliminated seasons are already Completed
-
-        if (mine.teamA == PlayerIndex) { mine.scoreA = pg; mine.scoreB = og; }
-        else { mine.scoreA = og; mine.scoreB = pg; }
-        mine.played = true;
-
-        foreach (KnockoutMatch m in round) if (!m.played) Simulate(m);
-
-        bool playerWon = mine.Winner == PlayerIndex;
-        if (!playerWon) eliminatedIn = RoundName(phase);
-        AdvancePhase();
-        if (!playerWon) SimulateToEnd();
-    }
-
-    // Current round is fully played → fill the next round's slots from the winners and move on.
-    void AdvancePhase()
-    {
-        if (phase == Phase.Quarterfinal)
-        {
-            SetTie(semifinals[0], quarterfinals[0].Winner, quarterfinals[1].Winner);
-            SetTie(semifinals[1], quarterfinals[2].Winner, quarterfinals[3].Winner);
-            phase = Phase.Semifinal;
-        }
-        else if (phase == Phase.Semifinal)
-        {
-            SetTie(Final, semifinals[0].Winner, semifinals[1].Winner);
-            phase = Phase.Final;
-        }
-        else if (phase == Phase.Final) phase = Phase.Completed;
-    }
-
-    // Plays out every remaining knockout round instantly (used once the player is eliminated).
-    void SimulateToEnd()
-    {
-        while (phase != Phase.Completed)
-        {
-            foreach (KnockoutMatch m in RoundMatches(phase)) if (!m.played) Simulate(m);
-            AdvancePhase();
-        }
-    }
-
-    static void Simulate(KnockoutMatch m)
-    {
-        m.scoreA = Random.Range(0, 13);
-        m.scoreB = Random.Range(0, 13);
-        if (m.scoreA == m.scoreB) { if (Random.value < 0.5f) m.scoreA++; else m.scoreB++; }
-        m.played = true;
-    }
-
-    public KnockoutMatch[] RoundMatches(Phase p) =>
-        p == Phase.Quarterfinal ? quarterfinals : p == Phase.Semifinal ? semifinals : finalRound;
-
-    static KnockoutMatch PlayerMatch(KnockoutMatch[] round)
-    {
-        foreach (KnockoutMatch m in round) if (m.Has(PlayerIndex)) return m;
-        return null;
-    }
-
-    // Team indices of one group (0 = A, 1 = B) ordered by Points, then Goal Difference, then Goals
-    // For (all descending).
     public List<int> GroupStandings(int group)
     {
         int start = group * GroupSize;
@@ -317,12 +298,312 @@ public class LeagueSeason
         for (int i = 0; i < GroupSize; i++) order.Add(start + i);
         order.Sort((x, y) =>
         {
-            int c = Points(y).CompareTo(Points(x));
-            if (c != 0) return c;
-            c = GoalDiff(y).CompareTo(GoalDiff(x));
-            if (c != 0) return c;
-            return gf[y].CompareTo(gf[x]);
+            int c = Points(y).CompareTo(Points(x)); if (c != 0) return c;
+            c = GoalDiff(y).CompareTo(GoalDiff(x)); if (c != 0) return c;
+            c = gf[y].CompareTo(gf[x]); if (c != 0) return c;
+            return string.CompareOrdinal(teams[x], teams[y]);
         });
         return order;
+    }
+
+    public IEnumerable<Fixture> PlacementFixtures()
+    {
+        yield return placement5;
+        yield return placement7;
+        yield return placement9;
+        yield return thirdPlace;
+    }
+
+    public bool TryGrantCompletionRewards()
+    {
+        if (!IsComplete || rewardsGranted || playerIndex < 0) return false;
+        int rank = Array.IndexOf(finalOrder, playerIndex) + 1;
+        GetRewardForRank(competitionIndex, rank, out int gold, out int diamonds);
+        if (gold > 0) RosterManager.Instance.AddCoins(gold);
+        if (diamonds > 0) RosterManager.Instance.AddDiamonds(diamonds);
+        rewardsGranted = true;
+        if (rank == 1 && competitionIndex < 3) { promotionGranted = true; PlayerPrefs.SetInt(UnlockKey(competitionIndex + 1), 1); PlayerPrefs.Save(); }
+        SaveAll();
+        return true;
+    }
+
+    public static void GetRewardForRank(int competition, int rank, out int gold, out int diamonds)
+    {
+        gold = diamonds = 0;
+        if (competition < 0 || competition >= CompetitionGroups.Length || rank < 1 || rank > 3) return;
+
+        int[,] goldByCompetition =
+        {
+            { 3000, 2000, 1000 },
+            { 5000, 3500, 2000 },
+            { 8000, 5000, 3000 },
+            { 15000, 8000, 5000 }
+        };
+        int[,] diamondsByCompetition =
+        {
+            { 30, 20, 10 },
+            { 50, 35, 20 },
+            { 80, 50, 30 },
+            { 150, 80, 50 }
+        };
+        gold = goldByCompetition[competition, rank - 1];
+        diamonds = diamondsByCompetition[competition, rank - 1];
+    }
+
+    void BuildGroupFixtures()
+    {
+        groupFixtures.Clear();
+        for (int g = 0; g < 2; g++)
+        {
+            List<int> rotation = new List<int> { 0, 1, 2, 3, 4, -1 }; // -1 is the BYE slot
+            // A fresh run draws a fresh calendar once, then the stored fixture list remains fixed.
+            // Teams stay in their known groups; only opponent/bye order changes.
+            for (int i = rotation.Count - 1; i > 0; i--)
+            {
+                int swap = NextInt(0, i + 1);
+                int value = rotation[i];
+                rotation[i] = rotation[swap];
+                rotation[swap] = value;
+            }
+            for (int round = 0; round < GroupRounds; round++)
+            {
+                for (int pair = 0; pair < 3; pair++)
+                {
+                    int a = rotation[pair], b = rotation[rotation.Count - 1 - pair];
+                    if (a >= 0 && b >= 0)
+                        groupFixtures.Add(new Fixture { group = g, round = round, label = "GROUP " + (g == 0 ? "A" : "B") + " — ROUND " + (round + 1), teamA = g * GroupSize + a, teamB = g * GroupSize + b });
+                }
+                int last = rotation[rotation.Count - 1];
+                rotation.RemoveAt(rotation.Count - 1);
+                rotation.Insert(1, last);
+            }
+        }
+    }
+
+    void PlayGroupRound(int playerGoals, int opponentGoals)
+    {
+        foreach (Fixture f in FixturesForGroupRound(groupRound))
+        {
+            if (f.Has(playerIndex))
+            {
+                if (f.teamA == playerIndex) ApplyGroupResult(f, playerGoals, opponentGoals, false);
+                else ApplyGroupResult(f, opponentGoals, playerGoals, false);
+            }
+            else Simulate(f, false);
+        }
+        groupRound++;
+        if (groupRound >= GroupRounds) SetupFinalStage();
+    }
+
+    void SetupFinalStage()
+    {
+        List<int> a = GroupStandings(0), b = GroupStandings(1);
+        SetTie(semifinals[0], a[0], b[1], "SEMIFINAL 1");
+        SetTie(semifinals[1], b[0], a[1], "SEMIFINAL 2");
+        SetTie(placement5, a[2], b[2], "5TH PLACE");
+        SetTie(placement7, a[3], b[3], "7TH PLACE");
+        SetTie(placement9, a[4], b[4], "9TH PLACE");
+        phase = Phase.Semifinal;
+
+        if (!semifinals[0].Has(playerIndex) && !semifinals[1].Has(playerIndex))
+        {
+            eliminatedIn = "GROUP STAGE";
+            SimulateToEnd();
+        }
+    }
+
+    void PlayPlayerKnockout(int playerGoals, int opponentGoals)
+    {
+        Fixture mine = PlayerFixtureForPhase();
+        if (mine == null || mine.played) return;
+        if (mine.teamA == playerIndex) ApplyKnockoutResult(mine, playerGoals, opponentGoals, false);
+        else ApplyKnockoutResult(mine, opponentGoals, playerGoals, false);
+
+        if (phase == Phase.Semifinal)
+        {
+            foreach (Fixture semi in semifinals) if (!semi.played) Simulate(semi, true);
+            foreach (Fixture p in new[] { placement5, placement7, placement9 }) if (!p.played) Simulate(p, true);
+            SetTie(thirdPlace, semifinals[0].Winner == semifinals[0].teamA ? semifinals[0].teamB : semifinals[0].teamA,
+                              semifinals[1].Winner == semifinals[1].teamA ? semifinals[1].teamB : semifinals[1].teamA, "THIRD PLACE");
+            SetTie(final, semifinals[0].Winner, semifinals[1].Winner, "FINAL");
+            if (!final.Has(playerIndex))
+            {
+                eliminatedIn = "SEMIFINAL";
+                Simulate(thirdPlace, true);
+                Simulate(final, true);
+                Complete();
+            }
+            else
+            {
+                Simulate(thirdPlace, true);
+                phase = Phase.Final;
+            }
+        }
+        else if (phase == Phase.Final)
+        {
+            Complete();
+        }
+    }
+
+    void SimulateToEnd()
+    {
+        foreach (Fixture semi in semifinals) if (!semi.played) Simulate(semi, true);
+        foreach (Fixture p in new[] { placement5, placement7, placement9 }) if (!p.played) Simulate(p, true);
+        SetTie(thirdPlace, Loser(semifinals[0]), Loser(semifinals[1]), "THIRD PLACE");
+        SetTie(final, semifinals[0].Winner, semifinals[1].Winner, "FINAL");
+        Simulate(thirdPlace, true);
+        Simulate(final, true);
+        Complete();
+    }
+
+    void Complete()
+    {
+        phase = Phase.Completed;
+        finalOrder = new[]
+        {
+            final.Winner, Loser(final), thirdPlace.Winner, Loser(thirdPlace),
+            placement5.Winner, Loser(placement5), placement7.Winner, Loser(placement7), placement9.Winner, Loser(placement9)
+        };
+    }
+
+    Fixture PlayerFixtureForPhase()
+    {
+        if (phase == Phase.Semifinal)
+        {
+            foreach (Fixture f in semifinals) if (f.Has(playerIndex)) return f;
+        }
+        return phase == Phase.Final && final.Has(playerIndex) ? final : null;
+    }
+
+    Fixture FindPlayerGroupFixture(int round)
+    {
+        foreach (Fixture f in FixturesForGroupRound(round)) if (f.Has(playerIndex)) return f;
+        return null;
+    }
+
+    IEnumerable<Fixture> FixturesForGroupRound(int round)
+    {
+        foreach (Fixture f in groupFixtures) if (f.round == round) yield return f;
+    }
+
+    void Simulate(Fixture f, bool knockout)
+    {
+        if (f == null || f.played) return;
+        int a = SimGoals(f.teamA), b = SimGoals(f.teamB);
+        if (knockout && a == b) { if (Next01() < 0.5f) a++; else b++; }
+        if (f.group >= 0) ApplyGroupResult(f, a, b, true); else ApplyKnockoutResult(f, a, b, true);
+    }
+
+    int SimGoals(int team)
+    {
+        int strength = team >= 0 && team < teams.Length ? StrengthOf(teams[team]) : 3;
+        int roll = NextInt(0, 8); // 0..7, keeps results plausible and varied
+        return Mathf.Clamp(2 + roll + strength / 2, 0, 13);
+    }
+
+    void ApplyGroupResult(Fixture f, int a, int b, bool simulated)
+    {
+        f.scoreA = a; f.scoreB = b; f.played = true; f.simulated = simulated;
+        played[f.teamA]++; played[f.teamB]++;
+        gf[f.teamA] += a; ga[f.teamA] += b; gf[f.teamB] += b; ga[f.teamB] += a;
+        if (a > b) { won[f.teamA]++; lost[f.teamB]++; }
+        else if (b > a) { won[f.teamB]++; lost[f.teamA]++; }
+        else { drawn[f.teamA]++; drawn[f.teamB]++; }
+    }
+
+    void ApplyKnockoutResult(Fixture f, int a, int b, bool simulated)
+    {
+        if (a == b) { if (Next01() < 0.5f) a++; else b++; }
+        f.scoreA = a; f.scoreB = b; f.played = true; f.simulated = simulated;
+    }
+
+    static int Loser(Fixture f) => f == null || !f.played ? -1 : f.Winner == f.teamA ? f.teamB : f.teamA;
+    static void SetTie(Fixture f, int a, int b, string label) { f.teamA = a; f.teamB = b; f.label = label; f.played = false; f.simulated = false; f.scoreA = f.scoreB = 0; }
+    static bool Contains(IReadOnlyList<string> values, string value) { for (int i = 0; i < values.Count; i++) if (values[i] == value) return true; return false; }
+    static int StrengthOf(string club) => !string.IsNullOrEmpty(club) && Strength.TryGetValue(club, out int value) ? value : 3;
+    static string UnlockKey(int index) => index == 1 ? "div1_won" : index == 2 ? "pl_won" : index == 3 ? "cc_won" : "";
+
+    int NextInt(int min, int maxExclusive) => min + Mathf.FloorToInt(Next01() * (maxExclusive - min));
+    float Next01() { rngState = rngState * 1664525u + 1013904223u; return (rngState & 0x00FFFFFFu) / 16777216f; }
+
+    static string SavePath => Path.Combine(Application.persistentDataPath, SaveName);
+    static void LoadAll()
+    {
+        if (loaded) return;
+        loaded = true;
+        try
+        {
+            if (!File.Exists(SavePath)) return;
+            SaveFile file = JsonUtility.FromJson<SaveFile>(File.ReadAllText(SavePath));
+            if (file == null || file.seasons == null) return;
+            foreach (LeagueSeason s in file.seasons)
+            {
+                // Schema 3 changes the roster contract from "pick an official club" to the saved
+                // My Club occupying a dedicated slot. Old runs cannot be migrated without silently
+                // dropping/replacing a different AI club, so they intentionally restart clean.
+                if (s == null || s.schemaVersion != CurrentSchemaVersion ||
+                    s.teams == null || s.teams.Length != TeamCount) continue;
+                s.RepairAfterLoad();
+                cache[s.competitionIndex] = s;
+            }
+        }
+        catch (Exception e) { Debug.LogWarning("LeagueSeason: championship save could not be read. " + e.Message); }
+    }
+
+    void RepairAfterLoad()
+    {
+        if (played == null || played.Length != TeamCount) played = new int[TeamCount];
+        if (won == null || won.Length != TeamCount) won = new int[TeamCount];
+        if (drawn == null || drawn.Length != TeamCount) drawn = new int[TeamCount];
+        if (lost == null || lost.Length != TeamCount) lost = new int[TeamCount];
+        if (gf == null || gf.Length != TeamCount) gf = new int[TeamCount];
+        if (ga == null || ga.Length != TeamCount) ga = new int[TeamCount];
+        if (stars == null || stars.Length != TeamCount) stars = new int[TeamCount];
+        if (finalOrder == null || finalOrder.Length != TeamCount) { finalOrder = new int[TeamCount]; Array.Fill(finalOrder, -1); }
+        if (groupFixtures == null) groupFixtures = new List<Fixture>();
+        if (semifinals == null || semifinals.Length != 2) semifinals = new[] { new Fixture { label = "SEMIFINAL 1" }, new Fixture { label = "SEMIFINAL 2" } };
+        if (thirdPlace == null) thirdPlace = new Fixture { label = "THIRD PLACE" };
+        if (final == null) final = new Fixture { label = "FINAL" };
+        if (placement5 == null) placement5 = new Fixture { label = "5TH PLACE" };
+        if (placement7 == null) placement7 = new Fixture { label = "7TH PLACE" };
+        if (placement9 == null) placement9 = new Fixture { label = "9TH PLACE" };
+        if (rngState == 0) rngState = 0x6D2B79F5u;
+        // Schema 3 always reserves the first Group A slot for the player's saved My Club.
+        selectedClubId = PlayerClubSlot;
+        playerIndex = 0;
+        for (int i = 0; i < TeamCount; i++)
+            if (stars[i] <= 0) stars[i] = StrengthOf(teams[i]);
+
+        // The fixture list is authoritative. Re-derive the duplicated table counters on every load
+        // so an interrupted/partially written save cannot leave fixtures and standings disagreeing.
+        RebuildGroupStats();
+    }
+
+    void RebuildGroupStats()
+    {
+        Array.Clear(played, 0, played.Length);
+        Array.Clear(won, 0, won.Length);
+        Array.Clear(drawn, 0, drawn.Length);
+        Array.Clear(lost, 0, lost.Length);
+        Array.Clear(gf, 0, gf.Length);
+        Array.Clear(ga, 0, ga.Length);
+
+        foreach (Fixture f in groupFixtures)
+        {
+            if (f == null || !f.played || f.teamA < 0 || f.teamA >= TeamCount || f.teamB < 0 || f.teamB >= TeamCount) continue;
+            played[f.teamA]++; played[f.teamB]++;
+            gf[f.teamA] += f.scoreA; ga[f.teamA] += f.scoreB;
+            gf[f.teamB] += f.scoreB; ga[f.teamB] += f.scoreA;
+            if (f.scoreA > f.scoreB) { won[f.teamA]++; lost[f.teamB]++; }
+            else if (f.scoreB > f.scoreA) { won[f.teamB]++; lost[f.teamA]++; }
+            else { drawn[f.teamA]++; drawn[f.teamB]++; }
+        }
+    }
+
+    static void SaveAll()
+    {
+        LoadAll();
+        try { File.WriteAllText(SavePath, JsonUtility.ToJson(new SaveFile { seasons = new List<LeagueSeason>(cache.Values) }, true)); }
+        catch (Exception e) { Debug.LogWarning("LeagueSeason: championship save could not be written. " + e.Message); }
     }
 }

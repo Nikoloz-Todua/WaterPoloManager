@@ -40,6 +40,8 @@ public class MatchTimer : MonoBehaviour
 
     void Start()
     {
+        MatchPresentationContext.Restore();
+        if (!MatchPresentationContext.IsChampionshipFixture) MatchPresentationContext.ClearResultPresentation();
         Time.timeScale = 1f;    // un-freeze in case a previous match ended frozen
         currentQuarter = 1;
         quarter = new CompressedTimer(displayQuarterLength, quarterLength);
@@ -130,6 +132,9 @@ public class MatchTimer : MonoBehaviour
         int bot = scoreManager != null ? scoreManager.AwayScore : 0;
         int outcome = you > bot ? 1 : (bot > you ? -1 : 0);
 
+        // Tournament results are written only after a real final whistle, never before PoolB loads.
+        MatchPresentationContext.SubmitResult(you, bot);
+
         // Completing a match (full time only — not forfeits) earns a reward-slot card pack,
         // shown on the hub's bottom bar.
         PostMatchRewardManager.Instance.AddRewardForMatch();
@@ -166,6 +171,18 @@ public class MatchTimer : MonoBehaviour
         matchOver = true;
         Time.timeScale = 0f;
 
+        int you = scoreManager != null ? scoreManager.HomeScore : 0;
+        int bot = scoreManager != null ? scoreManager.AwayScore : 0;
+
+        // A championship forfeit still has to consume its pending fixture or the tournament would
+        // reopen on the same opponent forever. Store a one-goal walkover margin when the live score
+        // does not already agree with the forced winner.
+        int recordedYou = you;
+        int recordedBot = bot;
+        if (playerWins && recordedYou <= recordedBot) recordedYou = recordedBot + 1;
+        if (!playerWins && recordedBot <= recordedYou) recordedBot = recordedYou + 1;
+        MatchPresentationContext.SubmitResult(recordedYou, recordedBot);
+
         // Forfeit outcome is FORCED (not score-based — a team can forfeit while level).
         if (MatchResultUI.Instance != null)
         {
@@ -175,8 +192,6 @@ public class MatchTimer : MonoBehaviour
 
         if (resultText == null) return;
 
-        int you = scoreManager != null ? scoreManager.HomeScore : 0;
-        int bot = scoreManager != null ? scoreManager.AwayScore : 0;
         string outcome = playerWins ? "YOU WIN" : "YOU LOSE";
 
         resultText.gameObject.SetActive(true);

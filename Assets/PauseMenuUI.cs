@@ -130,10 +130,20 @@ public class PauseMenuUI : MonoBehaviour
 
         MakeText(confirmPanel.transform, "If you quit, this match\ncounts as a loss.", 26f,
                  new Vector2(0f, 80f), new Vector2(360f, 100f));
-        MakeButton(confirmPanel.transform, "YES QUIT", new Vector2(0f, -30f), () => LoadScene("HubScene"));
+        MakeButton(confirmPanel.transform, "YES QUIT", new Vector2(0f, -30f), QuitAsLoss);
         MakeButton(confirmPanel.transform, "CANCEL", new Vector2(0f, -105f),
                    () => confirmPanel.SetActive(false));
         confirmPanel.SetActive(false);
+    }
+
+    void QuitAsLoss()
+    {
+        // The confirmation promises that quitting counts as a loss. Route it through the same
+        // championship-aware forfeit handoff so the current fixture advances and the other clubs'
+        // round results are simulated before returning to the hub.
+        if (MatchTimer.Instance != null && !MatchTimer.Instance.MatchOver)
+            MatchTimer.Instance.ForfeitMatch(false);
+        LoadScene("HubScene");
     }
 
     TextMeshProUGUI MakeText(Transform parent, string content, float size, Vector2 pos, Vector2 box)

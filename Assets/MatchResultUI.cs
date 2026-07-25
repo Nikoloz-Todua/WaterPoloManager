@@ -40,7 +40,17 @@ public class MatchResultUI : MonoBehaviour
         int bot = ScoreManager.Instance != null ? ScoreManager.Instance.AwayScore : 0;
 
         titleText.text = title;
-        scoreText.text = "YOU  " + you + " — " + bot + "  BOT";
+        bool championship = MatchPresentationContext.ResultWasChampionship;
+        string playerClub = championship ? MatchPresentationContext.ResultPlayerClub : "YOU";
+        string opponentClub = championship ? MatchPresentationContext.ResultOpponentClub : "BOT";
+        if (championship)
+        {
+            // Forfeits may need a one-goal walkover margin even when the frozen live scoreboard was
+            // tied. Show the authoritative score that was actually written to the championship.
+            you = MatchPresentationContext.ResultPlayerGoals;
+            bot = MatchPresentationContext.ResultOpponentGoals;
+        }
+        scoreText.text = playerClub + "  " + you + " — " + bot + "  " + opponentClub;
 
         if (outcome > 0)      { winnerText.text = "YOU WIN!"; winnerText.color = Color.cyan; }
         else if (outcome < 0) { winnerText.text = "YOU LOSE"; winnerText.color = new Color(1f, 0.25f, 0.25f); }
@@ -79,10 +89,14 @@ public class MatchResultUI : MonoBehaviour
 
         titleText  = MakeText("Title",  "FULL TIME", 64f, new Vector2(0f, 190f));
         scoreText  = MakeText("Score",  "",          56f, new Vector2(0f, 70f));
+        scoreText.enableAutoSizing = true;
+        scoreText.fontSizeMin = 28f;
+        scoreText.fontSizeMax = 56f;
+        scoreText.textWrappingMode = TextWrappingModes.NoWrap;
         winnerText = MakeText("Winner", "",          44f, new Vector2(0f, -20f));
 
-        // PLAY AGAIN reloads the one match scene (the old pool-select + Pool A are retired).
-        MakeButton("PLAY AGAIN", new Vector2(0f, -120f), () => LoadScene(NavigationManager.MatchScene));
+        // Championship fixtures return to their persistent table. Casual matches retain replay.
+        MakeButton("CONTINUE", new Vector2(0f, -120f), ContinueAfterResult);
         MakeButton("MAIN MENU",  new Vector2(0f, -210f), () => LoadScene("HubScene"));
     }
 
@@ -90,6 +104,11 @@ public class MatchResultUI : MonoBehaviour
     {
         Time.timeScale = 1f; // the match end froze time — never carry that into the next scene
         SceneManager.LoadScene(sceneName);
+    }
+
+    static void ContinueAfterResult()
+    {
+        LoadScene(MatchPresentationContext.ResultWasChampionship ? "HubScene" : NavigationManager.MatchScene);
     }
 
     TextMeshProUGUI MakeText(string name, string content, float size, Vector2 pos)

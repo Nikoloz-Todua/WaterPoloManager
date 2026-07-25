@@ -371,7 +371,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 64b89ac986ebbaf4f92f5097cfba5a48, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BotMovement
   isBlueTeam: 1
   myTeam: {fileID: 896660540}
@@ -517,14 +517,19 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 702abb68fcc0028439b4b0836e11d4b8, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BotAnimator
   defendProximityRadius: 1.5
   flipbookSet: {fileID: 0}
   flipbookFramesPerSecond: 12
+  horizontalSwimmingFramesPerSecond: 12
+  swimmingUpFramesPerSecond: 12
+  swimmingDownFramesPerSecond: 12
   flipbookRendererLocalScale: {x: 1, y: 1}
   idleSizeMultiplier: {x: 1, y: 1}
   swimmingSizeMultiplier: {x: 1, y: 1}
+  swimmingUpSizeMultiplier: {x: 1, y: 1}
+  swimmingDownSizeMultiplier: {x: 1.35, y: 1.35}
   holdingSizeMultiplier: {x: 1, y: 1}
   throwingSizeMultiplier: {x: 1, y: 1}
   blueTeamCapTint: {r: 0.05, g: 0.25, b: 1, a: 1}
@@ -602,7 +607,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
   m_Material: {fileID: 0}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -1185,7 +1190,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 03c7ff0bfc4c2124a9ab50e7e602a301, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::TeamManager
   players:
   - {fileID: 945807556}
@@ -1229,7 +1234,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 041b41694661163459bc0132c01d7131, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::MatchContext
   ball: {fileID: 650185484}
   playerTeam: {fileID: 1812404639}
@@ -1248,7 +1253,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 991b9c866bc6d124eb4d4157d4cd50a3, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::MatchTimer
   scoreManager: {fileID: 1636601637}
   timerText: {fileID: 1791828403}
@@ -1727,97 +1732,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &191684826
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 191684828}
-  - component: {fileID: 191684827}
-  m_Layer: 0
-  m_Name: deck_0
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!212 &191684827
-SpriteRenderer:
-  serializedVersion: 2
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 191684826}
-  m_Enabled: 1
-  m_CastShadows: 0
-  m_ReceiveShadows: 0
-  m_DynamicOccludee: 1
-  m_StaticShadowCaster: 0
-  m_MotionVectors: 1
-  m_LightProbeUsage: 1
-  m_ReflectionProbeUsage: 1
-  m_RayTracingMode: 0
-  m_RayTraceProcedural: 0
-  m_RayTracingAccelStructBuildFlagsOverride: 0
-  m_RayTracingAccelStructBuildFlags: 1
-  m_SmallMeshCulling: 1
-  m_ForceMeshLod: -1
-  m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 1
-  m_RendererPriority: 0
-  m_Materials:
-  - {fileID: 2100000, guid: a97c105638bdf8b4a8650670310a4cd3, type: 2}
-  m_StaticBatchInfo:
-    firstSubMesh: 0
-    subMeshCount: 0
-  m_StaticBatchRoot: {fileID: 0}
-  m_ProbeAnchor: {fileID: 0}
-  m_LightProbeVolumeOverride: {fileID: 0}
-  m_ScaleInLightmap: 1
-  m_ReceiveGI: 1
-  m_PreserveUVs: 0
-  m_IgnoreNormalsForChartDetection: 0
-  m_ImportantGI: 0
-  m_StitchLightmapSeams: 1
-  m_SelectedEditorRenderState: 0
-  m_MinimumChartSize: 4
-  m_AutoUVMaxDistance: 0.5
-  m_AutoUVMaxAngle: 89
-  m_LightmapParameters: {fileID: 0}
-  m_GlobalIlluminationMeshLod: 0
-  m_SortingLayerID: 0
-  m_SortingLayer: 0
-  m_SortingOrder: -3
-  m_MaskInteraction: 0
-  m_Sprite: {fileID: -5481250483381502841, guid: 0109aee5a571cdf448a16b1a57d11e3f, type: 3}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
-  m_FlipX: 0
-  m_FlipY: 0
-  m_DrawMode: 0
-  m_Size: {x: 16.82, y: 7.48}
-  m_AdaptiveModeThreshold: 0.5
-  m_SpriteTileMode: 0
-  m_WasSpriteAssigned: 1
-  m_SpriteSortPoint: 0
---- !u!4 &191684828
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 191684826}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -19.07, y: -0.22, z: 0}
-  m_LocalScale: {x: 0.9497, y: 1.45, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &191796756
 GameObject:
   m_ObjectHideFlags: 0
@@ -2110,97 +2024,6 @@ Transform:
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: -4.21, y: 5.22, z: 0}
   m_LocalScale: {x: 0.06, y: 0.06, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &261228658
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 261228660}
-  - component: {fileID: 261228659}
-  m_Layer: 0
-  m_Name: deck_0 (1)
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!212 &261228659
-SpriteRenderer:
-  serializedVersion: 2
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 261228658}
-  m_Enabled: 1
-  m_CastShadows: 0
-  m_ReceiveShadows: 0
-  m_DynamicOccludee: 1
-  m_StaticShadowCaster: 0
-  m_MotionVectors: 1
-  m_LightProbeUsage: 1
-  m_ReflectionProbeUsage: 1
-  m_RayTracingMode: 0
-  m_RayTraceProcedural: 0
-  m_RayTracingAccelStructBuildFlagsOverride: 0
-  m_RayTracingAccelStructBuildFlags: 1
-  m_SmallMeshCulling: 1
-  m_ForceMeshLod: -1
-  m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 1
-  m_RendererPriority: 0
-  m_Materials:
-  - {fileID: 2100000, guid: a97c105638bdf8b4a8650670310a4cd3, type: 2}
-  m_StaticBatchInfo:
-    firstSubMesh: 0
-    subMeshCount: 0
-  m_StaticBatchRoot: {fileID: 0}
-  m_ProbeAnchor: {fileID: 0}
-  m_LightProbeVolumeOverride: {fileID: 0}
-  m_ScaleInLightmap: 1
-  m_ReceiveGI: 1
-  m_PreserveUVs: 0
-  m_IgnoreNormalsForChartDetection: 0
-  m_ImportantGI: 0
-  m_StitchLightmapSeams: 1
-  m_SelectedEditorRenderState: 0
-  m_MinimumChartSize: 4
-  m_AutoUVMaxDistance: 0.5
-  m_AutoUVMaxAngle: 89
-  m_LightmapParameters: {fileID: 0}
-  m_GlobalIlluminationMeshLod: 0
-  m_SortingLayerID: 0
-  m_SortingLayer: 0
-  m_SortingOrder: -4
-  m_MaskInteraction: 0
-  m_Sprite: {fileID: -5481250483381502841, guid: 0109aee5a571cdf448a16b1a57d11e3f, type: 3}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
-  m_FlipX: 0
-  m_FlipY: 0
-  m_DrawMode: 0
-  m_Size: {x: 16.82, y: 7.48}
-  m_AdaptiveModeThreshold: 0.5
-  m_SpriteTileMode: 0
-  m_WasSpriteAssigned: 1
-  m_SpriteSortPoint: 0
---- !u!4 &261228660
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 261228658}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 18.47, y: -0.22, z: 0}
-  m_LocalScale: {x: 1, y: 1.43, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -3320,6 +3143,7 @@ GameObject:
   m_Component:
   - component: {fileID: 398879462}
   - component: {fileID: 398879461}
+  - component: {fileID: 398879463}
   m_Layer: 0
   m_Name: vertical-line 1_0 (3)
   m_TagString: Untagged
@@ -3401,6 +3225,27 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &398879463
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 398879460}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4cb278d828d95df40a6a4cc02d5479be, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::PoolLineFloat
+  bobAmplitude: 0.01
+  swayDegrees: 0.1
+  minFrequency: 0.6
+  maxFrequency: 0.9
+  troughAlpha: 0.72
+  crestAlpha: 0.94
+  waterTintStrength: 0.16
+  refractedLayerAlpha: 0.22
+  refractionOffset: 0.025
 --- !u!1 &410240940
 GameObject:
   m_ObjectHideFlags: 0
@@ -4208,6 +4053,7 @@ GameObject:
   m_Component:
   - component: {fileID: 488074080}
   - component: {fileID: 488074079}
+  - component: {fileID: 488074081}
   m_Layer: 0
   m_Name: vertical-line 1_0 (6)
   m_TagString: Untagged
@@ -4289,6 +4135,27 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &488074081
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 488074078}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4cb278d828d95df40a6a4cc02d5479be, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::PoolLineFloat
+  bobAmplitude: 0.01
+  swayDegrees: 0.1
+  minFrequency: 0.6
+  maxFrequency: 0.9
+  troughAlpha: 0.72
+  crestAlpha: 0.94
+  waterTintStrength: 0.16
+  refractedLayerAlpha: 0.22
+  refractionOffset: 0.025
 --- !u!1 &499633803
 GameObject:
   m_ObjectHideFlags: 0
@@ -4926,7 +4793,7 @@ Transform:
   m_GameObject: {fileID: 544307703}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 9.84, y: -5.1, z: 0}
+  m_LocalPosition: {x: 9.84, y: -5.75, z: 0}
   m_LocalScale: {x: 0.06, y: 0.06, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -5330,7 +5197,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 4cb278d828d95df40a6a4cc02d5479be, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::PoolLineFloat
   bobAmplitude: 0.01
   swayDegrees: 0.1
@@ -5341,6 +5208,97 @@ MonoBehaviour:
   waterTintStrength: 0.16
   refractedLayerAlpha: 0.22
   refractionOffset: 0.025
+--- !u!1 &617721006
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 617721008}
+  - component: {fileID: 617721007}
+  m_Layer: 0
+  m_Name: infront
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!212 &617721007
+SpriteRenderer:
+  serializedVersion: 2
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 617721006}
+  m_Enabled: 1
+  m_CastShadows: 0
+  m_ReceiveShadows: 0
+  m_DynamicOccludee: 1
+  m_StaticShadowCaster: 0
+  m_MotionVectors: 1
+  m_LightProbeUsage: 1
+  m_ReflectionProbeUsage: 1
+  m_RayTracingMode: 0
+  m_RayTraceProcedural: 0
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
+  m_SmallMeshCulling: 1
+  m_ForceMeshLod: -1
+  m_MeshLodSelectionBias: 0
+  m_RenderingLayerMask: 1
+  m_RendererPriority: 0
+  m_Materials:
+  - {fileID: 2100000, guid: a97c105638bdf8b4a8650670310a4cd3, type: 2}
+  m_StaticBatchInfo:
+    firstSubMesh: 0
+    subMeshCount: 0
+  m_StaticBatchRoot: {fileID: 0}
+  m_ProbeAnchor: {fileID: 0}
+  m_LightProbeVolumeOverride: {fileID: 0}
+  m_ScaleInLightmap: 1
+  m_ReceiveGI: 1
+  m_PreserveUVs: 0
+  m_IgnoreNormalsForChartDetection: 0
+  m_ImportantGI: 0
+  m_StitchLightmapSeams: 1
+  m_SelectedEditorRenderState: 0
+  m_MinimumChartSize: 4
+  m_AutoUVMaxDistance: 0.5
+  m_AutoUVMaxAngle: 89
+  m_LightmapParameters: {fileID: 0}
+  m_GlobalIlluminationMeshLod: 0
+  m_SortingLayerID: 0
+  m_SortingLayer: 0
+  m_SortingOrder: 0
+  m_MaskInteraction: 0
+  m_Sprite: {fileID: 21300000, guid: 44b05c870e5be2a4bb86148f9ff80f2a, type: 3}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_FlipX: 0
+  m_FlipY: 0
+  m_DrawMode: 0
+  m_Size: {x: 17.74, y: 8.87}
+  m_AdaptiveModeThreshold: 0.5
+  m_SpriteTileMode: 0
+  m_WasSpriteAssigned: 0
+  m_SpriteSortPoint: 0
+--- !u!4 &617721008
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 617721006}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 5.33, y: -2.39, z: 0}
+  m_LocalScale: {x: 0.5057, y: 0.5684, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &619394800
 GameObject:
   m_ObjectHideFlags: 0
@@ -5714,9 +5672,14 @@ MonoBehaviour:
   defendProximityRadius: 1.5
   flipbookSet: {fileID: 0}
   flipbookFramesPerSecond: 12
+  horizontalSwimmingFramesPerSecond: 12
+  swimmingUpFramesPerSecond: 12
+  swimmingDownFramesPerSecond: 12
   flipbookRendererLocalScale: {x: 1, y: 1}
   idleSizeMultiplier: {x: 1, y: 1}
   swimmingSizeMultiplier: {x: 1, y: 1}
+  swimmingUpSizeMultiplier: {x: 1, y: 1}
+  swimmingDownSizeMultiplier: {x: 1.35, y: 1.35}
   holdingSizeMultiplier: {x: 1, y: 1}
   throwingSizeMultiplier: {x: 1, y: 1}
   blueTeamCapTint: {r: 0.05, g: 0.25, b: 1, a: 1}
@@ -6975,6 +6938,7 @@ GameObject:
   m_Component:
   - component: {fileID: 771652739}
   - component: {fileID: 771652738}
+  - component: {fileID: 771652740}
   m_Layer: 0
   m_Name: vertical-line 1_0 (4)
   m_TagString: Untagged
@@ -7056,6 +7020,27 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &771652740
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 771652737}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4cb278d828d95df40a6a4cc02d5479be, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::PoolLineFloat
+  bobAmplitude: 0.04
+  swayDegrees: 1.5
+  minFrequency: 0.6
+  maxFrequency: 0.9
+  troughAlpha: 0.72
+  crestAlpha: 0.94
+  waterTintStrength: 0.16
+  refractedLayerAlpha: 0.22
+  refractionOffset: 0.025
 --- !u!1 &773787449
 GameObject:
   m_ObjectHideFlags: 0
@@ -8038,7 +8023,7 @@ Transform:
   m_GameObject: {fileID: 926703298}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -5.57, y: -5.1, z: 0}
+  m_LocalPosition: {x: -5.57, y: -5.73, z: 0}
   m_LocalScale: {x: 0.06, y: 0.06, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -8352,6 +8337,8 @@ MonoBehaviour:
   handOffsetDown: {x: -0.25, y: 0.3}
   movingHoldBallForwardOffset: 0.58
   movingHoldBallPushAmplitude: 0.06
+  diagonalHeldBallDistanceMultiplier: 0.72
+  diagonalHeldBallHeadBias: 0.65
   movingHoldBallPushCyclesPerSecond: 1.7
   movingHoldBallRockDegrees: 7
   handOffsetRightSwapped: {x: -0.25, y: 0.25}
@@ -8364,7 +8351,8 @@ MonoBehaviour:
   minShootSpeed: 8
   highShotSpeedBonus: 1.15
   skipShotHeight: 0.15
-  passFactor: 2.5
+  deflectionShotDistance: 0.75
+  deflectionShotSpeed: 6
   minPassSpeed: 6
   maxPassSpeed: 13
   passChargeTime: 0.45
@@ -8373,7 +8361,6 @@ MonoBehaviour:
   stealChance: 0.4
   stealCooldown: 0.6
   aimLine: {fileID: 1366410576}
-  aimLineLength: 2.5
   aimTriangleLength: 0.3
   aimTriangleWidth: 0.2
   aimTriangleGap: 0.5
@@ -8483,12 +8470,16 @@ MonoBehaviour:
   flipbookSet: {fileID: 0}
   idleFramesPerSecond: 3
   swimmingFramesPerSecond: 6.7
+  swimmingUpFramesPerSecond: 8
+  swimmingDownFramesPerSecond: 8
   holdingFramesPerSecond: 8
   throwingFramesPerSecond: 10
   idleSwimmingTransitionDelay: 0.12
   flipbookRendererLocalScale: {x: 0.3, y: 0.3}
   idleSizeMultiplier: {x: 0.6, y: 0.6}
   swimmingSizeMultiplier: {x: 0.75, y: 0.75}
+  swimmingUpSizeMultiplier: {x: 1, y: 1}
+  swimmingDownSizeMultiplier: {x: 1.35, y: 1.35}
   holdingSizeMultiplier: {x: 0.5, y: 0.5}
   throwingSizeMultiplier: {x: 0.6, y: 0.6}
   holdingSubmergeOffsetY: -0.04
@@ -8645,6 +8636,7 @@ GameObject:
   m_Component:
   - component: {fileID: 958571348}
   - component: {fileID: 958571347}
+  - component: {fileID: 958571349}
   m_Layer: 0
   m_Name: vertical-line 1_0 (5)
   m_TagString: Untagged
@@ -8726,6 +8718,27 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &958571349
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 958571346}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4cb278d828d95df40a6a4cc02d5479be, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::PoolLineFloat
+  bobAmplitude: 0.01
+  swayDegrees: 0.1
+  minFrequency: 0.6
+  maxFrequency: 0.9
+  troughAlpha: 0.72
+  crestAlpha: 0.94
+  waterTintStrength: 0.16
+  refractedLayerAlpha: 0.22
+  refractionOffset: 0.025
 --- !u!1 &965530502
 GameObject:
   m_ObjectHideFlags: 0
@@ -8815,6 +8828,8 @@ MonoBehaviour:
   handOffsetDown: {x: -0.25, y: 0.3}
   movingHoldBallForwardOffset: 0.58
   movingHoldBallPushAmplitude: 0.06
+  diagonalHeldBallDistanceMultiplier: 0.72
+  diagonalHeldBallHeadBias: 0.65
   movingHoldBallPushCyclesPerSecond: 1.7
   movingHoldBallRockDegrees: 7
   handOffsetRightSwapped: {x: -0.25, y: 0.25}
@@ -8827,7 +8842,8 @@ MonoBehaviour:
   minShootSpeed: 8
   highShotSpeedBonus: 1.15
   skipShotHeight: 0.15
-  passFactor: 2.5
+  deflectionShotDistance: 0.75
+  deflectionShotSpeed: 6
   minPassSpeed: 6
   maxPassSpeed: 13
   passChargeTime: 0.45
@@ -8836,7 +8852,6 @@ MonoBehaviour:
   stealChance: 0.4
   stealCooldown: 0.6
   aimLine: {fileID: 1572314170}
-  aimLineLength: 2.5
   aimTriangleLength: 0.3
   aimTriangleWidth: 0.2
   aimTriangleGap: 0.5
@@ -8983,12 +8998,16 @@ MonoBehaviour:
   flipbookSet: {fileID: 0}
   idleFramesPerSecond: 3
   swimmingFramesPerSecond: 6.7
+  swimmingUpFramesPerSecond: 8
+  swimmingDownFramesPerSecond: 8
   holdingFramesPerSecond: 8
   throwingFramesPerSecond: 10
   idleSwimmingTransitionDelay: 0.12
   flipbookRendererLocalScale: {x: 0.3, y: 0.3}
   idleSizeMultiplier: {x: 0.6, y: 0.6}
   swimmingSizeMultiplier: {x: 0.75, y: 0.75}
+  swimmingUpSizeMultiplier: {x: 1, y: 1}
+  swimmingDownSizeMultiplier: {x: 1.35, y: 1.35}
   holdingSizeMultiplier: {x: 0.5, y: 0.5}
   throwingSizeMultiplier: {x: 0.6, y: 0.6}
   holdingSubmergeOffsetY: -0.04
@@ -10488,6 +10507,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1137905107}
   - component: {fileID: 1137905106}
+  - component: {fileID: 1137905108}
   m_Layer: 0
   m_Name: vertical-line 1_0 (2)
   m_TagString: Untagged
@@ -10569,6 +10589,27 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1137905108
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1137905105}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4cb278d828d95df40a6a4cc02d5479be, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::PoolLineFloat
+  bobAmplitude: 0.01
+  swayDegrees: 0.1
+  minFrequency: 0.6
+  maxFrequency: 0.9
+  troughAlpha: 0.72
+  crestAlpha: 0.94
+  waterTintStrength: 0.16
+  refractedLayerAlpha: 0.22
+  refractionOffset: 0.025
 --- !u!1 &1195036843
 GameObject:
   m_ObjectHideFlags: 0
@@ -10719,6 +10760,8 @@ MonoBehaviour:
   handOffsetDown: {x: -0.25, y: 0.3}
   movingHoldBallForwardOffset: 0.58
   movingHoldBallPushAmplitude: 0.06
+  diagonalHeldBallDistanceMultiplier: 0.72
+  diagonalHeldBallHeadBias: 0.65
   movingHoldBallPushCyclesPerSecond: 1.7
   movingHoldBallRockDegrees: 7
   handOffsetRightSwapped: {x: -0.25, y: 0.25}
@@ -10731,7 +10774,8 @@ MonoBehaviour:
   minShootSpeed: 8
   highShotSpeedBonus: 1.15
   skipShotHeight: 0.15
-  passFactor: 2.5
+  deflectionShotDistance: 0.75
+  deflectionShotSpeed: 6
   minPassSpeed: 6
   maxPassSpeed: 13
   passChargeTime: 0.45
@@ -10740,7 +10784,6 @@ MonoBehaviour:
   stealChance: 0.4
   stealCooldown: 0.6
   aimLine: {fileID: 660776515}
-  aimLineLength: 2.5
   aimTriangleLength: 0.3
   aimTriangleWidth: 0.2
   aimTriangleGap: 0.5
@@ -10887,12 +10930,16 @@ MonoBehaviour:
   flipbookSet: {fileID: 0}
   idleFramesPerSecond: 3
   swimmingFramesPerSecond: 6.7
+  swimmingUpFramesPerSecond: 8
+  swimmingDownFramesPerSecond: 8
   holdingFramesPerSecond: 8
   throwingFramesPerSecond: 10
   idleSwimmingTransitionDelay: 0.12
   flipbookRendererLocalScale: {x: 0.3, y: 0.3}
   idleSizeMultiplier: {x: 0.6, y: 0.6}
   swimmingSizeMultiplier: {x: 0.75, y: 0.75}
+  swimmingUpSizeMultiplier: {x: 1, y: 1}
+  swimmingDownSizeMultiplier: {x: 1.35, y: 1.35}
   holdingSizeMultiplier: {x: 0.5, y: 0.5}
   throwingSizeMultiplier: {x: 0.6, y: 0.6}
   holdingSubmergeOffsetY: -0.04
@@ -11016,6 +11063,97 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1211142015
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1211142017}
+  - component: {fileID: 1211142016}
+  m_Layer: 0
+  m_Name: walking side_0 (4)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!212 &1211142016
+SpriteRenderer:
+  serializedVersion: 2
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1211142015}
+  m_Enabled: 1
+  m_CastShadows: 0
+  m_ReceiveShadows: 0
+  m_DynamicOccludee: 1
+  m_StaticShadowCaster: 0
+  m_MotionVectors: 1
+  m_LightProbeUsage: 1
+  m_ReflectionProbeUsage: 1
+  m_RayTracingMode: 0
+  m_RayTraceProcedural: 0
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
+  m_SmallMeshCulling: 1
+  m_ForceMeshLod: -1
+  m_MeshLodSelectionBias: 0
+  m_RenderingLayerMask: 1
+  m_RendererPriority: 0
+  m_Materials:
+  - {fileID: 2100000, guid: a97c105638bdf8b4a8650670310a4cd3, type: 2}
+  m_StaticBatchInfo:
+    firstSubMesh: 0
+    subMeshCount: 0
+  m_StaticBatchRoot: {fileID: 0}
+  m_ProbeAnchor: {fileID: 0}
+  m_LightProbeVolumeOverride: {fileID: 0}
+  m_ScaleInLightmap: 1
+  m_ReceiveGI: 1
+  m_PreserveUVs: 0
+  m_IgnoreNormalsForChartDetection: 0
+  m_ImportantGI: 0
+  m_StitchLightmapSeams: 1
+  m_SelectedEditorRenderState: 0
+  m_MinimumChartSize: 4
+  m_AutoUVMaxDistance: 0.5
+  m_AutoUVMaxAngle: 89
+  m_LightmapParameters: {fileID: 0}
+  m_GlobalIlluminationMeshLod: 0
+  m_SortingLayerID: 0
+  m_SortingLayer: 0
+  m_SortingOrder: -2
+  m_MaskInteraction: 0
+  m_Sprite: {fileID: -7029836275829529249, guid: 92345a43bae104e4d9c35e9e935bdae3, type: 3}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_FlipX: 0
+  m_FlipY: 0
+  m_DrawMode: 0
+  m_Size: {x: 16.35, y: 0.79}
+  m_AdaptiveModeThreshold: 0.5
+  m_SpriteTileMode: 0
+  m_WasSpriteAssigned: 1
+  m_SpriteSortPoint: 0
+--- !u!4 &1211142017
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1211142015}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: -0, z: 0.7071068, w: -0.7071068}
+  m_LocalPosition: {x: -18.46, y: -0.39, z: 0}
+  m_LocalScale: {x: 0.6823108, y: 28.233366, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 270}
 --- !u!1 &1227050014
 GameObject:
   m_ObjectHideFlags: 0
@@ -11065,6 +11203,8 @@ MonoBehaviour:
   handOffsetDown: {x: -0.25, y: 0.3}
   movingHoldBallForwardOffset: 0.58
   movingHoldBallPushAmplitude: 0.06
+  diagonalHeldBallDistanceMultiplier: 0.72
+  diagonalHeldBallHeadBias: 0.65
   movingHoldBallPushCyclesPerSecond: 1.7
   movingHoldBallRockDegrees: 7
   handOffsetRightSwapped: {x: -0.25, y: 0.25}
@@ -11077,7 +11217,8 @@ MonoBehaviour:
   minShootSpeed: 8
   highShotSpeedBonus: 1.15
   skipShotHeight: 0.15
-  passFactor: 2.5
+  deflectionShotDistance: 0.75
+  deflectionShotSpeed: 6
   minPassSpeed: 6
   maxPassSpeed: 13
   passChargeTime: 0.45
@@ -11086,7 +11227,6 @@ MonoBehaviour:
   stealChance: 0.4
   stealCooldown: 0.6
   aimLine: {fileID: 1917738298}
-  aimLineLength: 2.5
   aimTriangleLength: 0.3
   aimTriangleWidth: 0.2
   aimTriangleGap: 0.5
@@ -11273,12 +11413,16 @@ MonoBehaviour:
   flipbookSet: {fileID: 0}
   idleFramesPerSecond: 3
   swimmingFramesPerSecond: 6.7
+  swimmingUpFramesPerSecond: 8
+  swimmingDownFramesPerSecond: 8
   holdingFramesPerSecond: 8
   throwingFramesPerSecond: 10
   idleSwimmingTransitionDelay: 0.12
   flipbookRendererLocalScale: {x: 0.3, y: 0.3}
   idleSizeMultiplier: {x: 0.6, y: 0.6}
   swimmingSizeMultiplier: {x: 0.75, y: 0.75}
+  swimmingUpSizeMultiplier: {x: 1, y: 1}
+  swimmingDownSizeMultiplier: {x: 1.35, y: 1.35}
   holdingSizeMultiplier: {x: 0.5, y: 0.5}
   throwingSizeMultiplier: {x: 0.6, y: 0.6}
   holdingSubmergeOffsetY: -0.04
@@ -11397,7 +11541,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0.7071068, w: 0.7071068}
   m_LocalPosition: {x: -10.48, y: -0.14, z: 0}
-  m_LocalScale: {x: 0.8, y: 0.7, z: 1}
+  m_LocalScale: {x: 0.7, y: 0.7, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -12822,6 +12966,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1417774677}
   - component: {fileID: 1417774676}
+  - component: {fileID: 1417774678}
   m_Layer: 0
   m_Name: vertical-line 1_0 (1)
   m_TagString: Untagged
@@ -12903,6 +13048,27 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1417774678
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1417774675}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4cb278d828d95df40a6a4cc02d5479be, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::PoolLineFloat
+  bobAmplitude: 0.01
+  swayDegrees: 0.1
+  minFrequency: 0.6
+  maxFrequency: 0.9
+  troughAlpha: 0.72
+  crestAlpha: 0.94
+  waterTintStrength: 0.16
+  refractedLayerAlpha: 0.22
+  refractionOffset: 0.025
 --- !u!1 &1419728991
 GameObject:
   m_ObjectHideFlags: 0
@@ -13220,6 +13386,8 @@ MonoBehaviour:
   handOffsetDown: {x: -0.25, y: 0.3}
   movingHoldBallForwardOffset: 0.58
   movingHoldBallPushAmplitude: 0.06
+  diagonalHeldBallDistanceMultiplier: 0.72
+  diagonalHeldBallHeadBias: 0.65
   movingHoldBallPushCyclesPerSecond: 1.7
   movingHoldBallRockDegrees: 7
   handOffsetRightSwapped: {x: -0.25, y: 0.25}
@@ -13232,7 +13400,8 @@ MonoBehaviour:
   minShootSpeed: 8
   highShotSpeedBonus: 1.15
   skipShotHeight: 0.15
-  passFactor: 2.5
+  deflectionShotDistance: 0.75
+  deflectionShotSpeed: 6
   minPassSpeed: 6
   maxPassSpeed: 13
   passChargeTime: 0.45
@@ -13241,7 +13410,6 @@ MonoBehaviour:
   stealChance: 0.4
   stealCooldown: 0.6
   aimLine: {fileID: 1359018349}
-  aimLineLength: 2.5
   aimTriangleLength: 0.3
   aimTriangleWidth: 0.2
   aimTriangleGap: 0.5
@@ -13388,12 +13556,16 @@ MonoBehaviour:
   flipbookSet: {fileID: 0}
   idleFramesPerSecond: 3
   swimmingFramesPerSecond: 6.7
+  swimmingUpFramesPerSecond: 8
+  swimmingDownFramesPerSecond: 8
   holdingFramesPerSecond: 8
   throwingFramesPerSecond: 10
   idleSwimmingTransitionDelay: 0.12
   flipbookRendererLocalScale: {x: 0.3, y: 0.3}
   idleSizeMultiplier: {x: 0.6, y: 0.6}
   swimmingSizeMultiplier: {x: 0.75, y: 0.75}
+  swimmingUpSizeMultiplier: {x: 1, y: 1}
+  swimmingDownSizeMultiplier: {x: 1.35, y: 1.35}
   holdingSizeMultiplier: {x: 0.5, y: 0.5}
   throwingSizeMultiplier: {x: 0.6, y: 0.6}
   holdingSubmergeOffsetY: -0.04
@@ -13715,9 +13887,14 @@ MonoBehaviour:
   defendProximityRadius: 1.5
   flipbookSet: {fileID: 0}
   flipbookFramesPerSecond: 12
+  horizontalSwimmingFramesPerSecond: 12
+  swimmingUpFramesPerSecond: 12
+  swimmingDownFramesPerSecond: 12
   flipbookRendererLocalScale: {x: 1, y: 1}
   idleSizeMultiplier: {x: 1, y: 1}
   swimmingSizeMultiplier: {x: 1, y: 1}
+  swimmingUpSizeMultiplier: {x: 1, y: 1}
+  swimmingDownSizeMultiplier: {x: 1.35, y: 1.35}
   holdingSizeMultiplier: {x: 1, y: 1}
   throwingSizeMultiplier: {x: 1, y: 1}
   blueTeamCapTint: {r: 0.05, g: 0.25, b: 1, a: 1}
@@ -15267,9 +15444,14 @@ MonoBehaviour:
   defendProximityRadius: 1.5
   flipbookSet: {fileID: 0}
   flipbookFramesPerSecond: 12
+  horizontalSwimmingFramesPerSecond: 12
+  swimmingUpFramesPerSecond: 12
+  swimmingDownFramesPerSecond: 12
   flipbookRendererLocalScale: {x: 1, y: 1}
   idleSizeMultiplier: {x: 1, y: 1}
   swimmingSizeMultiplier: {x: 1, y: 1}
+  swimmingUpSizeMultiplier: {x: 1, y: 1}
+  swimmingDownSizeMultiplier: {x: 1.35, y: 1.35}
   holdingSizeMultiplier: {x: 1, y: 1}
   throwingSizeMultiplier: {x: 1, y: 1}
   blueTeamCapTint: {r: 0.05, g: 0.25, b: 1, a: 1}
@@ -15428,6 +15610,8 @@ MonoBehaviour:
   goalFreezeSeconds: 1
   postGoalPauseSeconds: 3
   goalHangSeconds: 3.5
+  replayLeadInSeconds: 0.8
+  replayReturnHoldSeconds: 0.35
 --- !u!4 &1636601638
 Transform:
   m_ObjectHideFlags: 0
@@ -16321,6 +16505,8 @@ MonoBehaviour:
   handOffsetDown: {x: -0.25, y: 0.3}
   movingHoldBallForwardOffset: 0.58
   movingHoldBallPushAmplitude: 0.06
+  diagonalHeldBallDistanceMultiplier: 0.72
+  diagonalHeldBallHeadBias: 0.65
   movingHoldBallPushCyclesPerSecond: 1.7
   movingHoldBallRockDegrees: 7
   handOffsetRightSwapped: {x: -0.25, y: 0.25}
@@ -16333,7 +16519,8 @@ MonoBehaviour:
   minShootSpeed: 8
   highShotSpeedBonus: 1.15
   skipShotHeight: 0.15
-  passFactor: 2.5
+  deflectionShotDistance: 0.75
+  deflectionShotSpeed: 6
   minPassSpeed: 6
   maxPassSpeed: 13
   passChargeTime: 0.45
@@ -16342,7 +16529,6 @@ MonoBehaviour:
   stealChance: 0.4
   stealCooldown: 0.6
   aimLine: {fileID: 1298931749}
-  aimLineLength: 2.5
   aimTriangleLength: 0.3
   aimTriangleWidth: 0.3
   aimTriangleGap: 0.5
@@ -16489,12 +16675,16 @@ MonoBehaviour:
   flipbookSet: {fileID: 0}
   idleFramesPerSecond: 3
   swimmingFramesPerSecond: 6.7
+  swimmingUpFramesPerSecond: 8
+  swimmingDownFramesPerSecond: 8
   holdingFramesPerSecond: 8
   throwingFramesPerSecond: 10
   idleSwimmingTransitionDelay: 0.12
   flipbookRendererLocalScale: {x: 0.3, y: 0.3}
   idleSizeMultiplier: {x: 0.6, y: 0.6}
   swimmingSizeMultiplier: {x: 0.75, y: 0.75}
+  swimmingUpSizeMultiplier: {x: 1, y: 1}
+  swimmingDownSizeMultiplier: {x: 1.35, y: 1.35}
   holdingSizeMultiplier: {x: 0.5, y: 0.5}
   throwingSizeMultiplier: {x: 0.6, y: 0.6}
   holdingSubmergeOffsetY: -0.04
@@ -16725,9 +16915,14 @@ MonoBehaviour:
   defendProximityRadius: 1.5
   flipbookSet: {fileID: 0}
   flipbookFramesPerSecond: 12
+  horizontalSwimmingFramesPerSecond: 12
+  swimmingUpFramesPerSecond: 12
+  swimmingDownFramesPerSecond: 12
   flipbookRendererLocalScale: {x: 1, y: 1}
   idleSizeMultiplier: {x: 1, y: 1}
   swimmingSizeMultiplier: {x: 1, y: 1}
+  swimmingUpSizeMultiplier: {x: 1, y: 1}
+  swimmingDownSizeMultiplier: {x: 1.35, y: 1.35}
   holdingSizeMultiplier: {x: 1, y: 1}
   throwingSizeMultiplier: {x: 1, y: 1}
   blueTeamCapTint: {r: 0.05, g: 0.25, b: 1, a: 1}
@@ -17704,9 +17899,14 @@ MonoBehaviour:
   defendProximityRadius: 1.5
   flipbookSet: {fileID: 0}
   flipbookFramesPerSecond: 12
+  horizontalSwimmingFramesPerSecond: 12
+  swimmingUpFramesPerSecond: 12
+  swimmingDownFramesPerSecond: 12
   flipbookRendererLocalScale: {x: 1, y: 1}
   idleSizeMultiplier: {x: 1, y: 1}
   swimmingSizeMultiplier: {x: 1, y: 1}
+  swimmingUpSizeMultiplier: {x: 1, y: 1}
+  swimmingDownSizeMultiplier: {x: 1.35, y: 1.35}
   holdingSizeMultiplier: {x: 1, y: 1}
   throwingSizeMultiplier: {x: 1, y: 1}
   blueTeamCapTint: {r: 0.05, g: 0.25, b: 1, a: 1}
@@ -18679,6 +18879,97 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &2027364162
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2027364164}
+  - component: {fileID: 2027364163}
+  m_Layer: 0
+  m_Name: walking side_0 (5)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!212 &2027364163
+SpriteRenderer:
+  serializedVersion: 2
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2027364162}
+  m_Enabled: 1
+  m_CastShadows: 0
+  m_ReceiveShadows: 0
+  m_DynamicOccludee: 1
+  m_StaticShadowCaster: 0
+  m_MotionVectors: 1
+  m_LightProbeUsage: 1
+  m_ReflectionProbeUsage: 1
+  m_RayTracingMode: 0
+  m_RayTraceProcedural: 0
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
+  m_SmallMeshCulling: 1
+  m_ForceMeshLod: -1
+  m_MeshLodSelectionBias: 0
+  m_RenderingLayerMask: 1
+  m_RendererPriority: 0
+  m_Materials:
+  - {fileID: 2100000, guid: a97c105638bdf8b4a8650670310a4cd3, type: 2}
+  m_StaticBatchInfo:
+    firstSubMesh: 0
+    subMeshCount: 0
+  m_StaticBatchRoot: {fileID: 0}
+  m_ProbeAnchor: {fileID: 0}
+  m_LightProbeVolumeOverride: {fileID: 0}
+  m_ScaleInLightmap: 1
+  m_ReceiveGI: 1
+  m_PreserveUVs: 0
+  m_IgnoreNormalsForChartDetection: 0
+  m_ImportantGI: 0
+  m_StitchLightmapSeams: 1
+  m_SelectedEditorRenderState: 0
+  m_MinimumChartSize: 4
+  m_AutoUVMaxDistance: 0.5
+  m_AutoUVMaxAngle: 89
+  m_LightmapParameters: {fileID: 0}
+  m_GlobalIlluminationMeshLod: 0
+  m_SortingLayerID: 0
+  m_SortingLayer: 0
+  m_SortingOrder: -4
+  m_MaskInteraction: 0
+  m_Sprite: {fileID: -7029836275829529249, guid: 92345a43bae104e4d9c35e9e935bdae3, type: 3}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_FlipX: 0
+  m_FlipY: 0
+  m_DrawMode: 0
+  m_Size: {x: 16.35, y: 0.79}
+  m_AdaptiveModeThreshold: 0.5
+  m_SpriteTileMode: 0
+  m_WasSpriteAssigned: 1
+  m_SpriteSortPoint: 0
+--- !u!4 &2027364164
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2027364162}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0.7071068, w: 0.7071068}
+  m_LocalPosition: {x: 18.98, y: -0.4, z: 0}
+  m_LocalScale: {x: 0.6823108, y: 28.233366, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 90}
 --- !u!1 &2053272802
 GameObject:
   m_ObjectHideFlags: 0
@@ -18856,7 +19147,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: -0, z: 0.7071068, w: -0.7071068}
   m_LocalPosition: {x: 10.91, y: -0.14, z: 0}
-  m_LocalScale: {x: 0.8, y: 0.7, z: 1}
+  m_LocalScale: {x: 0.7, y: 0.7, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -19059,6 +19350,8 @@ SceneRoots:
   - {fileID: 1956580130}
   - {fileID: 1483155244}
   - {fileID: 332227422}
+  - {fileID: 1211142017}
+  - {fileID: 2027364164}
   - {fileID: 1590922005}
   - {fileID: 1837045842}
   - {fileID: 845828043}
@@ -19076,8 +19369,6 @@ SceneRoots:
   - {fileID: 1807130622}
   - {fileID: 1547438590}
   - {fileID: 1131567226}
-  - {fileID: 191684828}
-  - {fileID: 261228660}
   - {fileID: 867139378}
   - {fileID: 277936468}
   - {fileID: 1027549297}
@@ -19135,3 +19426,4 @@ SceneRoots:
   - {fileID: 686335181}
   - {fileID: 398879462}
   - {fileID: 771652739}
+  - {fileID: 617721008}

@@ -5,6 +5,7 @@ using UnityEngine.UI;
 using UnityEngine.SceneManagement;
 using UnityEngine.EventSystems;
 using TMPro;
+using System.Globalization;
 
 // The main game hub for HubScene, built entirely in code (no prefabs, no Inspector wiring).
 // Layout (mobile landscape, 16:9 / 1280x720 reference):
@@ -57,6 +58,7 @@ public class NavigationManager : MonoBehaviour
     private GameObject rankingOverlay, shopOverlay, teamOverlay, gameModeOverlay;
     private ShopUI shopUI;                           // the Shop screen component (for tab-jump shortcuts)
     private GameObject standingsOverlay, preMatchOverlay; // built lazily, content rebuilt on each open
+    private GameObject restartChampionshipOverlay;
     private GameObject clubOverlay, settingsOverlay, messagesOverlay, giftsOverlay;
     private GameObject missionsOverlay, seasonPassOverlay;
     private GameObject friendsOverlay, clubsOverlay; // coming-soon stubs (no online backend yet)
@@ -77,11 +79,12 @@ public class NavigationManager : MonoBehaviour
 
     // Competition display names, shared by the cards, standings and pre-match screens.
     private static readonly string[] CompNames =
-        { "DIVISION 1", "PREMIER LEAGUE", "CONTINENTAL CUP", "WORLD CHAMPIONS LEAGUE" };
+        { "DIVISION 1", "PREMIUM LEAGUE", "CONTINENTAL CUP", "WORLD CHAMPIONS LEAGUE" };
 
     // Competition-screen view state (reset on each open; rebuilt in place on tab/expand taps).
     private int compTab;                                     // 0 = GROUP STAGE, 1 = KNOCKOUT
     private readonly bool[] compGroupExpanded = new bool[2]; // per-group expanded table flag
+    private int competitionViewIndex = -1;
 
     // Where the TEAM overlay returns when closed: the hub ("HUB") or the competition screen
     // ("COMPETITION"). Minimal navigation context — the underlying overlay usually just stays
@@ -232,19 +235,11 @@ public class NavigationManager : MonoBehaviour
         // shop. Moved right (590→660) to stay clear of the enlarged icon group.
         BuildFree100Button(bar.transform, new Vector2(660f, 0f));
 
-        // Right side, right-to-left: gold [+], gold count, gold icon, diamond [+], diamond count, diamond icon.
-        // The [+] buttons open the Shop straight to the matching buy section (tab 5 = COINS, 6 = GEMS).
-        MakePlusButton(bar.transform, new Vector2(1f, 0.5f), new Vector2(-32f, 0f), 30f,
-                       () => OpenShopTab(5)); // gold [+] → Shop COINS tab
-        goldLabel = MakeText(bar.transform, "0", 18f, new Vector2(1f, 0.5f), new Vector2(-92f, 0f),
-                             new Vector2(66f, 30f), Color.white, TextAlignmentOptions.Right);
-        MakeIcon(bar.transform, "Sprites/gold-coin", new Vector2(1f, 0.5f), new Vector2(-145f, 0f), 34f);
-
-        MakePlusButton(bar.transform, new Vector2(1f, 0.5f), new Vector2(-192f, 0f), 30f,
-                       () => OpenShopTab(6)); // diamond [+] → Shop GEMS tab
-        diamondLabel = MakeText(bar.transform, "0", 18f, new Vector2(1f, 0.5f), new Vector2(-246f, 0f),
-                                new Vector2(54f, 30f), Color.white, TextAlignmentOptions.Right);
-        MakeIcon(bar.transform, "Sprites/diamond-coin", new Vector2(1f, 0.5f), new Vector2(-292f, 0f), 34f);
+        // Premium currency chips: icon well, strong count hierarchy and an integrated shop shortcut.
+        goldLabel = MakeCurrencyChip(bar.transform, "GoldChip", "Sprites/gold-coin", Gold,
+                                     new Vector2(-94f, 0f), () => OpenShopTab(5));
+        diamondLabel = MakeCurrencyChip(bar.transform, "DiamondChip", "Sprites/diamond-coin", Cyan,
+                                        new Vector2(-270f, 0f), () => OpenShopTab(6));
     }
 
     // Re-read the player's balances into the top bar. Called on build and by TeamScreenUI after a
@@ -252,10 +247,10 @@ public class NavigationManager : MonoBehaviour
     public void RefreshCurrency()
     {
         RosterManager rm = RosterManager.Instance;
-        if (goldLabel != null) goldLabel.text = rm.Coins.ToString();
-        if (diamondLabel != null) diamondLabel.text = rm.Diamonds.ToString();
-        if (gmGoldLabel != null) gmGoldLabel.text = rm.Coins.ToString();
-        if (gmDiamondLabel != null) gmDiamondLabel.text = rm.Diamonds.ToString();
+        if (goldLabel != null) goldLabel.text = FormatCurrency(rm.Coins);
+        if (diamondLabel != null) diamondLabel.text = FormatCurrency(rm.Diamonds);
+        if (gmGoldLabel != null) gmGoldLabel.text = FormatCurrency(rm.Coins);
+        if (gmDiamondLabel != null) gmDiamondLabel.text = FormatCurrency(rm.Diamonds);
     }
 
     // ------------------------------------------------------------- left column
@@ -1028,13 +1023,10 @@ public class NavigationManager : MonoBehaviour
         MakeText(bar.transform, "GAME MODE", 36f, new Vector2(0.5f, 0.5f), Vector2.zero,
                  new Vector2(420f, 50f), Color.white, TextAlignmentOptions.Center);
 
-        // Currencies, right side, right-to-left: gold count, gold icon, diamond count, diamond icon.
-        gmGoldLabel = MakeText(bar.transform, "0", 18f, new Vector2(1f, 0.5f), new Vector2(-40f, 0f),
-                               new Vector2(66f, 30f), Color.white, TextAlignmentOptions.Right);
-        MakeIcon(bar.transform, "Sprites/gold-coin", new Vector2(1f, 0.5f), new Vector2(-95f, 0f), 34f);
-        gmDiamondLabel = MakeText(bar.transform, "0", 18f, new Vector2(1f, 0.5f), new Vector2(-150f, 0f),
-                                  new Vector2(54f, 30f), Color.white, TextAlignmentOptions.Right);
-        MakeIcon(bar.transform, "Sprites/diamond-coin", new Vector2(1f, 0.5f), new Vector2(-200f, 0f), 34f);
+        gmGoldLabel = MakeCurrencyChip(bar.transform, "GoldChip", "Sprites/gold-coin", Gold,
+                                       new Vector2(-94f, 0f), () => OpenShopTab(5));
+        gmDiamondLabel = MakeCurrencyChip(bar.transform, "DiamondChip", "Sprites/diamond-coin", Cyan,
+                                          new Vector2(-270f, 0f), () => OpenShopTab(6));
 
         // ---- card row: 4 cards, 30px side margins, equal gaps, centred in the area below the bar ----
         const float margin = 30f, cardH = 480f, gap = 24f, cardY = -40f; // cardY drops the row into the 640px main area
@@ -1094,14 +1086,14 @@ public class NavigationManager : MonoBehaviour
     // frame and open the league standings on tap. Interaction/animation lives in GameModeCardFX.
     void BuildGameModeCard(Transform parent, int index, Vector2 pos, Vector2 size)
     {
-        string[] names = { "DIVISION 1", "PREMIER LEAGUE", "CONTINENTAL CUP", "WORLD CHAMPIONS LEAGUE" };
+        string[] names = { "DIVISION 1", "PREMIUM LEAGUE", "CONTINENTAL CUP", "WORLD CHAMPIONS LEAGUE" };
         string[] sprites = { "Sprites/division1-card", "Sprites/premier-league-card",
                              "Sprites/continental-cup-card", "Sprites/world-champions-league-card" };
         Color[] tierColors = { new Color(0.180f, 0.800f, 0.251f),   // #2ECC40 green
                                new Color(0.608f, 0.349f, 0.714f),   // #9B59B6 purple
                                new Color(0.161f, 0.502f, 0.725f),   // #2980B9 blue
                                new Color(0.953f, 0.612f, 0.071f) }; // #F39C12 gold
-        string[] lockText = { "", "WIN DIVISION 1 TO UNLOCK", "WIN PREMIER LEAGUE TO UNLOCK",
+        string[] lockText = { "", "WIN DIVISION 1 TO UNLOCK", "WIN PREMIUM LEAGUE TO UNLOCK",
                               "WIN CONTINENTAL CUP TO UNLOCK" };
 
         bool unlocked = IsCompetitionUnlocked(index);
@@ -1184,7 +1176,15 @@ public class NavigationManager : MonoBehaviour
                 new Vector2(0.5f, 0.5f), new Vector2(0f, -34f), new Vector2(w - 24f, 44f),
                 new Color(1f, 1f, 1f, 0.92f), TextAlignmentOptions.Center);
 
-            cardGo.AddComponent<GameModeCardFX>().InitLocked(lockImg, unlockLabel);
+            // Locked divisions are deliberately inspectable. The transparent hit target lives above
+            // the veil so a player can see clubs/rewards, while the information screen keeps START disabled.
+            Image hit = NewImage(cardGo.transform, "Hit");
+            hit.color = new Color(0f, 0f, 0f, 0f);
+            hit.raycastTarget = true;
+            Stretch(hit.rectTransform);
+            Button inspect = hit.gameObject.AddComponent<Button>();
+            inspect.targetGraphic = hit;
+            inspect.onClick.AddListener(() => OpenStandings(index));
         }
         else
         {
@@ -1216,16 +1216,6 @@ public class NavigationManager : MonoBehaviour
         }
     }
 
-    // Player won a division's Final → persist the unlock for the next tier (read back by
-    // IsCompetitionUnlocked; the Game Mode cards pick it up next time the hub loads).
-    static void MarkCompetitionWon(int competitionIndex)
-    {
-        string[] keys = { "div1_won", "pl_won", "cc_won", "wcl_won" };
-        if (competitionIndex < 0 || competitionIndex >= keys.Length) return;
-        PlayerPrefs.SetInt(keys[competitionIndex], 1);
-        PlayerPrefs.Save();
-    }
-
     // =============================================================== competition screen
 
     // Flow: Game Mode card → Competition screen (GROUP STAGE / KNOCKOUT tabs) → NEXT MATCH →
@@ -1236,9 +1226,13 @@ public class NavigationManager : MonoBehaviour
 
     public void OpenStandings(int competitionIndex)
     {
-        LeagueSeason.Ensure(competitionIndex, PlayerTeamName());
+        competitionViewIndex = competitionIndex;
+        if (IsCompetitionUnlocked(competitionIndex))
+            LeagueSeason.Ensure(competitionIndex, PlayerTeamName());
+        else
+            LeagueSeason.ClearCurrentSelection();
         // Fresh view state each open: group tab during the group stage, knockout once it starts.
-        compTab = LeagueSeason.Current.phase == LeagueSeason.Phase.GroupStage ? 0 : 1;
+        compTab = LeagueSeason.Current == null || LeagueSeason.Current.phase == LeagueSeason.Phase.GroupStage ? 0 : 1;
         compGroupExpanded[0] = compGroupExpanded[1] = false;
         if (standingsOverlay == null) standingsOverlay = BuildScreenOverlay("Overlay_STANDINGS");
         RectTransform sheet = standingsOverlay.transform.Find("Sheet") as RectTransform;
@@ -1255,6 +1249,176 @@ public class NavigationManager : MonoBehaviour
         RectTransform sheet = standingsOverlay.transform.Find("Sheet") as RectTransform;
         ClearChildren(sheet);
         BuildStandingsContent(sheet);
+    }
+
+    // Information-only screen used before a championship begins and for locked divisions. It gives
+    // players the requested visibility into both fixed groups without leaking fixtures early.
+    void BuildCompetitionOverview(Transform sheet, int comp)
+    {
+        bool unlocked = IsCompetitionUnlocked(comp);
+        RectTransform content = MakeCompScroll(sheet);
+        float y = BuildCompetitionHero(content, comp, unlocked, 6f) + 14f;
+        y = BuildRewardsCard(content, comp, y) + 14f;
+        const float groupsH = 348f;
+        BuildClubGroupOverview(content, comp, 0, -286f, y, groupsH);
+        BuildClubGroupOverview(content, comp, 1, 286f, y, groupsH);
+        content.sizeDelta = new Vector2(0f, y + groupsH + 14f);
+
+        if (unlocked)
+            MakeActionButton(sheet, "START CHAMPIONSHIP", new Vector2(0.5f, 0f), new Vector2(0f, 46f),
+                             new Vector2(440f, 68f), Green, () => StartChampionship(comp));
+    }
+
+    float BuildCompetitionHero(RectTransform content, int comp, bool unlocked, float yTop)
+    {
+        const float h = 150f;
+        GameObject card = new GameObject("CompetitionHero");
+        card.transform.SetParent(content, false);
+        Image frame = card.AddComponent<Image>();
+        frame.sprite = GetRoundedSprite();
+        frame.type = Image.Type.Sliced;
+        frame.color = unlocked ? Gold : new Color(0.45f, 0.52f, 0.62f, 1f);
+        SetRect(frame.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -(yTop + h * 0.5f)),
+                new Vector2(1140f, h));
+
+        Image fill = NewImage(card.transform, "Fill");
+        fill.sprite = GetRoundedSprite();
+        fill.type = Image.Type.Sliced;
+        fill.color = new Color(0.045f, 0.09f, 0.16f, 0.98f);
+        fill.raycastTarget = false;
+        RectTransform frt = fill.rectTransform;
+        frt.anchorMin = Vector2.zero;
+        frt.anchorMax = Vector2.one;
+        frt.offsetMin = new Vector2(3f, 3f);
+        frt.offsetMax = new Vector2(-3f, -3f);
+
+        ClubCatalog catalog = ClubCatalog.Instance;
+        AddCompetitionArt(card.transform, catalog != null ? catalog.TrophyFor(comp) : null,
+                          new Vector2(75f, 0f), 112f, new Vector2(0f, 0.5f));
+
+        Image status = MakePanel(card.transform, new Vector2(0f, 1f), new Vector2(250f, -30f),
+                                 new Vector2(196f, 34f), unlocked ? Green : new Color(0.38f, 0.43f, 0.52f, 1f));
+        status.raycastTarget = false;
+        MakeText(status.transform, unlocked ? "AVAILABLE NOW" : "LOCKED", 16f,
+                 new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(188f, 30f),
+                 Color.white, TextAlignmentOptions.Center);
+        TextMeshProUGUI heroTitle = MakeText(card.transform,
+                 unlocked ? "YOUR CLUB ENTERS AUTOMATICALLY" : UnlockMessage(comp), 22f,
+                 new Vector2(0f, 0.5f), new Vector2(378f, 10f), new Vector2(440f, 34f),
+                 unlocked ? Color.white : new Color(1f, 0.77f, 0.42f, 1f), TextAlignmentOptions.Left);
+        heroTitle.enableAutoSizing = true;
+        heroTitle.fontSizeMin = 14f;
+        heroTitle.fontSizeMax = 22f;
+        MakeText(card.transform,
+                 unlocked ? "One saved club. Nine AI rivals. A fresh draw begins when you press Start."
+                          : "You can inspect every club and reward now. Match fixtures remain hidden until unlocked.",
+                 14f, new Vector2(0f, 0.5f), new Vector2(378f, -26f), new Vector2(440f, 40f),
+                 new Color(0.68f, 0.78f, 0.9f, 1f), TextAlignmentOptions.Left);
+
+        Image myClub = MakePanel(card.transform, new Vector2(1f, 0.5f), new Vector2(-210f, 0f),
+                                 new Vector2(382f, 112f), new Color(0.10f, 0.18f, 0.28f, 1f));
+        myClub.raycastTarget = false;
+        AddClubLogo(myClub.transform, PlayerTeamName(), new Vector2(62f, 0f), 86f,
+                    new Vector2(0f, 0.5f), true);
+        MakeText(myClub.transform, "MY CLUB", 13f, new Vector2(0f, 0.5f), new Vector2(234f, 21f),
+                 new Vector2(232f, 22f), Gold, TextAlignmentOptions.Left);
+        TextMeshProUGUI playerName = MakeText(myClub.transform, PlayerTeamName(), 22f,
+                 new Vector2(0f, 0.5f), new Vector2(234f, -9f), new Vector2(232f, 42f),
+                 Color.white, TextAlignmentOptions.Left);
+        playerName.enableAutoSizing = true;
+        playerName.fontSizeMin = 15f;
+        playerName.fontSizeMax = 22f;
+        return yTop + h;
+    }
+
+    void BuildClubGroupOverview(RectTransform content, int comp, int group, float x, float yTop, float h)
+    {
+        GameObject card = new GameObject(group == 0 ? "GroupAOverview" : "GroupBOverview");
+        card.transform.SetParent(content, false);
+        Image frame = card.AddComponent<Image>();
+        frame.sprite = GetRoundedSprite();
+        frame.type = Image.Type.Sliced;
+        frame.color = group == 0 ? Blue : new Color(0.72f, 0.25f, 0.30f, 1f);
+        SetRect(frame.rectTransform, new Vector2(0.5f, 1f), new Vector2(x, -(yTop + h * 0.5f)),
+                new Vector2(558f, h));
+
+        Image fill = NewImage(card.transform, "Fill");
+        fill.sprite = GetRoundedSprite();
+        fill.type = Image.Type.Sliced;
+        fill.color = new Color(0.06f, 0.115f, 0.19f, 0.98f);
+        fill.raycastTarget = false;
+        RectTransform fillRt = fill.rectTransform;
+        fillRt.anchorMin = Vector2.zero;
+        fillRt.anchorMax = Vector2.one;
+        fillRt.offsetMin = new Vector2(3f, 3f);
+        fillRt.offsetMax = new Vector2(-3f, -3f);
+
+        MakeText(card.transform, group == 0 ? "GROUP A" : "GROUP B", 23f, new Vector2(0f, 1f),
+                 new Vector2(166f, -28f), new Vector2(260f, 34f), Color.white, TextAlignmentOptions.Left);
+        MakeText(card.transform, "5 CLUBS", 13f, new Vector2(1f, 1f),
+                 new Vector2(-94f, -28f), new Vector2(140f, 26f),
+                 new Color(0.64f, 0.76f, 0.88f, 1f), TextAlignmentOptions.Right);
+
+        IReadOnlyList<string> clubs = LeagueSeason.ClubsForGroup(comp, group);
+        for (int i = 0; i < clubs.Count; i++)
+        {
+            bool playerClub = LeagueSeason.IsPlayerClubSlot(clubs[i]);
+            string displayName = playerClub ? PlayerTeamName() : clubs[i];
+            Image row = NewImage(card.transform, "Club_" + displayName);
+            row.sprite = GetRoundedSprite();
+            row.type = Image.Type.Sliced;
+            row.color = playerClub ? new Color(0.56f, 0.42f, 0.08f, 0.96f)
+                                   : new Color(0.025f, 0.06f, 0.115f, 0.88f);
+            row.raycastTarget = false;
+            SetRect(row.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -(82f + i * 52f)),
+                    new Vector2(520f, 48f));
+
+            if (playerClub)
+            {
+                Image stripe = NewImage(row.transform, "PlayerStripe");
+                stripe.color = Gold;
+                stripe.raycastTarget = false;
+                SetRect(stripe.rectTransform, new Vector2(0f, 0.5f), new Vector2(3f, 0f),
+                        new Vector2(6f, 38f));
+            }
+            AddClubLogo(row.transform, displayName, new Vector2(36f, 0f), 43f,
+                        new Vector2(0f, 0.5f), playerClub);
+            TextMeshProUGUI name = MakeText(row.transform, displayName, 18f,
+                 new Vector2(0f, 0.5f), new Vector2(214f, 0f), new Vector2(300f, 38f),
+                 Color.white, TextAlignmentOptions.Left);
+            name.enableAutoSizing = true;
+            name.fontSizeMin = 14f;
+            name.fontSizeMax = 18f;
+            if (playerClub)
+            {
+                Image tag = MakePanel(row.transform, new Vector2(1f, 0.5f), new Vector2(-60f, 0f),
+                                      new Vector2(102f, 28f), Gold);
+                tag.raycastTarget = false;
+                MakeText(tag.transform, "YOUR CLUB", 12f, new Vector2(0.5f, 0.5f), Vector2.zero,
+                         new Vector2(98f, 26f), new Color(0.08f, 0.10f, 0.14f, 1f),
+                         TextAlignmentOptions.Center);
+            }
+        }
+    }
+
+    static string UnlockMessage(int comp)
+    {
+        if (comp == 1) return "LOCKED — FINISH 1ST IN DIVISION 1 TO UNLOCK";
+        if (comp == 2) return "LOCKED — FINISH 1ST IN PREMIUM LEAGUE TO UNLOCK";
+        if (comp == 3) return "LOCKED — FINISH 1ST IN CONTINENTAL CUP TO UNLOCK";
+        return "AVAILABLE";
+    }
+
+    void StartChampionship(int competition)
+    {
+        if (!IsCompetitionUnlocked(competition)) return;
+        LeagueSeason.StartNew(competition, PlayerTeamName());
+        if (standingsOverlay == null) standingsOverlay = BuildScreenOverlay("Overlay_STANDINGS");
+        RectTransform sheet = standingsOverlay.transform.Find("Sheet") as RectTransform;
+        ClearChildren(sheet);
+        compTab = 0;
+        BuildStandingsContent(sheet);
+        ShowOverlay(standingsOverlay);
     }
 
     void OpenPreMatch()
@@ -1299,12 +1463,9 @@ public class NavigationManager : MonoBehaviour
     void StartMatch()
     {
         LeagueSeason s = LeagueSeason.Current;
-        if (s == null || s.IsComplete) return;
+        if (s == null || s.IsComplete || s.NextOpponent < 0 || !IsCompetitionUnlocked(s.competitionIndex)) return;
 
-        // Placeholder result until real match reporting is wired: simulate the player's score,
-        // then load the match. The tournament reflects it next time the screen is opened.
-        s.RecordPlayerResult(Random.Range(0, 13), Random.Range(0, 13));
-        if (s.PlayerIsChampion) MarkCompetitionWon(s.competitionIndex);
+        MatchPresentationContext.SetFixture(s.competitionIndex, s.teams[s.PlayerIndex], s.teams[s.NextOpponent]);
 
         SceneManager.LoadScene(MatchScene);
     }
@@ -1312,11 +1473,25 @@ public class NavigationManager : MonoBehaviour
     void BuildStandingsContent(Transform sheet)
     {
         LeagueSeason s = LeagueSeason.Current;
-        if (s == null) return;
-        int comp = Mathf.Clamp(s.competitionIndex, 0, CompNames.Length - 1);
+        int comp = s != null ? Mathf.Clamp(s.competitionIndex, 0, CompNames.Length - 1) : Mathf.Clamp(competitionViewIndex, 0, CompNames.Length - 1);
+
+        // Completion processing is idempotent and normally happens at the final whistle. Repeating
+        // it here also self-heals a save made exactly between final-order creation and reward grant.
+        if (s != null && s.IsComplete) s.TryGrantCompletionRewards();
 
         AddScreenBackground(sheet, 0.85f);
         MakeTopBar(sheet, CompNames[comp], () => HideOverlay(standingsOverlay));
+        if (s == null)
+        {
+            BuildCompetitionOverview(sheet, comp);
+            return;
+        }
+        if (s.IsComplete)
+        {
+            BuildFinalStandings(sheet, s, comp);
+            BuildCompBottomBar(sheet, s, comp);
+            return;
+        }
         BuildCompTabs(sheet, s);
 
         if (compTab == 0) BuildGroupStageTab(sheet, s);
@@ -1413,23 +1588,333 @@ public class NavigationManager : MonoBehaviour
         float y = 4f;
         for (int g = 0; g < 2; g++)
             y += BuildGroupCard(content, s, g, y) + 10f; // tighter gap between Group A / Group B (was 16)
+        y = BuildRoundSummary(content, s, y + 2f) + 10f;
         content.sizeDelta = new Vector2(0f, y);
     }
 
-    // One framed group table. Collapsed: top 5 in Pos | Team | Pts. Expanded: all 8 with full
-    // columns. Tapping anywhere on the card toggles (ScrollRect drags don't trigger the click).
+    // Shows the four scores simulated/played with the player's most recent round. Before round one,
+    // the same card previews the opening fixtures without scores. Locked competitions never reach
+    // this view, so their information-only screens still reveal no pairings.
+    float BuildRoundSummary(RectTransform content, LeagueSeason s, float yTop)
+    {
+        int round = Mathf.Clamp(s.groupRound > 0 ? s.groupRound - 1 : 0, 0, LeagueSeason.GroupRounds - 1);
+        bool results = s.groupRound > 0;
+        const float h = 158f;
+
+        Image card = NewImage(content, "RoundSummary");
+        card.sprite = GetRoundedSprite();
+        card.type = Image.Type.Sliced;
+        card.color = new Color(0.08f, 0.15f, 0.24f, 0.96f);
+        SetRect(card.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -(yTop + h * 0.5f)), new Vector2(1150f, h));
+
+        MakeText(card.transform, "ROUND " + (round + 1) + (results ? " RESULTS" : " FIXTURES"), 19f,
+                 new Vector2(0.5f, 1f), new Vector2(0f, -18f), new Vector2(420f, 28f),
+                 Gold, TextAlignmentOptions.Center);
+
+        for (int group = 0; group < 2; group++)
+        {
+            float x = group == 0 ? -285f : 285f;
+            MakeText(card.transform, group == 0 ? "GROUP A" : "GROUP B", 15f,
+                     new Vector2(0.5f, 1f), new Vector2(x, -47f), new Vector2(520f, 22f),
+                     Cyan, TextAlignmentOptions.Center);
+
+            int row = 0;
+            bool[] appears = new bool[LeagueSeason.GroupSize];
+            foreach (LeagueSeason.Fixture fixture in s.groupFixtures)
+            {
+                if (fixture == null || fixture.group != group || fixture.round != round) continue;
+                int localA = fixture.teamA - group * LeagueSeason.GroupSize;
+                int localB = fixture.teamB - group * LeagueSeason.GroupSize;
+                if (localA >= 0 && localA < appears.Length) appears[localA] = true;
+                if (localB >= 0 && localB < appears.Length) appears[localB] = true;
+                BuildRoundFixtureLine(card.transform, s, fixture, x, 80f + row * 30f);
+                row++;
+            }
+            for (int i = 0; i < appears.Length; i++)
+                if (!appears[i])
+                {
+                    int team = group * LeagueSeason.GroupSize + i;
+                    BuildRoundByeLine(card.transform, s, team, x, 80f + row * 30f);
+                    break;
+                }
+        }
+        return yTop + h;
+    }
+
+    void BuildRoundFixtureLine(Transform parent, LeagueSeason s, LeagueSeason.Fixture fixture,
+                               float x, float yFromTop)
+    {
+        Image row = NewImage(parent, "FixtureLine");
+        row.sprite = GetRoundedSprite();
+        row.type = Image.Type.Sliced;
+        row.color = fixture.Has(s.PlayerIndex)
+            ? new Color(0.45f, 0.34f, 0.08f, 0.90f)
+            : new Color(0.025f, 0.065f, 0.12f, 0.86f);
+        row.raycastTarget = false;
+        SetRect(row.rectTransform, new Vector2(0.5f, 1f), new Vector2(x, -yFromTop),
+                new Vector2(522f, 27f));
+
+        string left = s.teams[fixture.teamA];
+        string right = s.teams[fixture.teamB];
+        AddClubLogo(row.transform, left, new Vector2(22f, 0f), 23f,
+                    new Vector2(0f, 0.5f), fixture.teamA == s.PlayerIndex);
+        AddClubLogo(row.transform, right, new Vector2(-22f, 0f), 23f,
+                    new Vector2(1f, 0.5f), fixture.teamB == s.PlayerIndex);
+        TextMeshProUGUI leftText = MakeText(row.transform, left, 14f, new Vector2(0f, 0.5f),
+                 new Vector2(124f, 0f), new Vector2(172f, 25f), Color.white,
+                 TextAlignmentOptions.Left);
+        TextMeshProUGUI rightText = MakeText(row.transform, right, 14f, new Vector2(1f, 0.5f),
+                 new Vector2(-124f, 0f), new Vector2(172f, 25f), Color.white,
+                 TextAlignmentOptions.Right);
+        leftText.enableAutoSizing = rightText.enableAutoSizing = true;
+        leftText.fontSizeMin = rightText.fontSizeMin = 10f;
+        leftText.fontSizeMax = rightText.fontSizeMax = 14f;
+        MakeText(row.transform,
+                 fixture.played ? fixture.scoreA + "  –  " + fixture.scoreB : "VS",
+                 fixture.played ? 16f : 13f, new Vector2(0.5f, 0.5f), Vector2.zero,
+                 new Vector2(100f, 25f), fixture.played ? Gold : new Color(0.7f, 0.8f, 0.9f, 1f),
+                 TextAlignmentOptions.Center);
+    }
+
+    void BuildRoundByeLine(Transform parent, LeagueSeason s, int team, float x, float yFromTop)
+    {
+        Image row = NewImage(parent, "ByeLine");
+        row.sprite = GetRoundedSprite();
+        row.type = Image.Type.Sliced;
+        row.color = new Color(0.035f, 0.07f, 0.12f, 0.62f);
+        row.raycastTarget = false;
+        SetRect(row.rectTransform, new Vector2(0.5f, 1f), new Vector2(x, -yFromTop),
+                new Vector2(522f, 27f));
+        AddClubLogo(row.transform, s.teams[team], new Vector2(160f, 0f), 23f,
+                    new Vector2(0f, 0.5f), team == s.PlayerIndex);
+        MakeText(row.transform, "BYE  •  " + s.teams[team], 13f, new Vector2(0.5f, 0.5f),
+                 new Vector2(10f, 0f), new Vector2(310f, 24f),
+                 new Color(0.66f, 0.76f, 0.86f, 1f), TextAlignmentOptions.Center);
+    }
+
+    void BuildFinalStandings(Transform sheet, LeagueSeason s, int comp)
+    {
+        MakeText(sheet, "FINAL STANDINGS", 28f, new Vector2(0.5f, 1f), new Vector2(0f, -112f),
+                 new Vector2(700f, 40f), Gold, TextAlignmentOptions.Center);
+        RectTransform content = MakeCompScroll(sheet);
+        float yStart = BuildRewardsCard(content, comp, 6f) + 12f;
+        yStart = BuildCompletionSummary(content, s, comp, yStart) + 18f;
+        const float rowH = 60f, rowPitch = 66f;
+        for (int rank = 0; rank < LeagueSeason.TeamCount; rank++)
+        {
+            int team = s.finalOrder != null && rank < s.finalOrder.Length ? s.finalOrder[rank] : -1;
+            if (team < 0 || team >= s.teams.Length) continue;
+            Image row = NewImage(content, "Final_" + (rank + 1));
+            row.sprite = GetRoundedSprite(); row.type = Image.Type.Sliced;
+            bool player = team == s.PlayerIndex;
+            row.color = player ? new Color(0.58f, 0.43f, 0.08f, 0.96f)
+                      : rank == 0 ? new Color(0.26f, 0.22f, 0.08f, 0.94f)
+                      : new Color(0.045f, 0.09f, 0.16f, 0.94f);
+            SetRect(row.rectTransform, new Vector2(0.5f, 1f),
+                    new Vector2(0f, -(yStart + rowH * 0.5f + rank * rowPitch)),
+                    new Vector2(1040f, rowH));
+            if (player)
+            {
+                Image stripe = NewImage(row.transform, "PlayerStripe");
+                stripe.color = Gold;
+                stripe.raycastTarget = false;
+                SetRect(stripe.rectTransform, new Vector2(0f, 0.5f), new Vector2(4f, 0f),
+                        new Vector2(8f, 50f));
+            }
+            MakeText(row.transform, (rank + 1).ToString(), 23f, new Vector2(0f, 0.5f),
+                     new Vector2(38f, 0f), new Vector2(54f, 42f),
+                     rank < 3 ? Gold : Color.white, TextAlignmentOptions.Center);
+            if (rank < 3)
+                AddCompetitionArt(row.transform, ClubCatalog.Instance != null
+                    ? ClubCatalog.Instance.MedalFor(rank + 1) : null,
+                    new Vector2(82f, 0f), 38f, new Vector2(0f, 0.5f));
+            AddClubLogo(row.transform, s.teams[team], new Vector2(130f, 0f), 50f,
+                        new Vector2(0f, 0.5f), team == s.PlayerIndex);
+            TextMeshProUGUI finalName = MakeText(row.transform, s.teams[team], 20f,
+                     new Vector2(0f, 0.5f), new Vector2(465f, 0f), new Vector2(600f, 42f),
+                     Color.white, TextAlignmentOptions.Left);
+            finalName.enableAutoSizing = true;
+            finalName.fontSizeMin = 15f;
+            finalName.fontSizeMax = 20f;
+
+            string note = rank == 0 && comp < 3 ? "PROMOTED"
+                        : rank == 0 ? "CHAMPIONS"
+                        : player ? "YOUR CLUB" : "";
+            if (!string.IsNullOrEmpty(note))
+            {
+                Image tag = MakePanel(row.transform, new Vector2(1f, 0.5f), new Vector2(-116f, 0f),
+                                      new Vector2(198f, 34f), rank == 0 ? Gold : Cyan);
+                tag.raycastTarget = false;
+                MakeText(tag.transform, note, 14f, new Vector2(0.5f, 0.5f), Vector2.zero,
+                         new Vector2(190f, 30f), new Color(0.035f, 0.065f, 0.12f, 1f),
+                         TextAlignmentOptions.Center);
+            }
+        }
+        content.sizeDelta = new Vector2(0f, yStart + LeagueSeason.TeamCount * rowPitch + 12f);
+    }
+
+    float BuildCompletionSummary(RectTransform content, LeagueSeason s, int comp, float yTop)
+    {
+        const float h = 94f;
+        int rank = System.Array.IndexOf(s.finalOrder, s.PlayerIndex) + 1;
+        LeagueSeason.GetRewardForRank(comp, rank, out int gold, out int diamonds);
+
+        Image card = NewImage(content, "EarnedReward");
+        card.sprite = GetRoundedSprite();
+        card.type = Image.Type.Sliced;
+        card.color = rank == 1 ? new Color(0.32f, 0.25f, 0.07f, 0.98f)
+                               : new Color(0.055f, 0.17f, 0.18f, 0.98f);
+        SetRect(card.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -(yTop + h * 0.5f)), new Vector2(900f, h));
+
+        string promotion = rank == 1 && comp < 3
+            ? "UNLOCKED " + CompNames[comp + 1]
+            : rank == 1 ? "WORLD CHAMPION"
+            : "FINISH 1ST TO ADVANCE";
+
+        AddClubLogo(card.transform, s.teams[s.PlayerIndex], new Vector2(50f, 0f), 68f,
+                    new Vector2(0f, 0.5f), true);
+        MakeText(card.transform, "YOUR RESULT", 12f, new Vector2(0f, 0.5f), new Vector2(173f, 20f),
+                 new Vector2(150f, 20f), new Color(0.66f, 0.78f, 0.9f, 1f),
+                 TextAlignmentOptions.Left);
+        MakeText(card.transform, rank + GetOrdinal(rank) + " PLACE", 25f,
+                 new Vector2(0f, 0.5f), new Vector2(188f, -10f), new Vector2(180f, 38f),
+                 rank <= 3 ? Gold : Color.white, TextAlignmentOptions.Left);
+
+        if (gold > 0)
+        {
+            MakeIcon(card.transform, "Sprites/gold-coin", new Vector2(0f, 0.5f),
+                     new Vector2(324f, 8f), 32f);
+            MakeText(card.transform, FormatCurrency(gold), 21f, new Vector2(0f, 0.5f),
+                     new Vector2(392f, 8f), new Vector2(96f, 34f), Color.white,
+                     TextAlignmentOptions.Left);
+            MakeIcon(card.transform, "Sprites/diamond-coin", new Vector2(0f, 0.5f),
+                     new Vector2(464f, 8f), 30f);
+            MakeText(card.transform, FormatCurrency(diamonds), 21f, new Vector2(0f, 0.5f),
+                     new Vector2(529f, 8f), new Vector2(82f, 34f), Color.white,
+                     TextAlignmentOptions.Left);
+            MakeText(card.transform, "REWARD EARNED", 11f, new Vector2(0f, 0.5f),
+                     new Vector2(449f, -24f), new Vector2(250f, 20f),
+                     new Color(0.66f, 0.78f, 0.9f, 1f), TextAlignmentOptions.Left);
+        }
+        else
+        {
+            MakeText(card.transform, "NO TOP-3 REWARD", 16f, new Vector2(0f, 0.5f),
+                     new Vector2(449f, 0f), new Vector2(250f, 30f),
+                     new Color(0.72f, 0.78f, 0.86f, 1f), TextAlignmentOptions.Left);
+        }
+
+        Image status = MakePanel(card.transform, new Vector2(1f, 0.5f), new Vector2(-145f, 0f),
+                                 new Vector2(260f, 46f), rank == 1 ? Gold : new Color(0.10f, 0.48f, 0.60f, 1f));
+        status.raycastTarget = false;
+        TextMeshProUGUI statusText = MakeText(status.transform, promotion, 13f,
+                 new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(246f, 40f),
+                 rank == 1 ? new Color(0.04f, 0.07f, 0.12f, 1f) : Color.white,
+                 TextAlignmentOptions.Center);
+        statusText.enableAutoSizing = true;
+        statusText.fontSizeMin = 10f;
+        statusText.fontSizeMax = 13f;
+        return yTop + h;
+    }
+
+    float BuildRewardsCard(RectTransform content, int comp, float yTop)
+    {
+        const float h = 174f;
+        GameObject card = new GameObject("Rewards");
+        card.transform.SetParent(content, false);
+        Image bg = card.AddComponent<Image>();
+        bg.sprite = GetRoundedSprite();
+        bg.type = Image.Type.Sliced;
+        bg.color = new Color(0.085f, 0.16f, 0.25f, 0.98f);
+        SetRect(bg.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -(yTop + h * 0.5f)),
+                new Vector2(1140f, h));
+
+        Image topAccent = NewImage(card.transform, "TopAccent");
+        topAccent.sprite = GetRoundedSprite();
+        topAccent.type = Image.Type.Sliced;
+        topAccent.color = Gold;
+        topAccent.raycastTarget = false;
+        SetRect(topAccent.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -3f),
+                new Vector2(1100f, 6f));
+
+        ClubCatalog catalog = ClubCatalog.Instance;
+        AddCompetitionArt(card.transform, catalog != null ? catalog.TrophyFor(comp) : null,
+                          new Vector2(72f, 12f), 104f, new Vector2(0f, 0.5f));
+        MakeText(card.transform, "PRIZE", 13f, new Vector2(0f, 1f), new Vector2(186f, -31f),
+                 new Vector2(120f, 22f), new Color(0.66f, 0.77f, 0.9f, 1f), TextAlignmentOptions.Left);
+        MakeText(card.transform, "POOL", 25f, new Vector2(0f, 1f), new Vector2(186f, -58f),
+                 new Vector2(120f, 34f), Color.white, TextAlignmentOptions.Left);
+
+        Color[] rankColors =
+        {
+            Gold,
+            new Color(0.78f, 0.84f, 0.92f, 1f),
+            new Color(0.76f, 0.43f, 0.22f, 1f)
+        };
+        for (int i = 0; i < 3; i++)
+        {
+            int rank = i + 1;
+            LeagueSeason.GetRewardForRank(comp, rank, out int gold, out int diamonds);
+            GameObject tile = new GameObject("Reward_" + rank);
+            tile.transform.SetParent(card.transform, false);
+            Image tileFrame = tile.AddComponent<Image>();
+            tileFrame.sprite = GetRoundedSprite();
+            tileFrame.type = Image.Type.Sliced;
+            tileFrame.color = rankColors[i];
+            SetRect(tileFrame.rectTransform, new Vector2(0f, 0.5f),
+                    new Vector2(338f + i * 270f, 8f), new Vector2(254f, 126f));
+
+            Image tileFill = NewImage(tile.transform, "Fill");
+            tileFill.sprite = GetRoundedSprite();
+            tileFill.type = Image.Type.Sliced;
+            tileFill.color = new Color(0.03f, 0.07f, 0.13f, 0.98f);
+            tileFill.raycastTarget = false;
+            RectTransform tfr = tileFill.rectTransform;
+            tfr.anchorMin = Vector2.zero;
+            tfr.anchorMax = Vector2.one;
+            tfr.offsetMin = new Vector2(3f, 3f);
+            tfr.offsetMax = new Vector2(-3f, -3f);
+
+            AddCompetitionArt(tile.transform, catalog != null ? catalog.MedalFor(rank) : null,
+                              new Vector2(35f, 32f), 48f, new Vector2(0f, 0.5f));
+            MakeText(tile.transform, rank + GetOrdinal(rank) + " PLACE", 17f,
+                     new Vector2(0f, 0.5f), new Vector2(150f, 38f), new Vector2(165f, 28f),
+                     rankColors[i], TextAlignmentOptions.Left);
+
+            MakeIcon(tile.transform, "Sprites/gold-coin", new Vector2(0f, 0.5f),
+                     new Vector2(30f, -4f), 25f);
+            MakeText(tile.transform, FormatCurrency(gold), 17f, new Vector2(0f, 0.5f),
+                     new Vector2(88f, -4f), new Vector2(72f, 28f), Color.white,
+                     TextAlignmentOptions.Left);
+            MakeIcon(tile.transform, "Sprites/diamond-coin", new Vector2(0f, 0.5f),
+                     new Vector2(142f, -4f), 24f);
+            MakeText(tile.transform, FormatCurrency(diamonds), 17f, new Vector2(0f, 0.5f),
+                     new Vector2(195f, -4f), new Vector2(62f, 28f), Color.white,
+                     TextAlignmentOptions.Left);
+
+            if (rank == 1 && comp < 3)
+            {
+                TextMeshProUGUI unlock = MakeText(tile.transform, "UNLOCKS " + CompNames[comp + 1], 11f,
+                     new Vector2(0.5f, 0f), new Vector2(0f, 15f), new Vector2(224f, 24f),
+                     Cyan, TextAlignmentOptions.Center);
+                unlock.enableAutoSizing = true;
+                unlock.fontSizeMin = 9f;
+                unlock.fontSizeMax = 11f;
+            }
+        }
+        return yTop + h;
+    }
+
+    // One framed five-club group table. Compact mode shows Pos | Team | Pts; details mode shows
+    // the same five clubs with all statistical columns. Tapping the card toggles the presentation.
     // Returns the card height so the caller can stack the next one below.
     float BuildGroupCard(RectTransform content, LeagueSeason s, int g, float yTop)
     {
-        // Compact sizing pass: shorter header, rows and bottom padding so each 5-row card sits tight
-        // (was headerH 46, rowH 34/30, colHeadH 28, bottom pad 12). Purely visual — the row layout,
-        // VIEW ALL expand, gold MY-TEAM highlight and tap-to-expand are unchanged.
         bool expanded = compGroupExpanded[g];
-        const float width = 1150f, headerH = 40f;
-        float rowH = expanded ? 28f : 26f;
-        float colHeadH = expanded ? 22f : 0f;
+        const float width = 1150f, headerH = 48f;
+        float rowH = expanded ? 42f : 44f;
+        float colHeadH = expanded ? 30f : 0f;
         int rows = expanded ? LeagueSeason.GroupSize : 5;
-        float h = headerH + colHeadH + rows * rowH + 8f;
+        float h = headerH + colHeadH + rows * rowH + 10f;
 
         // Outer border + inset fill — same two-image framing as the hub card slots.
         GameObject cardGo = new GameObject(g == 0 ? "GroupA" : "GroupB");
@@ -1465,9 +1950,9 @@ public class NavigationManager : MonoBehaviour
         head.raycastTarget = false;
         SetRect(head.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -(headerH * 0.5f + 2f)),
                 new Vector2(width - 8f, headerH - 4f));
-        MakeText(head.transform, g == 0 ? "GROUP A" : "GROUP B", 20f, new Vector2(0f, 0.5f),
+        MakeText(head.transform, g == 0 ? "GROUP A" : "GROUP B", 22f, new Vector2(0f, 0.5f),
                  new Vector2(160f, 0f), new Vector2(300f, 30f), Cyan, TextAlignmentOptions.Left);
-        MakeText(head.transform, expanded ? "COLLAPSE" : "VIEW ALL", 15f, new Vector2(1f, 0.5f),
+        MakeText(head.transform, expanded ? "COMPACT VIEW" : "FULL TABLE", 14f, new Vector2(1f, 0.5f),
                  new Vector2(-95f, 0f), new Vector2(170f, 24f), Gold, TextAlignmentOptions.Right);
 
         List<int> order = s.GroupStandings(g);
@@ -1477,7 +1962,7 @@ public class NavigationManager : MonoBehaviour
         for (int r = 0; r < rows; r++)
         {
             int ti = order[r];
-            bool player = ti == LeagueSeason.PlayerIndex;
+            bool player = ti == s.PlayerIndex;
             float cy = -(headerH + colHeadH + rowH * 0.5f + r * rowH);
             if (expanded)
                 MakeGroupFullRow(cardGo.transform, cy, rowH, false, player,
@@ -1504,7 +1989,7 @@ public class NavigationManager : MonoBehaviour
         row.color = GroupRowColor(header, player);
         row.raycastTarget = false;
         SetRect(row.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, centerY),
-                new Vector2(1120f, rowH - 3f)); // 3px inter-row gap (was 4) — a touch less dead space
+                new Vector2(1120f, rowH - 4f));
         return row;
     }
 
@@ -1515,10 +2000,13 @@ public class NavigationManager : MonoBehaviour
     {
         Image row = MakeGroupRowStrip(card, centerY, rowH, header, player);
         Color col = header ? new Color(0.72f, 0.85f, 1f, 1f) : Color.white;
-        float fs = header ? 14f : 17f;
+        float fs = header ? 13f : 18f;
         Vector2 box = new Vector2(60f, rowH);
         MakeText(row.transform, pos, fs, new Vector2(0.5f, 0.5f), new Vector2(-500f, 0f), box, col, TextAlignmentOptions.Center);
-        MakeText(row.transform, name, fs, new Vector2(0.5f, 0.5f), new Vector2(-290f, 0f), new Vector2(330f, rowH), col, TextAlignmentOptions.Left);
+        if (!header) AddClubLogo(row.transform, name, new Vector2(-432f, 0f), rowH - 8f,
+                                 new Vector2(0.5f, 0.5f), player);
+        MakeText(row.transform, name, fs, new Vector2(0.5f, 0.5f), new Vector2(header ? -290f : -266f, 0f),
+                 new Vector2(header ? 330f : 278f, rowH), col, TextAlignmentOptions.Left);
         MakeText(row.transform, p, fs, new Vector2(0.5f, 0.5f), new Vector2(-55f, 0f), box, col, TextAlignmentOptions.Center);
         MakeText(row.transform, w, fs, new Vector2(0.5f, 0.5f), new Vector2(25f, 0f), box, col, TextAlignmentOptions.Center);
         MakeText(row.transform, d, fs, new Vector2(0.5f, 0.5f), new Vector2(105f, 0f), box, col, TextAlignmentOptions.Center);
@@ -1533,9 +2021,18 @@ public class NavigationManager : MonoBehaviour
     {
         Image row = MakeGroupRowStrip(card, centerY, rowH, false, player);
         Vector2 box = new Vector2(60f, rowH);
-        MakeText(row.transform, pos, 16f, new Vector2(0.5f, 0.5f), new Vector2(-500f, 0f), box, Color.white, TextAlignmentOptions.Center);
-        MakeText(row.transform, name, 16f, new Vector2(0.5f, 0.5f), new Vector2(-230f, 0f), new Vector2(450f, rowH), Color.white, TextAlignmentOptions.Left);
-        MakeText(row.transform, pts, 16f, new Vector2(0.5f, 0.5f), new Vector2(485f, 0f), box, Color.white, TextAlignmentOptions.Center);
+        MakeText(row.transform, pos, 18f, new Vector2(0.5f, 0.5f), new Vector2(-500f, 0f), box, Color.white, TextAlignmentOptions.Center);
+        AddClubLogo(row.transform, name, new Vector2(-432f, 0f), rowH - 8f,
+                    new Vector2(0.5f, 0.5f), player);
+        TextMeshProUGUI clubName = MakeText(row.transform, name, 18f, new Vector2(0.5f, 0.5f),
+                 new Vector2(-202f, 0f), new Vector2(394f, rowH), Color.white,
+                 TextAlignmentOptions.Left);
+        clubName.enableAutoSizing = true;
+        clubName.fontSizeMin = 14f;
+        clubName.fontSizeMax = 18f;
+        MakeText(row.transform, pts, 19f, new Vector2(0.5f, 0.5f), new Vector2(485f, 0f), box,
+                 player ? new Color(0.08f, 0.10f, 0.14f, 1f) : Gold,
+                 TextAlignmentOptions.Center);
     }
 
     // ---- KNOCKOUT tab ----
@@ -1545,19 +2042,20 @@ public class NavigationManager : MonoBehaviour
         RectTransform content = MakeCompScroll(sheet);
         float y = 2f;
 
-        y = AddBracketLabel(content, "QUARTERFINALS", y);
-        for (int i = 0; i < 4; i++)
-        {
-            float cx = (i % 2 == 0) ? -297f : 297f;                 // 2x2 grid
-            float cy = y + 38f + (i / 2) * 84f;
-            BuildBracketCard(content, s, s.quarterfinals[i], new Vector2(cx, -cy), new Vector2(576f, 72f));
-        }
-        y += 36f + 84f + 36f + 10f;
-
         y = AddBracketLabel(content, "SEMIFINALS", y);
         for (int i = 0; i < 2; i++)
             BuildBracketCard(content, s, s.semifinals[i], new Vector2(i == 0 ? -297f : 297f, -(y + 36f)),
                              new Vector2(576f, 72f));
+        y += 82f;
+
+        y = AddBracketLabel(content, "PLACEMENT MATCHES", y);
+        BuildBracketCard(content, s, s.placement5, new Vector2(-297f, -(y + 34f)), new Vector2(576f, 64f));
+        BuildBracketCard(content, s, s.placement7, new Vector2(297f, -(y + 34f)), new Vector2(576f, 64f));
+        BuildBracketCard(content, s, s.placement9, new Vector2(0f, -(y + 108f)), new Vector2(576f, 64f));
+        y += 150f;
+
+        y = AddBracketLabel(content, "THIRD PLACE", y);
+        BuildBracketCard(content, s, s.thirdPlace, new Vector2(0f, -(y + 36f)), new Vector2(640f, 72f));
         y += 82f;
 
         y = AddBracketLabel(content, "FINAL", y);
@@ -1576,10 +2074,11 @@ public class NavigationManager : MonoBehaviour
 
     // One bracket match card: Team A | score - score | Team B ("vs" while unplayed, "TBD" for
     // undecided slots). The player's tie gets a gold frame; a decided tie dims the loser.
-    void BuildBracketCard(RectTransform content, LeagueSeason s, LeagueSeason.KnockoutMatch m,
+    void BuildBracketCard(RectTransform content, LeagueSeason s, LeagueSeason.Fixture m,
                           Vector2 center, Vector2 size)
     {
-        bool mine = m.Has(LeagueSeason.PlayerIndex);
+        if (m == null) return;
+        bool mine = m.Has(s.PlayerIndex);
         GameObject go = new GameObject("Bracket");
         go.transform.SetParent(content, false);
         RectTransform rt = go.AddComponent<RectTransform>();
@@ -1608,11 +2107,25 @@ public class NavigationManager : MonoBehaviour
         Color colA = m.teamA < 0 ? tbd : !m.played ? Color.white : m.Winner == m.teamA ? Color.white : dim;
         Color colB = m.teamB < 0 ? tbd : !m.played ? Color.white : m.Winner == m.teamB ? Color.white : dim;
 
-        float wing = size.x * 0.5f - 78f; // name box width each side, leaving the middle for the score
-        MakeText(fill.transform, nameA, 17f, new Vector2(0f, 0.5f), new Vector2(wing * 0.5f + 14f, 0f),
-                 new Vector2(wing, size.y), colA, TextAlignmentOptions.Left);
-        MakeText(fill.transform, nameB, 17f, new Vector2(1f, 0.5f), new Vector2(-(wing * 0.5f + 14f), 0f),
-                 new Vector2(wing, size.y), colB, TextAlignmentOptions.Right);
+        float wing = size.x * 0.5f - 78f;
+        float logoSize = Mathf.Min(42f, size.y - 16f);
+        if (m.teamA >= 0)
+            AddClubLogo(fill.transform, nameA, new Vector2(30f, 0f), logoSize,
+                        new Vector2(0f, 0.5f), m.teamA == s.PlayerIndex);
+        if (m.teamB >= 0)
+            AddClubLogo(fill.transform, nameB, new Vector2(-30f, 0f), logoSize,
+                        new Vector2(1f, 0.5f), m.teamB == s.PlayerIndex);
+
+        float nameWidth = Mathf.Max(100f, wing - 50f);
+        TextMeshProUGUI textA = MakeText(fill.transform, nameA, 17f, new Vector2(0f, 0.5f),
+                 new Vector2(56f + nameWidth * 0.5f, 0f), new Vector2(nameWidth, size.y),
+                 colA, TextAlignmentOptions.Left);
+        TextMeshProUGUI textB = MakeText(fill.transform, nameB, 17f, new Vector2(1f, 0.5f),
+                 new Vector2(-(56f + nameWidth * 0.5f), 0f), new Vector2(nameWidth, size.y),
+                 colB, TextAlignmentOptions.Right);
+        textA.enableAutoSizing = textB.enableAutoSizing = true;
+        textA.fontSizeMin = textB.fontSizeMin = 12f;
+        textA.fontSizeMax = textB.fontSizeMax = 17f;
         string mid = m.played ? m.scoreA + " - " + m.scoreB : "vs";
         MakeText(fill.transform, mid, m.played ? 21f : 17f, new Vector2(0.5f, 0.5f), Vector2.zero,
                  new Vector2(130f, size.y), m.played ? Color.white : dim, TextAlignmentOptions.Center);
@@ -1638,23 +2151,99 @@ public class NavigationManager : MonoBehaviour
 
         if (!s.IsComplete)
         {
-            MakeActionButton(bar.transform, "NEXT MATCH    vs. " + s.NextOpponentName,
-                             new Vector2(0.5f, 0.5f), new Vector2(-40f, 0f), new Vector2(560f, 64f),
-                             Green, OpenPreMatch);
-        }
-        else if (s.PlayerIsChampion)
-        {
-            MakeActionButton(bar.transform, "CHAMPIONS!  CLAIM REWARDS", new Vector2(0.5f, 0.5f),
-                             new Vector2(-40f, 0f), new Vector2(560f, 64f), Gold,
-                () => Debug.Log("CLAIM REWARDS (placeholder) — " + CompNames[comp] + " won."));
+            bool canRestart = s.PlayerMatchWins > 0;
+            Button restart = MakeActionButton(
+                bar.transform,
+                canRestart ? "RESTART RUN" : "RESTART (WIN 1)",
+                new Vector2(0f, 0.5f),
+                new Vector2(130f, 0f),
+                new Vector2(230f, 52f),
+                canRestart ? new Color(0.80f, 0.22f, 0.20f, 1f)
+                           : new Color(0.25f, 0.30f, 0.38f, 1f),
+                canRestart ? () => OpenRestartChampionshipConfirmation(comp) : null);
+            restart.interactable = canRestart;
+
+            if (s.PlayerHasBye)
+                MakeActionButton(bar.transform, "SIMULATE BYE ROUND", new Vector2(0.5f, 0.5f), new Vector2(-40f, 0f),
+                                 new Vector2(560f, 64f), Green, () => { s.SimulateByeRound(); RebuildStandings(); });
+            else
+                MakeActionButton(bar.transform, "NEXT MATCH    vs. " + s.NextOpponentName,
+                                 new Vector2(0.5f, 0.5f), new Vector2(-40f, 0f), new Vector2(560f, 64f),
+                                 Green, OpenPreMatch);
         }
         else
         {
-            string champ = s.Champion >= 0 ? s.teams[s.Champion] : "?";
-            MakeText(bar.transform, "ELIMINATED IN THE " + s.eliminatedIn + "  -  " + champ + " ARE CHAMPIONS",
-                     19f, new Vector2(0.5f, 0.5f), new Vector2(-40f, 0f), new Vector2(900f, 60f),
-                     new Color(1f, 1f, 1f, 0.9f), TextAlignmentOptions.Center);
+            int rank = System.Array.IndexOf(s.finalOrder, s.PlayerIndex) + 1;
+            string status = rank == 1 && comp < 3 ? "PROMOTED TO " + CompNames[comp + 1] : rank == 1 ? "WORLD CHAMPIONS!" : "FINISHED " + rank + GetOrdinal(rank);
+            MakeText(bar.transform, status, 20f, new Vector2(0.5f, 0.5f), new Vector2(-220f, 0f), new Vector2(450f, 60f), Gold, TextAlignmentOptions.Center);
+            MakeActionButton(bar.transform, "PLAY CHAMPIONSHIP AGAIN", new Vector2(0.5f, 0.5f), new Vector2(270f, 0f),
+                             new Vector2(360f, 60f), Green, () => ReplayChampionship(comp));
         }
+    }
+
+    void OpenRestartChampionshipConfirmation(int competition)
+    {
+        LeagueSeason s = LeagueSeason.Current;
+        if (s == null || s.IsComplete || s.competitionIndex != competition || s.PlayerMatchWins < 1)
+            return;
+
+        if (restartChampionshipOverlay == null)
+            restartChampionshipOverlay = BuildScreenOverlay("Overlay_RESTART_CHAMPIONSHIP");
+        RectTransform sheet = restartChampionshipOverlay.transform.Find("Sheet") as RectTransform;
+        ClearChildren(sheet);
+
+        Image panel = MakePanel(sheet, new Vector2(0.5f, 0.5f), Vector2.zero,
+                                new Vector2(700f, 340f), new Color(0.04f, 0.075f, 0.14f, 1f));
+        panel.raycastTarget = true;
+
+        Image accent = NewImage(panel.transform, "WarningAccent");
+        accent.sprite = GetRoundedSprite();
+        accent.type = Image.Type.Sliced;
+        accent.color = new Color(0.86f, 0.25f, 0.20f, 1f);
+        accent.raycastTarget = false;
+        SetRect(accent.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -4f),
+                new Vector2(650f, 8f));
+
+        AddClubLogo(panel.transform, PlayerTeamName(), new Vector2(70f, -70f), 92f,
+                    new Vector2(0f, 1f), true);
+        MakeText(panel.transform, "RESTART CHAMPIONSHIP?", 30f,
+                 new Vector2(0.5f, 1f), new Vector2(45f, -52f), new Vector2(520f, 44f),
+                 Color.white, TextAlignmentOptions.Center);
+        MakeText(panel.transform,
+                 "All matches, scores and standings in " + CompNames[competition] + " will return to zero.",
+                 17f, new Vector2(0.5f, 0.5f), new Vector2(0f, 34f),
+                 new Vector2(610f, 52f), new Color(0.74f, 0.82f, 0.92f, 1f),
+                 TextAlignmentOptions.Center);
+        MakeText(panel.transform,
+                 "Your Gold, Diamonds, unlocked competitions and previous rewards are kept. A fresh fixture calendar will be drawn.",
+                 15f, new Vector2(0.5f, 0.5f), new Vector2(0f, -24f),
+                 new Vector2(610f, 58f), Gold, TextAlignmentOptions.Center);
+
+        MakeActionButton(panel.transform, "CANCEL", new Vector2(0.5f, 0f),
+                         new Vector2(-166f, 52f), new Vector2(270f, 60f),
+                         new Color(0.28f, 0.36f, 0.48f, 1f),
+                         () => HideOverlay(restartChampionshipOverlay));
+        MakeActionButton(panel.transform, "RESET TO 0 MATCHES", new Vector2(0.5f, 0f),
+                         new Vector2(166f, 52f), new Vector2(310f, 60f),
+                         new Color(0.82f, 0.22f, 0.18f, 1f),
+                         () => ConfirmRestartChampionship(competition));
+        ShowOverlay(restartChampionshipOverlay);
+    }
+
+    void ConfirmRestartChampionship(int competition)
+    {
+        if (!LeagueSeason.RestartCurrent(competition, PlayerTeamName())) return;
+        HideOverlay(restartChampionshipOverlay);
+        compTab = 0;
+        compGroupExpanded[0] = compGroupExpanded[1] = false;
+        RebuildStandings();
+    }
+
+    void ReplayChampionship(int competition)
+    {
+        if (!IsCompetitionUnlocked(competition)) return;
+        LeagueSeason.ResetCompletedRun(competition);
+        StartChampionship(competition);
     }
 
     // =============================================================== pre-match
@@ -1669,7 +2258,7 @@ public class NavigationManager : MonoBehaviour
         MakeTopBar(sheet, CompNames[comp], () => HideOverlay(preMatchOverlay));
 
         int opp = s.NextOpponent;
-        string playerName = s.teams[LeagueSeason.PlayerIndex];
+        string playerName = s.teams[s.PlayerIndex];
         string oppName = opp >= 0 ? s.teams[opp] : "TBD";
         int oppStars = opp >= 0 ? s.stars[opp] : 3;
 
@@ -1683,14 +2272,23 @@ public class NavigationManager : MonoBehaviour
         MakeText(sheet, s.MatchLabel, 18f,
                  new Vector2(0.5f, 0.5f), new Vector2(0f, 150f), new Vector2(300f, 26f), Color.white,
                  TextAlignmentOptions.Center);
-        MakeText(sheet, "VS", 44f, new Vector2(0.5f, 0.5f), new Vector2(0f, 70f), new Vector2(160f, 56f),
+        TextMeshProUGUI vsLabel = MakeText(sheet, "VS", 44f, new Vector2(0.5f, 0.5f),
+                 new Vector2(0f, 70f), new Vector2(160f, 56f),
                  new Color(1f, 1f, 1f, 0.9f), TextAlignmentOptions.Center);
         MakeActionButton(sheet, "PLAY", new Vector2(0.5f, 0.5f), new Vector2(0f, -30f), new Vector2(180f, 72f),
             Green, StartMatch);
 
         // Below each pool: logo + name + star rating.
-        BuildTeamInfo(sheet, new Vector2(-poolX, -150f), playerName, s.stars[LeagueSeason.PlayerIndex], Blue);
-        BuildTeamInfo(sheet, new Vector2(poolX, -150f), oppName, oppStars, Red);
+        RectTransform playerPanel = BuildTeamInfo(sheet, new Vector2(-poolX, -150f), playerName,
+                                                  s.stars[s.PlayerIndex], Blue, true);
+        RectTransform opponentPanel = BuildTeamInfo(sheet, new Vector2(poolX, -150f), oppName,
+                                                    oppStars, Red, false);
+
+        // The requested horizontal fixture beat: both real club identities slide in from opposite
+        // sides, settle around VS, then remain as the normal pre-match display.
+        FixtureIntroFX fixtureFx = sheet.GetComponent<FixtureIntroFX>();
+        if (fixtureFx == null) fixtureFx = sheet.gameObject.AddComponent<FixtureIntroFX>();
+        fixtureFx.Configure(playerPanel, opponentPanel, vsLabel.rectTransform);
     }
 
     // A pool render with a coloured frame and 6 formation markers. Opponent formations mirror vertically.
@@ -1737,17 +2335,26 @@ public class NavigationManager : MonoBehaviour
         }
     }
 
-    void BuildTeamInfo(Transform sheet, Vector2 center, string name, int stars, Color color)
+    RectTransform BuildTeamInfo(Transform sheet, Vector2 center, string name, int stars, Color color,
+                                bool playerClub)
     {
-        Image logo = NewImage(sheet, "TeamLogo");
-        logo.sprite = Circle();
-        logo.color = color;
-        logo.raycastTarget = false;
-        SetRect(logo.rectTransform, new Vector2(0.5f, 0.5f), center + new Vector2(0f, 28f), new Vector2(54f, 54f));
-        MakeText(sheet, name, 20f, new Vector2(0.5f, 0.5f), center + new Vector2(0f, -12f),
-                 new Vector2(320f, 28f), Color.white, TextAlignmentOptions.Center);
-        MakeText(sheet, StarString(stars), 22f, new Vector2(0.5f, 0.5f), center + new Vector2(0f, -42f),
+        GameObject panel = new GameObject("FixtureClub_" + name);
+        panel.transform.SetParent(sheet, false);
+        RectTransform rt = panel.AddComponent<RectTransform>();
+        SetRect(rt, new Vector2(0.5f, 0.5f), center, new Vector2(390f, 138f));
+        panel.AddComponent<CanvasGroup>();
+
+        AddClubLogo(panel.transform, name, new Vector2(0f, 31f), 78f,
+                    new Vector2(0.5f, 0.5f), playerClub);
+        TextMeshProUGUI teamName = MakeText(panel.transform, name, 22f, new Vector2(0.5f, 0.5f),
+                 new Vector2(0f, -22f), new Vector2(360f, 32f), Color.white,
+                 TextAlignmentOptions.Center);
+        teamName.enableAutoSizing = true;
+        teamName.fontSizeMin = 16f;
+        teamName.fontSizeMax = 22f;
+        MakeText(panel.transform, StarString(stars), 21f, new Vector2(0.5f, 0.5f), new Vector2(0f, -52f),
                  new Vector2(180f, 26f), Gold, TextAlignmentOptions.Center);
+        return rt;
     }
 
     // ---- shared screen helpers (top bar / back button / currency / backdrop / buttons) ----
@@ -1777,13 +2384,84 @@ public class NavigationManager : MonoBehaviour
         RosterManager rm = RosterManager.Instance;
         int coins = rm != null ? rm.Coins : 0;
         int diamonds = rm != null ? rm.Diamonds : 0;
-        MakeText(bar, coins.ToString(), 18f, new Vector2(1f, 0.5f), new Vector2(-40f, 0f), new Vector2(66f, 30f),
-                 Color.white, TextAlignmentOptions.Right);
-        MakeIcon(bar, "Sprites/gold-coin", new Vector2(1f, 0.5f), new Vector2(-95f, 0f), 34f);
-        MakeText(bar, diamonds.ToString(), 18f, new Vector2(1f, 0.5f), new Vector2(-150f, 0f), new Vector2(54f, 30f),
-                 Color.white, TextAlignmentOptions.Right);
-        MakeIcon(bar, "Sprites/diamond-coin", new Vector2(1f, 0.5f), new Vector2(-200f, 0f), 34f);
+        TextMeshProUGUI coinText = MakeCurrencyChip(bar, "GoldChip", "Sprites/gold-coin", Gold,
+                                                     new Vector2(-94f, 0f), () => OpenShopTab(5));
+        TextMeshProUGUI diamondText = MakeCurrencyChip(bar, "DiamondChip", "Sprites/diamond-coin", Cyan,
+                                                        new Vector2(-270f, 0f), () => OpenShopTab(6));
+        coinText.text = FormatCurrency(coins);
+        diamondText.text = FormatCurrency(diamonds);
     }
+
+    // A compact mobile-game currency component. The count lives inside a high-contrast pill rather
+    // than floating beside an icon, and the plus button is part of the component's silhouette.
+    TextMeshProUGUI MakeCurrencyChip(Transform parent, string name, string iconPath, Color accent,
+                                    Vector2 position, UnityEngine.Events.UnityAction onPlus)
+    {
+        const float width = 164f, height = 50f;
+        GameObject root = new GameObject(name);
+        root.transform.SetParent(parent, false);
+        RectTransform rt = root.AddComponent<RectTransform>();
+        SetRect(rt, new Vector2(1f, 0.5f), position, new Vector2(width, height));
+
+        Image shadow = NewImage(root.transform, "Shadow");
+        shadow.sprite = GetRoundedSprite();
+        shadow.type = Image.Type.Sliced;
+        shadow.color = new Color(0f, 0f, 0f, 0.42f);
+        shadow.raycastTarget = false;
+        SetRect(shadow.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, -3f),
+                new Vector2(width + 2f, height));
+
+        Image frame = NewImage(root.transform, "Frame");
+        frame.sprite = GetRoundedSprite();
+        frame.type = Image.Type.Sliced;
+        frame.color = accent;
+        frame.raycastTarget = false;
+        Stretch(frame.rectTransform);
+
+        Image fill = NewImage(root.transform, "Fill");
+        fill.sprite = GetRoundedSprite();
+        fill.type = Image.Type.Sliced;
+        fill.color = new Color(0.035f, 0.065f, 0.12f, 0.98f);
+        fill.raycastTarget = false;
+        RectTransform fillRt = fill.rectTransform;
+        fillRt.anchorMin = Vector2.zero;
+        fillRt.anchorMax = Vector2.one;
+        fillRt.offsetMin = new Vector2(3f, 3f);
+        fillRt.offsetMax = new Vector2(-3f, -3f);
+
+        Image iconWell = NewImage(root.transform, "IconWell");
+        iconWell.sprite = Circle();
+        iconWell.color = new Color(accent.r, accent.g, accent.b, 0.23f);
+        iconWell.raycastTarget = false;
+        SetRect(iconWell.rectTransform, new Vector2(0f, 0.5f), new Vector2(25f, 0f), new Vector2(40f, 40f));
+        MakeIcon(iconWell.transform, iconPath, new Vector2(0.5f, 0.5f), Vector2.zero, 32f);
+
+        TextMeshProUGUI value = MakeText(root.transform, "0", 19f, new Vector2(0.5f, 0.5f),
+                                         new Vector2(6f, 0f), new Vector2(82f, 40f),
+                                         Color.white, TextAlignmentOptions.Center);
+        value.enableAutoSizing = true;
+        value.fontSizeMin = 14f;
+        value.fontSizeMax = 19f;
+
+        GameObject plusGo = new GameObject("Plus");
+        plusGo.transform.SetParent(root.transform, false);
+        RectTransform plusRt = plusGo.AddComponent<RectTransform>();
+        SetRect(plusRt, new Vector2(1f, 0.5f), new Vector2(-20f, 0f), new Vector2(34f, 34f));
+        Image plus = plusGo.AddComponent<Image>();
+        plus.sprite = GetRoundedSprite();
+        plus.type = Image.Type.Sliced;
+        plus.color = accent;
+        Button button = plusGo.AddComponent<Button>();
+        button.targetGraphic = plus;
+        if (onPlus != null) button.onClick.AddListener(onPlus);
+        MakeText(plusGo.transform, "+", 25f, new Vector2(0.5f, 0.5f), new Vector2(0f, 1f),
+                 new Vector2(34f, 34f), new Color(0.035f, 0.065f, 0.12f, 1f), TextAlignmentOptions.Center);
+        AddHover(plusGo);
+        return value;
+    }
+
+    static string FormatCurrency(int value) =>
+        Mathf.Max(0, value).ToString("N0", CultureInfo.InvariantCulture);
 
     // Solid dark base (swallows clicks) + competition-page-background dimmed by `brightness`.
     void AddScreenBackground(Transform sheet, float brightness)
@@ -1841,11 +2519,27 @@ public class NavigationManager : MonoBehaviour
         Image img = go.AddComponent<Image>();
         img.sprite = GetRoundedSprite();
         img.type = Image.Type.Sliced;
-        img.color = color;
+        img.color = new Color(0f, 0f, 0f, 0.52f);
 
         Button btn = go.AddComponent<Button>();
         btn.targetGraphic = img;
         if (onClick != null) btn.onClick.AddListener(onClick);
+
+        Image face = NewImage(go.transform, "Face");
+        face.sprite = GetRoundedSprite();
+        face.type = Image.Type.Sliced;
+        face.color = color;
+        face.raycastTarget = false;
+        SetRect(face.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, 3f),
+                new Vector2(size.x - 4f, size.y - 8f));
+
+        Image shine = NewImage(face.transform, "TopShine");
+        shine.sprite = GetRoundedSprite();
+        shine.type = Image.Type.Sliced;
+        shine.color = new Color(1f, 1f, 1f, 0.22f);
+        shine.raycastTarget = false;
+        SetRect(shine.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -4f),
+                new Vector2(size.x - 24f, 5f));
 
         TextMeshProUGUI t = MakeText(go.transform, label, Mathf.Min(26f, size.y * 0.38f),
                                      new Vector2(0.5f, 0.5f), Vector2.zero, size, Color.white,
@@ -1861,13 +2555,12 @@ public class NavigationManager : MonoBehaviour
         for (int i = t.childCount - 1; i >= 0; i--) Destroy(t.GetChild(i).gameObject);
     }
 
-    // The player's club name. TeamSide only exists in the match scene, so in the hub this falls back
-    // to "MY TEAM" (per spec).
+    // The player's saved My Club identity is the human-controlled championship entry. TeamSide only
+    // exists inside PoolB, so the hub reads the durable ClubProfile directly.
     static string PlayerTeamName()
     {
-        TeamSide ts = FindAnyObjectByType<TeamSide>();
-        if (ts != null && !string.IsNullOrEmpty(ts.teamName) && ts.teamName != "Team") return ts.teamName;
-        return "MY TEAM";
+        ClubProfile club = RosterManager.Instance.Club;
+        return club != null && !string.IsNullOrWhiteSpace(club.clubName) ? club.clubName.Trim() : "MY CLUB";
     }
 
     static string StarString(int n)
@@ -1877,6 +2570,89 @@ public class NavigationManager : MonoBehaviour
     }
 
     static string Signed(int v) => v > 0 ? "+" + v : v.ToString();
+    static string GetOrdinal(int rank) => rank % 100 is 11 or 12 or 13 ? "TH" : rank % 10 == 1 ? "ST" : rank % 10 == 2 ? "ND" : rank % 10 == 3 ? "RD" : "TH";
+
+    // Every club crest has an opaque white backing at lower UI order. This keeps transparent logos
+    // readable without editing the supplied source artwork.
+    Image AddClubLogo(Transform parent, string club, Vector2 position, float size, Vector2 anchor,
+                      bool playerClub = false)
+    {
+        GameObject holder = new GameObject("Logo_" + club);
+        holder.transform.SetParent(parent, false);
+        RectTransform holderRt = holder.AddComponent<RectTransform>();
+        SetRect(holderRt, anchor, position, new Vector2(size, size));
+
+        // Compact layered badge: a soft shadow + thin tier rim + close-fitting white fallback plate.
+        // The crest deliberately fills/overlaps the plate so the old giant-white-circle look is gone.
+        Image shadow = NewImage(holder.transform, "Shadow");
+        shadow.sprite = Circle();
+        shadow.color = new Color(0f, 0f, 0f, 0.38f);
+        shadow.raycastTarget = false;
+        SetRect(shadow.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, -size * 0.045f),
+                new Vector2(size * 0.96f, size * 0.96f));
+
+        Image rim = NewImage(holder.transform, "Rim");
+        rim.sprite = Circle();
+        rim.color = playerClub ? Gold : new Color(0.30f, 0.47f, 0.64f, 1f);
+        rim.raycastTarget = false;
+        SetRect(rim.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero,
+                new Vector2(size * 0.92f, size * 0.92f));
+
+        Image plate = NewImage(holder.transform, "Plate");
+        plate.sprite = Circle();
+        plate.color = new Color(0.97f, 0.98f, 1f, 1f);
+        plate.raycastTarget = false;
+        SetRect(plate.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero,
+                new Vector2(size * 0.82f, size * 0.82f));
+
+        Image logo = NewImage(holder.transform, "Crest");
+        ClubCatalog catalog = ClubCatalog.Instance;
+        if (playerClub)
+        {
+            ClubProfile profile = RosterManager.Instance.Club;
+            logo.sprite = ClubCustomizationUI.CrestSprite(profile.logoId);
+            logo.color = ClubCustomizationUI.ParseHex(profile.secondaryColorHex, Color.white);
+        }
+        else
+        {
+            logo.sprite = catalog != null ? catalog.LogoFor(club) : null;
+            logo.color = logo.sprite != null ? Color.white : new Color(0.15f, 0.23f, 0.32f, 1f);
+        }
+        logo.preserveAspect = true;
+        logo.raycastTarget = false;
+        SetRect(logo.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero,
+                new Vector2(size * 0.94f, size * 0.94f));
+        if (logo.sprite == null)
+        {
+            logo.gameObject.SetActive(false);
+            MakeText(holder.transform, ClubInitials(club), size * 0.28f,
+                     new Vector2(0.5f, 0.5f), Vector2.zero,
+                     new Vector2(size * 0.70f, size * 0.70f),
+                     new Color(0.10f, 0.17f, 0.25f, 1f), TextAlignmentOptions.Center);
+        }
+        return logo;
+    }
+
+    static string ClubInitials(string club)
+    {
+        if (string.IsNullOrWhiteSpace(club)) return "?";
+        string compact = club.Replace("-", "").Replace(" ", "");
+        return compact.Substring(0, Mathf.Min(2, compact.Length)).ToUpperInvariant();
+    }
+
+    Image AddCompetitionArt(Transform parent, Sprite sprite, Vector2 position, float size, Vector2 anchor)
+    {
+        GameObject holder = new GameObject("CompetitionArt");
+        holder.transform.SetParent(parent, false);
+        Image backing = holder.AddComponent<Image>();
+        backing.sprite = Circle(); backing.color = Color.white; backing.raycastTarget = false;
+        SetRect(backing.rectTransform, anchor, position, new Vector2(size, size));
+        Image art = NewImage(holder.transform, "Sprite");
+        art.sprite = sprite; art.preserveAspect = true; art.raycastTarget = false;
+        art.color = sprite != null ? Color.white : new Color(0.15f, 0.23f, 0.32f, 1f);
+        SetRect(art.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(size * 0.86f, size * 0.86f));
+        return art;
+    }
 
     void ShowOverlay(GameObject overlay)
     {
@@ -2501,5 +3277,90 @@ public class NavigationManager : MonoBehaviour
         tex.wrapMode = TextureWrapMode.Clamp;
         vignetteSprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
         return vignetteSprite;
+    }
+}
+
+// Short unscaled-time fixture presentation used by the procedural pre-match screen. It owns no
+// tournament state and leaves the panels at their authored positions after the animation.
+sealed class FixtureIntroFX : MonoBehaviour
+{
+    RectTransform playerPanel;
+    RectTransform opponentPanel;
+    RectTransform vsLabel;
+    CanvasGroup playerGroup;
+    CanvasGroup opponentGroup;
+    CanvasGroup vsGroup;
+    Vector2 playerTarget;
+    Vector2 opponentTarget;
+    Coroutine routine;
+    bool configured;
+
+    public void Configure(RectTransform player, RectTransform opponent, RectTransform vs)
+    {
+        playerPanel = player;
+        opponentPanel = opponent;
+        vsLabel = vs;
+        playerGroup = player != null ? player.GetComponent<CanvasGroup>() : null;
+        opponentGroup = opponent != null ? opponent.GetComponent<CanvasGroup>() : null;
+        if (vs != null)
+        {
+            vsGroup = vs.GetComponent<CanvasGroup>();
+            if (vsGroup == null) vsGroup = vs.gameObject.AddComponent<CanvasGroup>();
+        }
+        playerTarget = player != null ? player.anchoredPosition : Vector2.zero;
+        opponentTarget = opponent != null ? opponent.anchoredPosition : Vector2.zero;
+        configured = playerPanel != null && opponentPanel != null && vsLabel != null;
+        if (isActiveAndEnabled) Begin();
+    }
+
+    void OnEnable()
+    {
+        if (configured) Begin();
+    }
+
+    void Begin()
+    {
+        if (routine != null) StopCoroutine(routine);
+        routine = StartCoroutine(Play());
+    }
+
+    IEnumerator Play()
+    {
+        const float travel = 440f;
+        const float delay = 0.08f;
+        const float duration = 0.52f;
+
+        playerPanel.anchoredPosition = playerTarget + Vector2.left * travel;
+        opponentPanel.anchoredPosition = opponentTarget + Vector2.right * travel;
+        playerGroup.alpha = opponentGroup.alpha = vsGroup.alpha = 0f;
+        vsLabel.localScale = Vector3.one * 0.65f;
+
+        float wait = 0f;
+        while (wait < delay)
+        {
+            wait += Time.unscaledDeltaTime;
+            yield return null;
+        }
+
+        float elapsed = 0f;
+        while (elapsed < duration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float t = Mathf.Clamp01(elapsed / duration);
+            float ease = 1f - Mathf.Pow(1f - t, 3f);
+            playerPanel.anchoredPosition = Vector2.LerpUnclamped(playerTarget + Vector2.left * travel, playerTarget, ease);
+            opponentPanel.anchoredPosition = Vector2.LerpUnclamped(opponentTarget + Vector2.right * travel, opponentTarget, ease);
+            playerGroup.alpha = opponentGroup.alpha = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t * 1.35f));
+            float vsT = Mathf.Clamp01((t - 0.42f) / 0.40f);
+            vsGroup.alpha = vsT;
+            vsLabel.localScale = Vector3.one * Mathf.Lerp(0.65f, 1f, 1f - Mathf.Pow(1f - vsT, 3f));
+            yield return null;
+        }
+
+        playerPanel.anchoredPosition = playerTarget;
+        opponentPanel.anchoredPosition = opponentTarget;
+        playerGroup.alpha = opponentGroup.alpha = vsGroup.alpha = 1f;
+        vsLabel.localScale = Vector3.one;
+        routine = null;
     }
 }

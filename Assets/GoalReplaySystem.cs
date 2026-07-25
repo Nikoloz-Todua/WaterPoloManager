@@ -678,12 +678,17 @@ public sealed class GoalReplaySystem : MonoBehaviour
 
     void PrepareReplayPresentation(GoalClip clip)
     {
-        string side = clip.playerScored ? "YOU" : "BOT";
+        MatchPresentationContext.Restore();
+        bool championship = MatchPresentationContext.IsChampionshipFixture;
+        string playerClub = championship ? MatchPresentationContext.PlayerClub : "YOU";
+        string opponentClub = championship ? MatchPresentationContext.OpponentClub : "BOT";
+        string side = clip.playerScored ? playerClub : opponentClub;
         string shooterName = CleanDisplayName(clip.shooter != null ? clip.shooter.name : string.Empty);
         goalText.text = string.IsNullOrEmpty(shooterName)
             ? "GOAL  •  " + side
             : "GOAL  •  " + side + "  •  " + shooterName.ToUpperInvariant();
-        scoreText.text = $"YOU  {clip.homeScore}    —    {clip.awayScore}  BOT";
+        scoreText.text = playerClub + "  " + clip.homeScore + "    —    " +
+                         clip.awayScore + "  " + opponentClub;
     }
 
     IEnumerator Fade(float from, float to, float duration)

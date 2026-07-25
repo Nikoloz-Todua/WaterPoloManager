@@ -23,6 +23,8 @@ public class QuarterBreakUI : MonoBehaviour
     private Transform canvasRoot;
     private TextMeshProUGUI titleText;
     private TextMeshProUGUI scoreText;
+    private TextMeshProUGUI playerNameText;
+    private TextMeshProUGUI opponentNameText;
     private Action onResume;
 
     // Lazily create (or fetch) the singleton, so MatchTimer can call it with zero scene setup.
@@ -49,7 +51,11 @@ public class QuarterBreakUI : MonoBehaviour
     {
         onResume = resume;
         titleText.text = "QUARTER " + completedQuarter + " COMPLETE";
-        scoreText.text = "YOU  " + you + " — " + bot + "  BOT";
+        MatchPresentationContext.Restore();
+        bool championship = MatchPresentationContext.IsChampionshipFixture;
+        playerNameText.text = championship ? MatchPresentationContext.PlayerClub : "YOU";
+        opponentNameText.text = championship ? MatchPresentationContext.OpponentClub : "BOT";
+        scoreText.text = you + "  —  " + bot;
 
         root.SetActive(true);
         StopAllCoroutines();
@@ -116,20 +122,90 @@ public class QuarterBreakUI : MonoBehaviour
         GameObject panelGo = new GameObject("Panel");
         panelGo.transform.SetParent(canvasRoot, false);
         Image panel = panelGo.AddComponent<Image>();
-        panel.sprite = MakeRoundedRectSprite(420, 360, 28);
+        panel.sprite = MakeRoundedRectSprite(720, 430, 28);
         panel.type = Image.Type.Simple;
         panel.color = PanelColor;
         RectTransform pRt = panel.rectTransform;
         pRt.anchorMin = pRt.anchorMax = new Vector2(0.5f, 0.5f);
         pRt.pivot = new Vector2(0.5f, 0.5f);
         pRt.anchoredPosition = Vector2.zero;
-        pRt.sizeDelta = new Vector2(420f, 360f);
+        pRt.sizeDelta = new Vector2(720f, 430f);
 
-        titleText = MakeText(panelGo.transform, "Title", "QUARTER 1 COMPLETE", 36f, new Vector2(0f, 115f));
-        scoreText = MakeText(panelGo.transform, "Score", "YOU  0 — 0  BOT",    50f, new Vector2(0f, 35f));
+        titleText = MakeText(panelGo.transform, "Title", "QUARTER 1 COMPLETE", 36f, new Vector2(0f, 162f));
+        scoreText = MakeText(panelGo.transform, "Score", "0 — 0", 56f, new Vector2(0f, 70f));
 
-        MakeButton(panelGo.transform, "RESUME", new Vector2(0f, -55f),  OnResumeClicked);
-        MakeButton(panelGo.transform, "QUIT",   new Vector2(0f, -140f), OnQuitClicked);
+        MatchPresentationContext.Restore();
+        string leftName = MatchPresentationContext.IsChampionshipFixture ? MatchPresentationContext.PlayerClub : "YOU";
+        string rightName = MatchPresentationContext.IsChampionshipFixture ? MatchPresentationContext.OpponentClub : "BOT";
+        playerNameText = MakeClubName(panelGo.transform, "PlayerClub", leftName, new Vector2(-220f, 5f));
+        opponentNameText = MakeClubName(panelGo.transform, "OpponentClub", rightName, new Vector2(220f, 5f));
+        if (MatchPresentationContext.IsChampionshipFixture)
+        {
+            MakeClubBadge(panelGo.transform, leftName, true, new Vector2(-220f, 73f));
+            MakeClubBadge(panelGo.transform, rightName, false, new Vector2(220f, 73f));
+        }
+
+        MakeButton(panelGo.transform, "RESUME", new Vector2(0f, -70f), OnResumeClicked);
+        MakeButton(panelGo.transform, "QUIT", new Vector2(0f, -155f), OnQuitClicked);
+    }
+
+    TextMeshProUGUI MakeClubName(Transform parent, string objectName, string content, Vector2 pos)
+    {
+        TextMeshProUGUI text = MakeText(parent, objectName, content, 22f, pos);
+        text.rectTransform.sizeDelta = new Vector2(260f, 42f);
+        text.enableAutoSizing = true;
+        text.fontSizeMin = 15f;
+        text.fontSizeMax = 22f;
+        return text;
+    }
+
+    void MakeClubBadge(Transform parent, string club, bool playerSide, Vector2 pos)
+    {
+        GameObject holder = new GameObject((playerSide ? "Player" : "Opponent") + "Badge");
+        holder.transform.SetParent(parent, false);
+        RectTransform holderRt = holder.AddComponent<RectTransform>();
+        holderRt.anchorMin = holderRt.anchorMax = holderRt.pivot = new Vector2(0.5f, 0.5f);
+        holderRt.anchoredPosition = pos;
+        holderRt.sizeDelta = new Vector2(82f, 82f);
+
+        Image rim = holder.AddComponent<Image>();
+        rim.sprite = MakeRoundedRectSprite(82, 82, 41);
+        rim.color = playerSide ? new Color(1f, 0.82f, 0.2f, 1f)
+                               : new Color(0.92f, 0.24f, 0.30f, 1f);
+        rim.raycastTarget = false;
+
+        GameObject plateGo = new GameObject("Plate");
+        plateGo.transform.SetParent(holder.transform, false);
+        Image plate = plateGo.AddComponent<Image>();
+        plate.sprite = MakeRoundedRectSprite(70, 70, 35);
+        plate.color = new Color(0.98f, 0.99f, 1f, 1f);
+        plate.raycastTarget = false;
+        RectTransform plateRt = plate.rectTransform;
+        plateRt.anchorMin = plateRt.anchorMax = plateRt.pivot = new Vector2(0.5f, 0.5f);
+        plateRt.anchoredPosition = Vector2.zero;
+        plateRt.sizeDelta = new Vector2(70f, 70f);
+
+        GameObject crestGo = new GameObject("Crest");
+        crestGo.transform.SetParent(holder.transform, false);
+        Image crest = crestGo.AddComponent<Image>();
+        if (playerSide)
+        {
+            ClubProfile profile = RosterManager.Instance.Club;
+            crest.sprite = ClubCustomizationUI.CrestSprite(profile.logoId);
+            crest.color = ClubCustomizationUI.ParseHex(profile.secondaryColorHex, Color.white);
+        }
+        else
+        {
+            ClubCatalog catalog = ClubCatalog.Instance;
+            crest.sprite = catalog != null ? catalog.LogoFor(club) : null;
+            crest.color = Color.white;
+        }
+        crest.preserveAspect = true;
+        crest.raycastTarget = false;
+        RectTransform crestRt = crest.rectTransform;
+        crestRt.anchorMin = crestRt.anchorMax = crestRt.pivot = new Vector2(0.5f, 0.5f);
+        crestRt.anchoredPosition = Vector2.zero;
+        crestRt.sizeDelta = new Vector2(80f, 80f);
     }
 
     TextMeshProUGUI MakeText(Transform parent, string name, string content, float size, Vector2 pos)

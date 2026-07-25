@@ -67,10 +67,47 @@ public class ScoreManager : MonoBehaviour
 
     void Start()
     {
+        EnsureScoreLabels();
         UpdateText();
         // The opening is normally the Q1 sprint duel; only do a plain kickoff if there's
         // no SprintDuel in the scene.
         if (SprintDuel.Instance == null) ResetKickoff();
+    }
+
+    // PoolB's serialized playerScoreText slot is currently empty. Build its mirror from the working
+    // BotScoreText once at startup so both championship and casual matches show a complete score.
+    // The position is inferred from the two club-name labels, so no scene coordinates are required.
+    void EnsureScoreLabels()
+    {
+        if (botScoreText == null)
+        {
+            GameObject bot = GameObject.Find("BotScoreText");
+            if (bot != null) botScoreText = bot.GetComponent<TMP_Text>();
+        }
+        if (playerScoreText != null)
+        {
+            playerScoreText.gameObject.name = "PlayerScoreText";
+            return;
+        }
+
+        GameObject existing = GameObject.Find("PlayerScoreText");
+        if (existing != null) playerScoreText = existing.GetComponent<TMP_Text>();
+        if (playerScoreText != null || botScoreText == null) return;
+
+        GameObject clone = Instantiate(botScoreText.gameObject, botScoreText.transform.parent);
+        clone.name = "PlayerScoreText";
+        playerScoreText = clone.GetComponent<TMP_Text>();
+
+        RectTransform scoreRect = playerScoreText.rectTransform;
+        RectTransform playerName = GameObject.Find("PlayerNameText")?.GetComponent<RectTransform>();
+        RectTransform botName = GameObject.Find("BotNameText")?.GetComponent<RectTransform>();
+        RectTransform botScore = botScoreText.rectTransform;
+        float scoreboardCenterX = playerName != null && botName != null
+            ? (playerName.anchoredPosition.x + botName.anchoredPosition.x) * 0.5f
+            : 0f;
+        scoreRect.anchoredPosition = new Vector2(
+            scoreboardCenterX * 2f - botScore.anchoredPosition.x,
+            botScore.anchoredPosition.y);
     }
 
     // called by a goal when the ball enters it
@@ -113,7 +150,11 @@ public class ScoreManager : MonoBehaviour
         UpdateText();
 
         if (EventFeed.Instance != null)
-            EventFeed.Instance.AddEvent("Goal - " + (scorer == playerTeam ? "YOU" : "BOT"));
+        {
+            MatchPresentationContext.Restore();
+            string scorerName = scorer == playerTeam ? MatchPresentationContext.PlayerClub : MatchPresentationContext.OpponentClub;
+            EventFeed.Instance.AddEvent("Goal - " + (string.IsNullOrEmpty(scorerName) ? (scorer == playerTeam ? "YOU" : "BOT") : scorerName));
+        }
 
         // The team that CONCEDED restarts with possession.
         TeamSide conceding = (scorer == playerTeam) ? botTeam : playerTeam;
