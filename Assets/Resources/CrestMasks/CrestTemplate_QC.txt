@@ -1,0 +1,27 @@
+CREST TEMPLATE QC
+Generated: 2026-07-26 18:15:51
+Meaningful region threshold: 1.0% of opaque coverage
+
+[PASS] Template01 — coverage 45.43% / 22.00% / 4.46%; RGB centers #D30B1C / #FBFBFB / #092352
+[PASS] Template02 — coverage 41.53% / 15.53% / 15.20%; RGB centers #E3040C / #16273F / #FBFBFB
+[FAIL] Template03 — Meaningful coverage validation failed: tertiary 0.92%. Check for a transparent/absent fill region.
+[PASS] Template04 — coverage 26.24% / 26.26% / 14.55%; RGB centers #062358 / #E1041C / #FAFAFA
+[PASS] Template05 — coverage 34.11% / 29.31% / 3.31%; RGB centers #0D255B / #EB0421 / #17131E
+[PASS] Template06 — coverage 39.74% / 15.89% / 10.36%; RGB centers #0D265C / #F5F6F7 / #E1051D
+[PASS] Template07 — coverage 31.90% / 19.48% / 15.34%; RGB centers #0D235A / #E8041F / #F9F9F9
+[FAIL] Template08 — Meaningful coverage validation failed: tertiary 0.76%. Check for a transparent/absent fill region.
+[PASS] Template09 — coverage 36.50% / 17.73% / 5.52%; RGB centers #051C5A / #DB151C / #FAD615
+[PASS] Template10 — coverage 42.40% / 41.57% / 3.02%; RGB centers #DB1424 / #0D275D / #F9FAFA
+[PASS] Template11 — coverage 31.62% / 26.03% / 12.54%; RGB centers #0D245F / #F9F9F9 / #EA0422
+[PASS] Template12 — coverage 67.05% / 24.50% / 3.55%; RGB centers #08294F / #D51C2C / #FBF9F9
+[PASS] Template13 — coverage 31.18% / 24.07% / 21.97%; RGB centers #FBFBFB / #05245D / #E90C26
+[PASS] Template14 — coverage 29.13% / 26.74% / 19.19%; RGB centers #05246C / #FBFAFB / #F20423
+[PASS] Template15 — coverage 27.20% / 25.59% / 2.43%; RGB centers #15245F / #EF0623 / #FBFAFA
+[PASS] Template16 — coverage 41.77% / 23.93% / 22.10%; RGB centers #061336 / #F6F6F6 / #F10420
+[PASS] Template17 — coverage 47.86% / 25.12% / 18.34%; RGB centers #060E28 / #F6F6F7 / #EF061E
+[PASS] Template18 — coverage 46.34% / 28.42% / 14.89%; RGB centers #06102A / #E4E3E4 / #E40717
+[PASS] Template19 — coverage 30.41% / 24.20% / 2.98%; RGB centers #042C73 / #D70E24 / #FADF73
+[PASS] Template20 — coverage 40.78% / 31.36% / 1.63%; RGB centers #052161 / #DC0C1C / #FBFAFA
+
+SUMMARY: 18/20 split cleanly.
+Manual look required: Template03, Template08

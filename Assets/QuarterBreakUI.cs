@@ -178,28 +178,27 @@ public class QuarterBreakUI : MonoBehaviour
         plateGo.transform.SetParent(holder.transform, false);
         Image plate = plateGo.AddComponent<Image>();
         plate.sprite = MakeRoundedRectSprite(70, 70, 35);
-        plate.color = new Color(0.98f, 0.99f, 1f, 1f);
+        plate.color = playerSide ? Color.clear : new Color(0.98f, 0.99f, 1f, 1f);
         plate.raycastTarget = false;
         RectTransform plateRt = plate.rectTransform;
         plateRt.anchorMin = plateRt.anchorMax = plateRt.pivot = new Vector2(0.5f, 0.5f);
         plateRt.anchoredPosition = Vector2.zero;
         plateRt.sizeDelta = new Vector2(70f, 70f);
 
+        if (playerSide)
+        {
+            CrestTemplateView saved = CrestTemplateView.Create(holder.transform, "SavedClubCrest",
+                new Vector2(82f, 82f), new Vector2(0.5f, 0.5f), Vector2.zero);
+            saved.SetIdentity(RosterManager.Instance.Club);
+            return;
+        }
+
         GameObject crestGo = new GameObject("Crest");
         crestGo.transform.SetParent(holder.transform, false);
         Image crest = crestGo.AddComponent<Image>();
-        if (playerSide)
-        {
-            ClubProfile profile = RosterManager.Instance.Club;
-            crest.sprite = ClubCustomizationUI.CrestSprite(profile.logoId);
-            crest.color = ClubCustomizationUI.ParseHex(profile.secondaryColorHex, Color.white);
-        }
-        else
-        {
-            ClubCatalog catalog = ClubCatalog.Instance;
-            crest.sprite = catalog != null ? catalog.LogoFor(club) : null;
-            crest.color = Color.white;
-        }
+        ClubCatalog catalog = ClubCatalog.Instance;
+        crest.sprite = catalog != null ? catalog.LogoFor(club) : null;
+        crest.color = Color.white;
         crest.preserveAspect = true;
         crest.raycastTarget = false;
         RectTransform crestRt = crest.rectTransform;

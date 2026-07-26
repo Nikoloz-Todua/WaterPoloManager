@@ -26,9 +26,10 @@ public class Roster
 public class ClubProfile
 {
     public string clubName = "";
-    public int logoId;                          // index into ClubCustomizationUI's crest set
+    public int logoId;                          // stable 0-based Template01..Template20 index
     public string primaryColorHex = "1E90FF";   // RRGGBB, no '#'
     public string secondaryColorHex = "FFFFFF";
+    public string tertiaryColorHex = "F9A825";
     public string capColorHex = "D90D1A";       // player-team palette-swap cap color
     public string swimwearColorHex = "FFFFFF";  // player-team palette-swap swimwear color
     public string countryId = "";               // e.g. "GEO"; "" = not chosen yet

@@ -1,0 +1,160 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b1e547caebdd7a243871268c80458801, type: 3}
+  m_Name: CrestTemplateCatalog
+  m_EditorClassIdentifier: Assembly-CSharp::CrestTemplateCatalog
+  buildRevision: 3
+  sourceSignature: 76e55d209047d888716f80a29919d7fb
+  tintMaterial: {fileID: 2100000, guid: d630adfaa9de36e45beb17451feb6ea1, type: 2}
+  templates:
+  - id: Template01
+    valid: 1
+    mask: {fileID: 21300000, guid: 7543ccc966cc36949b23af593a8ccd16, type: 3}
+    primaryCoverage: 0.45431978
+    secondaryCoverage: 0.2200119
+    tertiaryCoverage: 0.044643268
+    qcNote: Clean split.
+  - id: Template02
+    valid: 1
+    mask: {fileID: 21300000, guid: 3dbad1c988317fc42aff9fcad3bdd230, type: 3}
+    primaryCoverage: 0.41534376
+    secondaryCoverage: 0.15533994
+    tertiaryCoverage: 0.15202765
+    qcNote: Clean split.
+  - id: Template03
+    valid: 0
+    mask: {fileID: 0}
+    primaryCoverage: 0
+    secondaryCoverage: 0
+    tertiaryCoverage: 0
+    qcNote: 'Meaningful coverage validation failed: tertiary 0.92%. Check for a transparent/absent
+      fill region.'
+  - id: Template04
+    valid: 1
+    mask: {fileID: 21300000, guid: 952e9b80cd599ce4294afd83cc808c3e, type: 3}
+    primaryCoverage: 0.2623912
+    secondaryCoverage: 0.26256722
+    tertiaryCoverage: 0.14554963
+    qcNote: Clean split.
+  - id: Template05
+    valid: 1
+    mask: {fileID: 21300000, guid: 4f2980cb22b97834f9a05e5c8a91e4a5, type: 3}
+    primaryCoverage: 0.34108946
+    secondaryCoverage: 0.2931112
+    tertiaryCoverage: 0.033057436
+    qcNote: Clean split.
+  - id: Template06
+    valid: 1
+    mask: {fileID: 21300000, guid: 2214059f446c1644e9a0a3dbdd341841, type: 3}
+    primaryCoverage: 0.39739907
+    secondaryCoverage: 0.1589363
+    tertiaryCoverage: 0.10356803
+    qcNote: Clean split.
+  - id: Template07
+    valid: 1
+    mask: {fileID: 21300000, guid: f231bfb779cf46a4a92b84d7841dd48e, type: 3}
+    primaryCoverage: 0.31901687
+    secondaryCoverage: 0.1947537
+    tertiaryCoverage: 0.15341033
+    qcNote: Clean split.
+  - id: Template08
+    valid: 0
+    mask: {fileID: 0}
+    primaryCoverage: 0
+    secondaryCoverage: 0
+    tertiaryCoverage: 0
+    qcNote: 'Meaningful coverage validation failed: tertiary 0.76%. Check for a transparent/absent
+      fill region.'
+  - id: Template09
+    valid: 1
+    mask: {fileID: 21300000, guid: 22a0ef13464d2074b827fb54479d0dd8, type: 3}
+    primaryCoverage: 0.36495188
+    secondaryCoverage: 0.17729095
+    tertiaryCoverage: 0.055166285
+    qcNote: Clean split.
+  - id: Template10
+    valid: 1
+    mask: {fileID: 21300000, guid: 53dea596a36af54458b0ed80325796e4, type: 3}
+    primaryCoverage: 0.42397752
+    secondaryCoverage: 0.41572967
+    tertiaryCoverage: 0.030239323
+    qcNote: Clean split.
+  - id: Template11
+    valid: 1
+    mask: {fileID: 21300000, guid: 3e5b2180d9ab8164e875df1970226d03, type: 3}
+    primaryCoverage: 0.3162173
+    secondaryCoverage: 0.26026255
+    tertiaryCoverage: 0.12539908
+    qcNote: Clean split.
+  - id: Template12
+    valid: 1
+    mask: {fileID: 21300000, guid: 0561148a8f7acb4418e9aa46243ba217, type: 3}
+    primaryCoverage: 0.6705318
+    secondaryCoverage: 0.24498492
+    tertiaryCoverage: 0.03551438
+    qcNote: Clean split.
+  - id: Template13
+    valid: 1
+    mask: {fileID: 21300000, guid: 3792c1bc644c80d41acb7050a725d5c7, type: 3}
+    primaryCoverage: 0.31182116
+    secondaryCoverage: 0.24072485
+    tertiaryCoverage: 0.21973155
+    qcNote: Clean split.
+  - id: Template14
+    valid: 1
+    mask: {fileID: 21300000, guid: 91611d533b9e3094da17fc63b3dc0e47, type: 3}
+    primaryCoverage: 0.29127082
+    secondaryCoverage: 0.26743266
+    tertiaryCoverage: 0.1918942
+    qcNote: Clean split.
+  - id: Template15
+    valid: 1
+    mask: {fileID: 21300000, guid: f9c78725131a413419c8564fa7f96070, type: 3}
+    primaryCoverage: 0.27198693
+    secondaryCoverage: 0.25592548
+    tertiaryCoverage: 0.024270693
+    qcNote: Clean split.
+  - id: Template16
+    valid: 1
+    mask: {fileID: 21300000, guid: 35bae63d3690c2a41a2e1bcf59e2fdd3, type: 3}
+    primaryCoverage: 0.41766155
+    secondaryCoverage: 0.23930126
+    tertiaryCoverage: 0.22100554
+    qcNote: Clean split.
+  - id: Template17
+    valid: 1
+    mask: {fileID: 21300000, guid: 99cfe1dbd3b5a3947903ff6f3007c753, type: 3}
+    primaryCoverage: 0.47859135
+    secondaryCoverage: 0.25119424
+    tertiaryCoverage: 0.1834491
+    qcNote: Clean split.
+  - id: Template18
+    valid: 1
+    mask: {fileID: 21300000, guid: 63086fa137f69b840b5fee82e1f915bc, type: 3}
+    primaryCoverage: 0.4633639
+    secondaryCoverage: 0.28422692
+    tertiaryCoverage: 0.14885935
+    qcNote: Clean split.
+  - id: Template19
+    valid: 1
+    mask: {fileID: 21300000, guid: 207065289ebb8a34396d785710baea90, type: 3}
+    primaryCoverage: 0.30414718
+    secondaryCoverage: 0.24196711
+    tertiaryCoverage: 0.02981268
+    qcNote: Clean split.
+  - id: Template20
+    valid: 1
+    mask: {fileID: 21300000, guid: 645370300094a354eb88ca187455a9b9, type: 3}
+    primaryCoverage: 0.4077941
+    secondaryCoverage: 0.31355742
+    tertiaryCoverage: 0.016265098
+    qcNote: Clean split.

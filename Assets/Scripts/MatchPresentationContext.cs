@@ -18,6 +18,19 @@ public static class MatchPresentationContext
     public static int ResultOpponentGoals { get; private set; }
     public static bool IsChampionshipFixture => CompetitionIndex >= 0 && !string.IsNullOrEmpty(PlayerClub) && !string.IsNullOrEmpty(OpponentClub);
 
+    public static string ClubAbbreviation(string club)
+    {
+        if (string.IsNullOrWhiteSpace(club)) return "---";
+        System.Text.StringBuilder tag = new System.Text.StringBuilder(3);
+        foreach (char c in club)
+        {
+            if (c == '-' || !char.IsLetterOrDigit(c)) continue;
+            tag.Append(char.ToUpperInvariant(c));
+            if (tag.Length == 3) break;
+        }
+        return tag.Length > 0 ? tag.ToString() : "---";
+    }
+
     public static void SetFixture(int competition, string playerClub, string opponentClub)
     {
         ClearResultPresentation();
@@ -82,20 +95,34 @@ public static class MatchPresentationContext
 // Runtime-only PoolB presentation wiring: no scene layout coordinates are required from the user.
 public sealed class ChampionshipHudBinder : MonoBehaviour
 {
-    static Sprite badgeSprite;
-
-    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-    static void Install()
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    static void RegisterForSceneLoads()
     {
+        // RuntimeInitializeOnLoadMethod runs once per Play session, not once for every later scene.
+        // Subscribe before the initial scene so Hub -> PoolB always installs the live HUD binder.
+        SceneManager.sceneLoaded -= OnSceneLoaded;
+        SceneManager.sceneLoaded += OnSceneLoaded;
+    }
+
+    static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        if (scene.name != NavigationManager.MatchScene) return;
         MatchPresentationContext.Restore();
-        if (!MatchPresentationContext.IsChampionshipFixture || SceneManager.GetActiveScene().name != NavigationManager.MatchScene) return;
+        if (Object.FindAnyObjectByType<ChampionshipHudBinder>() != null) return;
         new GameObject("ChampionshipHudBinder").AddComponent<ChampionshipHudBinder>();
     }
 
     void Start()
     {
-        Bind("PlayerNameText", MatchPresentationContext.PlayerClub, true);
-        Bind("BotNameText", MatchPresentationContext.OpponentClub, false);
+        ClubProfile profile = RosterManager.Instance.Club;
+        string playerClub = MatchPresentationContext.IsChampionshipFixture
+            ? MatchPresentationContext.PlayerClub
+            : profile.clubName;
+        string opponentClub = MatchPresentationContext.IsChampionshipFixture
+            ? MatchPresentationContext.OpponentClub
+            : "Opponent";
+        Bind("PlayerNameText", playerClub, true);
+        Bind("BotNameText", opponentClub, false);
     }
 
     static void Bind(string objectName, string club, bool playerSide)
@@ -105,88 +132,100 @@ public sealed class ChampionshipHudBinder : MonoBehaviour
         TMP_Text name = go.GetComponent<TMP_Text>();
         if (name != null)
         {
-            name.text = club;
-            name.fontSizeMax = Mathf.Max(14f, name.fontSize);
-            name.enableAutoSizing = true;
-            name.fontSizeMin = 12f;
+            name.text = MatchPresentationContext.ClubAbbreviation(club);
+            name.fontSize = 20f;
+            name.fontStyle = FontStyles.Bold;
+            name.color = Color.white;
+            name.alignment = TextAlignmentOptions.Center;
+            name.enableAutoSizing = false;
             name.textWrappingMode = TextWrappingModes.NoWrap;
             RectTransform nameRect = name.rectTransform;
-            nameRect.sizeDelta = new Vector2(Mathf.Max(260f, nameRect.sizeDelta.x), nameRect.sizeDelta.y);
+            nameRect.anchoredPosition = new Vector2(playerSide ? -78f : 238f, -40f);
+            nameRect.sizeDelta = new Vector2(62f, 34f);
+
+            Shadow shadow = go.GetComponent<Shadow>();
+            if (shadow == null) shadow = go.AddComponent<Shadow>();
+            shadow.effectColor = new Color(0f, 0f, 0f, 0.92f);
+            shadow.effectDistance = new Vector2(2f, -2f);
+            shadow.useGraphicAlpha = true;
+
+            BuildTagPlate(go, nameRect, playerSide);
+            BuildHudCrest(go.transform.parent, club, playerSide);
         }
-        if (go.transform.Find("ClubLogo") != null) return;
 
-        GameObject holder = new GameObject("ClubLogo");
-        holder.transform.SetParent(go.transform, false);
-        RectTransform hrt = holder.AddComponent<RectTransform>();
-        hrt.anchorMin = hrt.anchorMax = new Vector2(playerSide ? 0f : 1f, 0.5f);
-        hrt.pivot = new Vector2(playerSide ? 0f : 1f, 0.5f);
-        hrt.anchoredPosition = new Vector2(playerSide ? -68f : 68f, 0f);
-        hrt.sizeDelta = new Vector2(56f, 56f);
+        // Older versions added a full crest under these live-HUD labels. Keep crests confined to
+        // pre-match, competition, standings and quarter-break presentation.
+        Transform oldLogo = go.transform.Find("ClubLogo");
+        if (oldLogo != null) oldLogo.gameObject.SetActive(false);
+    }
 
-        MakeLayer(holder.transform, "Shadow", new Color(0f, 0f, 0f, 0.42f), 54f, new Vector2(0f, -2f));
-        MakeLayer(holder.transform, "Rim", playerSide ? new Color(1f, 0.82f, 0.2f, 1f)
-                                                       : new Color(0.95f, 0.24f, 0.30f, 1f),
-                  51f, Vector2.zero);
-        MakeLayer(holder.transform, "Plate", new Color(0.98f, 0.99f, 1f, 1f), 45f, Vector2.zero);
+    static void BuildTagPlate(GameObject label, RectTransform labelRect, bool playerSide)
+    {
+        Transform parent = label.transform.parent;
+        Transform existing = parent.Find(label.name + "_TagPlate");
+        if (existing != null) existing.gameObject.SetActive(false);
 
-        GameObject crest = new GameObject("Crest");
-        crest.transform.SetParent(holder.transform, false);
-        Image image = crest.AddComponent<Image>();
+        GameObject frameGo = new GameObject(label.name + "_TagPlate");
+        frameGo.transform.SetParent(parent, false);
+        frameGo.transform.SetSiblingIndex(label.transform.GetSiblingIndex());
+        Image frame = frameGo.AddComponent<Image>();
+        frame.sprite = ClubCustomizationUI.ClubBadgeBackgroundSprite();
+        frame.type = Image.Type.Sliced;
+        frame.raycastTarget = false;
+        frame.color = playerSide
+            ? ClubCustomizationUI.ParseHex(RosterManager.Instance.Club.primaryColorHex,
+                                            new Color(0.18f, 0.5f, 1f, 1f))
+            : new Color(0.92f, 0.24f, 0.30f, 1f);
+        RectTransform frameRect = frame.rectTransform;
+        frameRect.anchorMin = labelRect.anchorMin;
+        frameRect.anchorMax = labelRect.anchorMax;
+        frameRect.pivot = labelRect.pivot;
+        frameRect.anchoredPosition = labelRect.anchoredPosition + new Vector2(0f, -1f);
+        frameRect.sizeDelta = new Vector2(68f, 36f);
+
+        GameObject fillGo = new GameObject("Fill");
+        fillGo.transform.SetParent(frameGo.transform, false);
+        Image fill = fillGo.AddComponent<Image>();
+        fill.sprite = frame.sprite;
+        fill.type = Image.Type.Sliced;
+        fill.color = new Color(0.025f, 0.055f, 0.10f, 0.96f);
+        fill.raycastTarget = false;
+        RectTransform fillRect = fill.rectTransform;
+        fillRect.anchorMin = Vector2.zero;
+        fillRect.anchorMax = Vector2.one;
+        fillRect.offsetMin = new Vector2(3f, 3f);
+        fillRect.offsetMax = new Vector2(-3f, -3f);
+    }
+
+    static void BuildHudCrest(Transform parent, string club, bool playerSide)
+    {
+        string objectName = playerSide ? "PlayerHudCrest" : "OpponentHudCrest";
+        Transform existing = parent.Find(objectName);
+        if (existing != null) Object.Destroy(existing.gameObject);
+
+        GameObject holder = new GameObject(objectName);
+        holder.transform.SetParent(parent, false);
+        RectTransform holderRect = holder.AddComponent<RectTransform>();
+        holderRect.anchorMin = holderRect.anchorMax = new Vector2(0.5f, 1f);
+        holderRect.pivot = new Vector2(0.5f, 0.5f);
+        holderRect.anchoredPosition = new Vector2(playerSide ? -28f : 188f, -40f);
+        holderRect.sizeDelta = new Vector2(30f, 30f);
+
         if (playerSide)
         {
-            ClubProfile profile = RosterManager.Instance.Club;
-            image.sprite = ClubCustomizationUI.CrestSprite(profile.logoId);
-            image.color = ClubCustomizationUI.ParseHex(profile.secondaryColorHex, Color.white);
+            CrestTemplateView crest = CrestTemplateView.Create(holder.transform, "SavedClubCrest",
+                new Vector2(30f, 30f), new Vector2(0.5f, 0.5f), Vector2.zero);
+            crest.SetIdentity(RosterManager.Instance.Club);
+            return;
         }
-        else
-        {
-            ClubCatalog catalog = ClubCatalog.Instance;
-            image.sprite = catalog != null ? catalog.LogoFor(club) : null;
-            image.color = Color.white;
-        }
+
+        ClubCatalog catalog = ClubCatalog.Instance;
+        Sprite sprite = catalog != null ? catalog.LogoFor(club) : null;
+        if (sprite == null) { holder.SetActive(false); return; }
+        Image image = holder.AddComponent<Image>();
+        image.sprite = sprite;
+        image.color = Color.white;
         image.preserveAspect = true;
         image.raycastTarget = false;
-        RectTransform irt = image.rectTransform;
-        irt.anchorMin = irt.anchorMax = new Vector2(0.5f, 0.5f);
-        irt.pivot = new Vector2(0.5f, 0.5f);
-        irt.anchoredPosition = Vector2.zero;
-        irt.sizeDelta = new Vector2(53f, 53f);
-    }
-
-    static Image MakeLayer(Transform parent, string name, Color color, float size, Vector2 offset)
-    {
-        GameObject go = new GameObject(name);
-        go.transform.SetParent(parent, false);
-        Image image = go.AddComponent<Image>();
-        image.sprite = BadgeSprite();
-        image.color = color;
-        image.raycastTarget = false;
-        RectTransform rt = image.rectTransform;
-        rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 0.5f);
-        rt.anchoredPosition = offset;
-        rt.sizeDelta = new Vector2(size, size);
-        return image;
-    }
-
-    static Sprite BadgeSprite()
-    {
-        if (badgeSprite != null) return badgeSprite;
-        const int size = 64;
-        Texture2D texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
-        Color32[] pixels = new Color32[size * size];
-        float radius = size * 0.5f - 1f;
-        Vector2 center = new Vector2((size - 1) * 0.5f, (size - 1) * 0.5f);
-        for (int y = 0; y < size; y++)
-            for (int x = 0; x < size; x++)
-            {
-                float edge = radius - Vector2.Distance(new Vector2(x, y), center);
-                pixels[y * size + x] = new Color32(255, 255, 255,
-                    (byte)(Mathf.Clamp01(edge) * 255f));
-            }
-        texture.SetPixels32(pixels);
-        texture.Apply();
-        texture.wrapMode = TextureWrapMode.Clamp;
-        badgeSprite = Sprite.Create(texture, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), 100f);
-        return badgeSprite;
     }
 }

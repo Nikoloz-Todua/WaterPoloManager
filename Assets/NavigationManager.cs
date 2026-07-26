@@ -32,6 +32,8 @@ public class NavigationManager : MonoBehaviour
     private static readonly Color GreyAvatar = new Color(0.5f, 0.53f, 0.6f);
     private static readonly Color GameModeBg = new Color(0.039f, 0.086f, 0.157f, 1f); // #0A1628 game-mode backdrop
     private static readonly Color CardGold = new Color(1f, 0.843f, 0f);               // #FFD700 unlocked-card frame
+    private const float CurrencyGoldX = -94f;
+    private const float CurrencyDiamondX = -270f;
 
     private static Sprite roundedSprite;  // cached; regenerated after a domain reload
     private static Sprite circleSprite;   // white, tintable
@@ -74,7 +76,8 @@ public class NavigationManager : MonoBehaviour
     private bool slideShowing;                       // its direction (see FinishSlide)
 
     // Top-left profile cluster (avatar + flag + name), refreshed from RosterManager.Club.
-    private Image avatarCircle, avatarCrest, flagDot;
+    private Image avatarCircle, flagDot;
+    private CrestTemplateView avatarClubCrest;
     private TextMeshProUGUI clubNameLabel;
 
     // Competition display names, shared by the cards, standings and pre-match screens.
@@ -166,15 +169,13 @@ public class NavigationManager : MonoBehaviour
         SetRect(avGo.AddComponent<RectTransform>(), new Vector2(0f, 0.5f), new Vector2(48f, 0f), new Vector2(60f, 60f));
         avatarCircle = avGo.AddComponent<Image>();
         avatarCircle.sprite = Circle();
-        avatarCircle.color = GreyAvatar; // recolored from the club profile in RefreshClubProfile
+        avatarCircle.color = new Color(0.08f, 0.13f, 0.20f, 1f);
         Button avBtn = avGo.AddComponent<Button>();
         avBtn.targetGraphic = avatarCircle;
         avBtn.onClick.AddListener(OpenClubScreen);
         AddHover(avGo);
-        avatarCrest = NewImage(avGo.transform, "Crest"); // club crest doubles as the avatar glyph
-        avatarCrest.preserveAspect = true;
-        avatarCrest.raycastTarget = false;
-        SetRect(avatarCrest.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(34f, 34f));
+        avatarClubCrest = CrestTemplateView.Create(avGo.transform, "SavedClubCrest",
+            new Vector2(58f, 58f), new Vector2(0.5f, 0.5f), Vector2.zero);
         // Country "flag" badge: a colored dot until real flag art exists (grey = no country picked).
         flagDot = NewImage(avGo.transform, "Flag");
         flagDot.sprite = Circle();
@@ -237,9 +238,9 @@ public class NavigationManager : MonoBehaviour
 
         // Premium currency chips: icon well, strong count hierarchy and an integrated shop shortcut.
         goldLabel = MakeCurrencyChip(bar.transform, "GoldChip", "Sprites/gold-coin", Gold,
-                                     new Vector2(-94f, 0f), () => OpenShopTab(5));
+                                     new Vector2(CurrencyGoldX, 0f), () => OpenShopTab(5));
         diamondLabel = MakeCurrencyChip(bar.transform, "DiamondChip", "Sprites/diamond-coin", Cyan,
-                                        new Vector2(-270f, 0f), () => OpenShopTab(6));
+                                        new Vector2(CurrencyDiamondX, 0f), () => OpenShopTab(6));
     }
 
     // Re-read the player's balances into the top bar. Called on build and by TeamScreenUI after a
@@ -792,13 +793,7 @@ public class NavigationManager : MonoBehaviour
     {
         ClubProfile club = RosterManager.Instance.Club;
         if (clubNameLabel != null) clubNameLabel.text = club.clubName;
-        if (avatarCircle != null)
-            avatarCircle.color = ClubCustomizationUI.ParseHex(club.primaryColorHex, GreyAvatar);
-        if (avatarCrest != null)
-        {
-            avatarCrest.sprite = ClubCustomizationUI.CrestSprite(club.logoId);
-            avatarCrest.color = ClubCustomizationUI.ParseHex(club.secondaryColorHex, Color.white);
-        }
+        if (avatarClubCrest != null) avatarClubCrest.SetIdentity(club);
         if (flagDot != null)
             flagDot.color = string.IsNullOrEmpty(club.countryId)
                 ? new Color(0.4f, 0.44f, 0.5f, 1f) // placeholder: no country picked yet
@@ -1024,9 +1019,9 @@ public class NavigationManager : MonoBehaviour
                  new Vector2(420f, 50f), Color.white, TextAlignmentOptions.Center);
 
         gmGoldLabel = MakeCurrencyChip(bar.transform, "GoldChip", "Sprites/gold-coin", Gold,
-                                       new Vector2(-94f, 0f), () => OpenShopTab(5));
+                                       new Vector2(CurrencyGoldX, 0f), () => OpenShopTab(5));
         gmDiamondLabel = MakeCurrencyChip(bar.transform, "DiamondChip", "Sprites/diamond-coin", Cyan,
-                                          new Vector2(-270f, 0f), () => OpenShopTab(6));
+                                          new Vector2(CurrencyDiamondX, 0f), () => OpenShopTab(6));
 
         // ---- card row: 4 cards, 30px side margins, equal gaps, centred in the area below the bar ----
         const float margin = 30f, cardH = 480f, gap = 24f, cardY = -40f; // cardY drops the row into the 640px main area
@@ -2385,9 +2380,9 @@ public class NavigationManager : MonoBehaviour
         int coins = rm != null ? rm.Coins : 0;
         int diamonds = rm != null ? rm.Diamonds : 0;
         TextMeshProUGUI coinText = MakeCurrencyChip(bar, "GoldChip", "Sprites/gold-coin", Gold,
-                                                     new Vector2(-94f, 0f), () => OpenShopTab(5));
+                                                     new Vector2(CurrencyGoldX, 0f), () => OpenShopTab(5));
         TextMeshProUGUI diamondText = MakeCurrencyChip(bar, "DiamondChip", "Sprites/diamond-coin", Cyan,
-                                                        new Vector2(-270f, 0f), () => OpenShopTab(6));
+                                                        new Vector2(CurrencyDiamondX, 0f), () => OpenShopTab(6));
         coinText.text = FormatCurrency(coins);
         diamondText.text = FormatCurrency(diamonds);
     }
@@ -2430,8 +2425,9 @@ public class NavigationManager : MonoBehaviour
         fillRt.offsetMax = new Vector2(-3f, -3f);
 
         Image iconWell = NewImage(root.transform, "IconWell");
-        iconWell.sprite = Circle();
-        iconWell.color = new Color(accent.r, accent.g, accent.b, 0.23f);
+        // Keep the original 32px currency art, but remove the coloured circle/halo that made the
+        // coin and diamond look as if they had an oversized yellow/blue outer layer.
+        iconWell.color = Color.clear;
         iconWell.raycastTarget = false;
         SetRect(iconWell.rectTransform, new Vector2(0f, 0.5f), new Vector2(25f, 0f), new Vector2(40f, 40f));
         MakeIcon(iconWell.transform, iconPath, new Vector2(0.5f, 0.5f), Vector2.zero, 32f);
@@ -2572,8 +2568,8 @@ public class NavigationManager : MonoBehaviour
     static string Signed(int v) => v > 0 ? "+" + v : v.ToString();
     static string GetOrdinal(int rank) => rank % 100 is 11 or 12 or 13 ? "TH" : rank % 10 == 1 ? "ST" : rank % 10 == 2 ? "ND" : rank % 10 == 3 ? "RD" : "TH";
 
-    // Every club crest has an opaque white backing at lower UI order. This keeps transparent logos
-    // readable without editing the supplied source artwork.
+    // `playerClub` is always supplied from the actual tournament slot; never infer it from the club
+    // name because a saved name can collide with an official club (for example Dinamo).
     Image AddClubLogo(Transform parent, string club, Vector2 position, float size, Vector2 anchor,
                       bool playerClub = false)
     {
@@ -2600,24 +2596,23 @@ public class NavigationManager : MonoBehaviour
 
         Image plate = NewImage(holder.transform, "Plate");
         plate.sprite = Circle();
-        plate.color = new Color(0.97f, 0.98f, 1f, 1f);
+        plate.color = playerClub ? Color.clear : new Color(0.97f, 0.98f, 1f, 1f);
         plate.raycastTarget = false;
         SetRect(plate.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero,
                 new Vector2(size * 0.82f, size * 0.82f));
 
-        Image logo = NewImage(holder.transform, "Crest");
-        ClubCatalog catalog = ClubCatalog.Instance;
         if (playerClub)
         {
-            ClubProfile profile = RosterManager.Instance.Club;
-            logo.sprite = ClubCustomizationUI.CrestSprite(profile.logoId);
-            logo.color = ClubCustomizationUI.ParseHex(profile.secondaryColorHex, Color.white);
+            CrestTemplateView saved = CrestTemplateView.Create(holder.transform, "SavedClubCrest",
+                new Vector2(size, size), new Vector2(0.5f, 0.5f), Vector2.zero);
+            saved.SetIdentity(RosterManager.Instance.Club);
+            return saved.MaskImage;
         }
-        else
-        {
-            logo.sprite = catalog != null ? catalog.LogoFor(club) : null;
-            logo.color = logo.sprite != null ? Color.white : new Color(0.15f, 0.23f, 0.32f, 1f);
-        }
+
+        Image logo = NewImage(holder.transform, "Crest");
+        ClubCatalog catalog = ClubCatalog.Instance;
+        logo.sprite = catalog != null ? catalog.LogoFor(club) : null;
+        logo.color = logo.sprite != null ? Color.white : new Color(0.15f, 0.23f, 0.32f, 1f);
         logo.preserveAspect = true;
         logo.raycastTarget = false;
         SetRect(logo.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero,

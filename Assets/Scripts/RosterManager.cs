@@ -66,6 +66,11 @@ public class RosterManager : MonoBehaviour
         if (roster.starterSlots == null || roster.starterSlots.Length != 7) roster.starterSlots = new string[7];
         if (roster.club == null) roster.club = new ClubProfile(); // pre-club saves
         bool clubPaletteMigrated = false;
+        if (string.IsNullOrEmpty(roster.club.tertiaryColorHex))
+        {
+            roster.club.tertiaryColorHex = "F9A825";
+            clubPaletteMigrated = true;
+        }
         if (string.IsNullOrEmpty(roster.club.capColorHex))
         {
             roster.club.capColorHex = string.IsNullOrEmpty(roster.club.primaryColorHex)
@@ -90,6 +95,11 @@ public class RosterManager : MonoBehaviour
             for (int i = 0; i < suffix.Length; i++) suffix[i] = chars[Random.Range(0, chars.Length)];
             roster.club.clubName = "Guest_" + new string(suffix);
             Save();
+        }
+        else if (roster.club.clubName.Length > 9)
+        {
+            roster.club.clubName = roster.club.clubName.Substring(0, 9);
+            clubPaletteMigrated = true;
         }
 
         // Self-heal: an empty roster + a non-empty catalog (e.g. the game was played once before

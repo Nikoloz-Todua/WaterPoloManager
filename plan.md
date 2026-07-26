@@ -2115,3 +2115,162 @@ immediately with the run so it cannot change until a new/restarted championship 
 - Restart has three guards: active saved run, matching competition, and at least one player win.
 - The restart code contains no currency grant/deduction, unlock mutation, or other-competition delete.
 - No Inspector slots or scene edits were added.
+
+---
+
+## SESSION LOG — 2026-07-26c (currency scale, saved My Club identity, live HUD tags)
+
+### Currency chips
+
+- `NavigationManager.MakeCurrencyChip` was checked before editing: its coin/diamond art was exactly
+  **32×32** inside a 40×40 well and a 164×50 chip.
+- Both icons are now exactly **64×64 (2×)**. The well is 68×68 and the chip is 196×72 so the art
+  cannot clip. Gold/diamond centres moved to −98/−306, leaving a 12px gap between the wider chips;
+  the count and integrated `+` control no longer overlap the icon.
+- The shared chip builder feeds the hub, Game Mode, competition and other code-built top bars, so
+  the size fix applies consistently.
+
+### Saved My Club identity in competition presentation
+
+- `RosterManager.Club` / `ClubProfile` in `roster.json` remains the single durable source for the
+  saved name, logo ID, primary colour and secondary colour.
+- `ClubCustomizationUI.ApplySavedClubIdentity` is now the shared render contract: primary colour
+  fills the badge field; secondary colour tints the selected procedural crest.
+- `NavigationManager.AddClubLogo` uses that contract for My Club and also recognizes the saved club
+  name automatically instead of depending only on each caller passing a special flag. Competition
+  overview lists, group fixtures/byes, tables, knockout cards, final standings, restart cards and
+  pre-match panels therefore resolve the current saved identity.
+- Quarter-break full-crest presentation uses the same saved badge contract. Official AI clubs still
+  use their fixed `ClubCatalog` sprites.
+
+### Live gameplay HUD identity
+
+- `ChampionshipHudBinder` now installs for PoolB live gameplay and changes only the existing
+  `PlayerNameText` / `BotNameText` area. The full live-HUD crests added by the previous pass are
+  retired; pre-match, competition, standings and quarter-break crests remain unchanged.
+- PoolB's serialized fallback text is now `---` instead of `You` / `Bot`, preventing a one-frame
+  flash of the retired hardcoded labels before the runtime binder starts.
+- The live labels are bold 32px uppercase three-character tags on dark high-contrast plates with a
+  coloured team edge. `MatchPresentationContext.ClubAbbreviation` strips hyphens/non-alphanumeric
+  separators before taking the first three characters (`New-Grand` → `NEW`,
+  `Aurelio-Posillipo` → `AUR`).
+- Championship matches use the saved My Club name and exact fixture opponent. A non-championship
+  PoolB match uses the saved My Club name and `OPP`, eliminating the scene's hardcoded YOU/BOT HUD.
+
+### Verification
+
+- `dotnet build Assembly-CSharp.csproj` → **0 warnings, 0 errors**.
+- `dotnet build Assembly-CSharp-Editor.csproj` → **0 warnings, 0 errors**.
+- `git diff --check` → clean apart from informational LF→CRLF notices.
+- An automated in-editor Play Mode check was prepared to inspect the real HubScene, Division 1
+  identity layers and PoolB tags. It could not execute because the two already-running Unity
+  processes are parked in the editor's recovery/backup state and are not importing files; an
+  isolated second editor also exits before creating a log while those instances own Unity.
+  **Focused Play Mode visual verification is still required after resolving/closing the recovery
+  editor state; do not treat this session as Play-Mode-verified yet.**
+
+### Focused Play Mode checklist
+
+1. Resolve the Unity recovery prompt, refocus the project and wait for compilation.
+2. Hub / Game Mode: verify both currency icons are visibly 2×, stay inside the 72px chips, counts
+   remain readable and the two chips retain a gap.
+3. My Club: choose a visibly different crest, primary and secondary colour, press APPLY, then open
+   Division 1. Verify the same two-colour crest in the overview, Group A table, a fixture row and
+   pre-match. Reopen My Club afterward to confirm the saved selections remain.
+4. Start the fixture. Beside the live scoreboard verify My Club and the opponent show bold 3-letter
+   tags (hyphenated `New-Grand` must read `NEW`), with no full crest and no YOU/BOT label.
+5. Reach a quarter break and verify its full crests still appear; return to competition standings
+   and verify full crests remain there too.
+
+---
+
+## SESSION LOG — 2026-07-26d (currency clarification + white crest and HUD installer root fixes)
+
+This corrects the 2026-07-26c interpretation after an actual visual report from Play Mode.
+
+### Currency correction
+
+- The requested target was the coloured yellow/cyan halo behind the currency art, not the currency
+  art itself. The coin/diamond returned from 64×64 to their original **32×32**.
+- The chip returned to its original 164×50 geometry and −94/−270 positions. `IconWell` remains as a
+  harmless layout transform but has no sprite and is fully transparent, so the extra coloured outer
+  circle is gone while the original icon, count, frame and `+` layout remain.
+
+### Why My Club looked like a blank white badge
+
+- The actual saved `roster.json` profile was inspected read-only: My Club is named `Dinamo`, uses
+  procedural logo ID 1 (solid circle), purple primary (`6A1B9A`) and white secondary (`FFFFFF`).
+- Competition badges were drawing procedural crests at 94% of the holder while the primary-colour
+  field was only 82%. The solid white circle therefore covered the entire purple field and looked
+  like a blank white disc.
+- My Club procedural crests now use the customization preview's ~58% ratio. Official fixed
+  `ClubCatalog` art stays at 94%. Quarter-break My Club crests use the same corrected proportion.
+- Name-based fallback detection was removed. The saved club name `Dinamo` collides with the official
+  Division 1 club `Dinamo`; all competition renderers already pass the exact `playerIndex` /
+  `__MY_CLUB__` ownership flag, so only the player's slot gets the saved procedural identity and the
+  official Dinamo keeps its fixed catalogue crest.
+
+### Why the live HUD stayed `---`
+
+- Root cause: `RuntimeInitializeOnLoadMethod(AfterSceneLoad)` runs once for the Play session. It ran
+  while HubScene was active, returned because that was not PoolB, and never ran again when PLAY
+  loaded PoolB. The scene's safe `---` defaults consequently remained on both sides.
+- `ChampionshipHudBinder` now registers `SceneManager.sceneLoaded` before the initial scene load and
+  installs itself whenever `SampleScene_PoolB` loads. Duplicate registration/instances are guarded.
+  It therefore replaces the placeholders with the saved club abbreviation (`Dinamo` → `DIN`) and
+  the exact fixture opponent abbreviation on every Hub → match transition.
+
+### Verification
+
+- Exact saved profile inspected without modifying the user's `roster.json`.
+- All 14 competition `AddClubLogo` call sites audited: every player-bearing row/card supplies an
+  explicit player-slot boolean; pre-match supplies `true` for the player and `false` for the rival.
+- `dotnet build Assembly-CSharp.csproj --no-restore` and editor build completed before the final
+  warning cleanup; final clean builds are recorded in the handoff response.
+- No Inspector slots or manual scene wiring were added.
+
+---
+
+## SESSION LOG — 2026-07-26e (template crest customization and full identity propagation)
+
+### Template processing and QC
+
+- Added `CrestTemplateBuilder`, an automatic/editor-menu importer for `Template01`–`Template20`.
+  It detects tolerant colour clusters, assigns the three non-black fills by pixel coverage, feathers
+  their edges by two pixels, and packs primary/secondary/tertiary/fixed-outline into one RGBA mask.
+- Added the URP-compatible `UI/Crest Mask Tint` shader, one shared material, and
+  `CrestTemplateCatalog`. Each crest remains one UI draw instead of four stacked Images.
+- Generated masks and `Assets/Resources/CrestMasks/CrestTemplate_QC.txt`.
+  **18/20 templates passed.** Template03 and Template08 were correctly rejected and skipped because
+  their intended third regions are transparent in the source PNG (tertiary coverage 0.92% and
+  0.76%, below the meaningful 1% threshold). They require regenerated opaque source art.
+
+### Customization and persistence
+
+- Rebuilt My Club customization with valid-template left/right browsing, a shared live renderer,
+  three identical 14-colour swatch palettes, and an immediate preview.
+- Club name is horizontal and centred on the badge, auto-sizes down, and is capped at nine
+  characters. Save persists template index, all three colours, and name through the existing
+  `RosterManager.Club` / `roster.json` path; no second identity store was introduced.
+- Added `tertiaryColorHex` migration for existing saves.
+
+### Identity propagation and live HUD
+
+- Hub, competition/group lists, standings, pre-match, and quarter-break now use the same
+  `CrestTemplateView` renderer and the same normalized 90% crest scale as customization.
+- Player ownership is always supplied by the actual player slot / `__MY_CLUB__` reference. No
+  club-name matching was reintroduced, so a player club named `Dinamo` cannot replace the official
+  Dinamo crest.
+- The live scoreboard now includes the saved My Club crest and the fixed opponent crest in the
+  small identity area. Existing three-letter tags remain, but were reduced from 32px to 20px and
+  moved closer to the scoreboard on compact 68×36 high-contrast plates.
+
+### Verification
+
+- The mask builder completed and emitted the 18-pass / 2-skip QC report.
+- Automated Unity Play Mode navigation changed template and all three colours, saved both
+  `LONGNAMES` and `ACE`, and asserted identical mask/material/name data in customization, hub,
+  Division 1 competition/standings, pre-match, and PoolB live HUD.
+- The PoolB assertion confirmed `ACE` / `NEW`, 20px tag sizing, corrected placement, and the live
+  My Club crest. Unity logged `CODEX CREST PLAY MODE CHECK PASSED`.
+- The temporary test restored the original saved `Dinamo` profile and championship state afterward.
