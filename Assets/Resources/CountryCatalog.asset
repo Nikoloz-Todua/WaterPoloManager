@@ -1,0 +1,125 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1fc00d50446f67b47a6ac54e59fb7c30, type: 3}
+  m_Name: CountryCatalog
+  m_EditorClassIdentifier: Assembly-CSharp::CountryCatalog
+  buildRevision: 1
+  countries:
+  - country: Georgia
+    winRate: 69
+    flag: {fileID: 21300000, guid: 3894e71c8b8734e49803c8140bb4e979, type: 3}
+  - country: Croatia
+    winRate: 85
+    flag: {fileID: 21300000, guid: ae7eb33d49d5c514b829830cd6f25d4a, type: 3}
+  - country: Hungary
+    winRate: 90
+    flag: {fileID: 21300000, guid: 9a524bcfc5ec70145ac07a1b94e6f391, type: 3}
+  - country: Japan
+    winRate: 63
+    flag: {fileID: 21300000, guid: 3bf28b7509decab408a2e9deb63c3684, type: 3}
+  - country: Canada
+    winRate: 60
+    flag: {fileID: 21300000, guid: 675ec9ebdfae087469e3e722abb71547, type: 3}
+  - country: UK
+    winRate: 48
+    flag: {fileID: 21300000, guid: 89091b168e204944eb23370118b7e14d, type: 3}
+  - country: China
+    winRate: 59
+    flag: {fileID: 21300000, guid: 3b7d719059cb88d46a6c1fa7d3d4f0de, type: 3}
+  - country: Austria
+    winRate: 42
+    flag: {fileID: 21300000, guid: 16ae83187602ba54bbd2061d5e42d35a, type: 3}
+  - country: Spain
+    winRate: 93
+    flag: {fileID: 21300000, guid: 01cfb671a0e7f74449bc12c70ae12954, type: 3}
+  - country: Serbia
+    winRate: 86
+    flag: {fileID: 21300000, guid: de7781d32c63aa74b8938aa19eca5166, type: 3}
+  - country: USA
+    winRate: 76
+    flag: {fileID: 21300000, guid: 1e733c69932c44f4ba9f9db0e590a03b, type: 3}
+  - country: Australia
+    winRate: 70
+    flag: {fileID: 21300000, guid: e4053c08c721bfe479d8994f508b482c, type: 3}
+  - country: Israel
+    winRate: 51
+    flag: {fileID: 21300000, guid: bcc70a72aeeb11a44bcf586717e8608f, type: 3}
+  - country: Malta
+    winRate: 45
+    flag: {fileID: 21300000, guid: 32eda53e207b8e945812558a00562992, type: 3}
+  - country: Sweden
+    winRate: 40
+    flag: {fileID: 21300000, guid: 2ddffa1c29e00544abea7604577df93b, type: 3}
+  - country: Latvia
+    winRate: 38
+    flag: {fileID: 21300000, guid: 80d6544e1d101134eb939cb00af5820f, type: 3}
+  - country: Italy
+    winRate: 82
+    flag: {fileID: 21300000, guid: 591b3543affd26148bbb8dd7fd1ab39a, type: 3}
+  - country: Montenegro
+    winRate: 78
+    flag: {fileID: 21300000, guid: b029e987f56cc514fa35b32955e2b12f, type: 3}
+  - country: Russia
+    winRate: 57
+    flag: {fileID: 21300000, guid: dc77b5a488039d24a91b83f03040f180, type: 3}
+  - country: Netherlands
+    winRate: 68
+    flag: {fileID: 21300000, guid: f774dd2b93f1c8e4191a3f7f5c982e02, type: 3}
+  - country: Kazakhstan
+    winRate: 55
+    flag: {fileID: 21300000, guid: 54b709b4ac942ce48bcfd1f11c2030d7, type: 3}
+  - country: Slovenia
+    winRate: 52
+    flag: {fileID: 21300000, guid: 99d7f66443b05ae479e294553b16df84, type: 3}
+  - country: Iran
+    winRate: 53
+    flag: {fileID: 21300000, guid: f8068aec23b7c56438255467d2c635d8, type: 3}
+  - country: Azerbaijan
+    winRate: 36
+    flag: {fileID: 21300000, guid: d57b298396eedd243ba231f9a07b54f0, type: 3}
+  - country: Armenia
+    winRate: 34
+    flag: {fileID: 21300000, guid: c85ba0c40400aa64389b2729392aa397, type: 3}
+  - country: France
+    winRate: 74
+    flag: {fileID: 21300000, guid: a76415eadd7366b4c96970be1dc99480, type: 3}
+  - country: Greece
+    winRate: 88
+    flag: {fileID: 21300000, guid: df5e408518d54354dafc512d3d16d86d, type: 3}
+  - country: Romania
+    winRate: 72
+    flag: {fileID: 21300000, guid: 59af430424d533446b626e345371ec56, type: 3}
+  - country: Germany
+    winRate: 65
+    flag: {fileID: 21300000, guid: b90a1e8e6d23b164686f898c1773e4de, type: 3}
+  - country: Turkey
+    winRate: 50
+    flag: {fileID: 21300000, guid: 012d5f2486a03e04e890ccea964fa3ee, type: 3}
+  - country: Poland
+    winRate: 44
+    flag: {fileID: 21300000, guid: ad54c5cc6e2c62740b9f993d1e3618ca, type: 3}
+  - country: Ukraine
+    winRate: 47
+    flag: {fileID: 21300000, guid: 9a704176c0347ae428e8b74f33dcab48, type: 3}
+  - country: Lithuania
+    winRate: 41
+    flag: {fileID: 21300000, guid: d0d78b7e2454014498d58545f248d25e, type: 3}
+  - country: Slovakia
+    winRate: 54
+    flag: {fileID: 21300000, guid: 3da3705372c7dfb4986b9b224ea75686, type: 3}
+  - country: Mexico
+    winRate: 35
+    flag: {fileID: 21300000, guid: f863c1a2d0409164da1d43a0d32a4a41, type: 3}
+  - country: Portugal
+    winRate: 39
+    flag: {fileID: 21300000, guid: e6ce4c74f004f0d47923a353c5b1f93c, type: 3}
+  worldCupTrophy: {fileID: 21300000, guid: d9fd3a07b10081d4fbd9f1b3abd8fca9, type: 3}

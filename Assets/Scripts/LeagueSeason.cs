@@ -296,13 +296,7 @@ public class LeagueSeason
         int start = group * GroupSize;
         List<int> order = new List<int>(GroupSize);
         for (int i = 0; i < GroupSize; i++) order.Add(start + i);
-        order.Sort((x, y) =>
-        {
-            int c = Points(y).CompareTo(Points(x)); if (c != 0) return c;
-            c = GoalDiff(y).CompareTo(GoalDiff(x)); if (c != 0) return c;
-            c = gf[y].CompareTo(gf[x]); if (c != 0) return c;
-            return string.CompareOrdinal(teams[x], teams[y]);
-        });
+        order.Sort((x, y) => TournamentCore.CompareTable(x, y, won, drawn, gf, ga, teams));
         return order;
     }
 
@@ -503,12 +497,7 @@ public class LeagueSeason
 
     void ApplyGroupResult(Fixture f, int a, int b, bool simulated)
     {
-        f.scoreA = a; f.scoreB = b; f.played = true; f.simulated = simulated;
-        played[f.teamA]++; played[f.teamB]++;
-        gf[f.teamA] += a; ga[f.teamA] += b; gf[f.teamB] += b; ga[f.teamB] += a;
-        if (a > b) { won[f.teamA]++; lost[f.teamB]++; }
-        else if (b > a) { won[f.teamB]++; lost[f.teamA]++; }
-        else { drawn[f.teamA]++; drawn[f.teamB]++; }
+        TournamentCore.ApplyGroupResult(f, a, b, simulated, played, won, drawn, lost, gf, ga);
     }
 
     void ApplyKnockoutResult(Fixture f, int a, int b, bool simulated)

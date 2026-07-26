@@ -2274,3 +2274,112 @@ This corrects the 2026-07-26c interpretation after an actual visual report from 
 - The PoolB assertion confirmed `ACE` / `NEW`, 20px tag sizing, corrected placement, and the live
   My Club crest. Unity logged `CODEX CREST PLAY MODE CHECK PASSED`.
 - The temporary test restored the original saved `Dinamo` profile and championship state afterward.
+
+---
+
+## SESSION LOG — 2026-07-26f (crest presentation and pre-match polish)
+
+### Crest rendering
+
+- Removed the `ClubName` text child from `CrestTemplateView`; the shared renderer now draws only the
+  tintable crest mask. Existing standalone club-name labels in the hub, tables and pre-match remain.
+- Preserved `CrestTemplateView.ContentScale` at 90%, so removing labels and backing graphics does not
+  change the crest's apparent size within any holder.
+
+### Customization palette
+
+- Replaced each long swatch strip with a rounded, accented 500×102 palette card.
+- Primary, secondary and tertiary each use the same 14 colors in a consistent 7×2 grid.
+- Selection now combines a gold frame, 112% scale-up, glow/shadow and a small drawn check badge;
+  the check uses UI geometry rather than relying on an unsupported font glyph.
+- Player cap/swimwear controls were moved down to preserve clean spacing below the three cards.
+
+### Backing removal and pre-match redesign
+
+- The hub avatar keeps its 60×60 click target but its circular backing is transparent.
+- My Club no longer creates the shared helper's `Shadow`, `Rim` or `Plate` layers in competition and
+  standings rows. Player-slot ownership remains explicit and is never inferred from the club name.
+- Pre-match requests direct/bare rendering for both My Club and the official opponent while keeping
+  each existing 78px logo holder and its normal crest scale.
+- Pre-match now uses balanced accented team cards, tighter pools, a restrained center divider,
+  framed VS badge, stronger `PLAY MATCH` CTA and clearer context hierarchy.
+- The six functional formation positions on each pool were retained but redesigned from large white
+  rectangles into compact 36px broadcast-style tactical dots with dark centers and team accents.
+
+### Template replacement behavior
+
+- Template03 and Template08 remain skipped exactly as before. No special-case repair was added.
+  Replacing either source PNG under the same `Template03.png` / `Template08.png` filename lets the
+  existing automatic builder reprocess it and include it once all three opaque regions pass QC.
+
+### Verification
+
+- Automated Unity Play Mode navigation covered customization, hub, Division 1 standings and
+  pre-match. It asserted no crest `ClubName` children, one selected check/scale state per palette,
+  two-row 14-swatch grouping, no My Club backing layers, no backing on either pre-match crest,
+  12 intentional tactical markers, and the unchanged 90% relative crest scale.
+- Unity logged `CODEX CREST POLISH PLAY MODE CHECK PASSED`.
+- The temporary championship created for navigation was removed/restored after the check.
+
+---
+
+## SESSION LOG — 2026-07-26g (World Cup country tournament)
+
+### Shared architecture and country data
+
+- Added `TournamentCore` as the shared standings/result layer. Both `LeagueSeason` and the World Cup
+  use the same points → goal difference → goals-for ordering and group-result application;
+  `WorldCupSeason` also reuses `LeagueSeason.Fixture` rather than introducing a parallel fixture
+  contract. Existing club competition behavior and screens are unchanged.
+- Added `CountryCatalog` / `CountryCatalogBuilder`, matching the existing direct-reference catalog
+  pattern. The generated `Assets/Resources/CountryCatalog.asset` contains the exact 36 requested
+  country names/rates, 36 linked flag sprites and the existing World Cup trophy.
+- The supplied `Swedan.png` is accepted as a compatibility fallback for the exact runtime identity
+  `Sweden`; a future correctly named `Sweden.png` is preferred automatically on rebuild.
+
+### Tournament model
+
+- `WorldCupSeason` persists independently in `worldcup.json`: 36 teams, six groups of six, five
+  global group rounds, complete table statistics, Round of 16, quarterfinals, semifinals and final.
+- Every new run sorts the catalog into six strength pots and shuffles one country from every pot
+  into every group. Restart explicitly rejects the previous draw signature and generates a new one.
+- A player's real group match advances all 18 fixtures in that round. All 17 non-player matches use
+  both countries' rates as a probabilistic bias; weaker countries retain a real upset chance.
+- Qualification is the top two in each group plus the four best third-place teams, ordered by the
+  shared points/GD/GF tiebreak. Round-of-16 seeding gives all six winners a lower seed from another
+  group, then pairs the four remaining lower seeds while avoiding same-group rematches.
+- Each real player knockout result simulates the rest of that round. Knockout draws receive the
+  existing one-goal sudden-death resolution before the next bracket is created.
+
+### Navigation and presentation
+
+- Added a touch-sensitive World Cup trophy button to the hub's right column. No scene was added;
+  all screens are code-built panels on the existing Hub canvas.
+- Added a searchable, vertically scrollable three-column country picker with 36 flag cards and an
+  explicit country confirmation dialog.
+- Added six group-table cards, player/qualifier highlighting, next-match action, compact gated
+  restart control, pre-win requirement message and a Yes/No destructive confirmation.
+- Added a readable horizontally scrollable connected bracket with Round of 16/QF/SF/final columns,
+  advancing winners, faded/struck losers, a prominent trophy and first/second podium slots.
+- Added a dedicated World Cup pre-match panel with both country flags/names and the shared PoolB
+  scene as its only PLAY destination.
+
+### Match identity
+
+- Generalized `MatchPresentationContext` with club/World-Cup identity kinds while retaining the
+  existing single persisted match handoff.
+- World Cup PoolB matches use country names, three-letter tags and flags in the live HUD, quarter
+  breaks and final result overlay. Replays/scorer labels inherit the country names through the same
+  existing context. Bot players/AI and gameplay rosters are untouched.
+
+### Verification
+
+- Unity's catalog build logged `CountryCatalogBuilder: 36/36 countries and World Cup trophy linked`.
+- Automated Play Mode covered hub trophy → scroll/search picker → seeded draw → all five group
+  rounds → all other groups simulated → exact best-four-thirds set → Round of 16 → QF → SF → final
+  → champion/runner-up podium → eligible restart with a different draw → PoolB.
+- The check also sampled 4,000 Spain-vs-Latvia simulations: Spain won more often while Latvia still
+  won matches, confirming probabilistic bias rather than deterministic strength selection.
+- PoolB assertions confirmed `GEO` plus the opponent tag, both HUD flags, both quarter-break flags,
+  result flags, and a real result advancing all 18 fixtures in its group round.
+- Unity logged `CODEX WORLD CUP PLAY MODE CHECK PASSED`; any pre-existing World Cup save was restored.

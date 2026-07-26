@@ -23,6 +23,8 @@ public class MatchResultUI : MonoBehaviour
     private TextMeshProUGUI titleText;
     private TextMeshProUGUI scoreText;
     private TextMeshProUGUI winnerText;
+    private Image playerFlag;
+    private Image opponentFlag;
     private Transform canvasRoot;
 
     void Awake()
@@ -49,8 +51,18 @@ public class MatchResultUI : MonoBehaviour
             // tied. Show the authoritative score that was actually written to the championship.
             you = MatchPresentationContext.ResultPlayerGoals;
             bot = MatchPresentationContext.ResultOpponentGoals;
+            outcome = you.CompareTo(bot);
         }
         scoreText.text = playerClub + "  " + you + " — " + bot + "  " + opponentClub;
+        bool worldCup = MatchPresentationContext.ResultWasWorldCup;
+        playerFlag.gameObject.SetActive(worldCup);
+        opponentFlag.gameObject.SetActive(worldCup);
+        if (worldCup)
+        {
+            CountryCatalog catalog = CountryCatalog.Instance;
+            playerFlag.sprite = catalog != null ? catalog.FlagFor(playerClub) : null;
+            opponentFlag.sprite = catalog != null ? catalog.FlagFor(opponentClub) : null;
+        }
 
         if (outcome > 0)      { winnerText.text = "YOU WIN!"; winnerText.color = Color.cyan; }
         else if (outcome < 0) { winnerText.text = "YOU LOSE"; winnerText.color = new Color(1f, 0.25f, 0.25f); }
@@ -94,6 +106,10 @@ public class MatchResultUI : MonoBehaviour
         scoreText.fontSizeMax = 56f;
         scoreText.textWrappingMode = TextWrappingModes.NoWrap;
         winnerText = MakeText("Winner", "",          44f, new Vector2(0f, -20f));
+        playerFlag = MakeFlag("PlayerCountryFlag", new Vector2(-515f, 70f));
+        opponentFlag = MakeFlag("OpponentCountryFlag", new Vector2(515f, 70f));
+        playerFlag.gameObject.SetActive(false);
+        opponentFlag.gameObject.SetActive(false);
 
         // Championship fixtures return to their persistent table. Casual matches retain replay.
         MakeButton("CONTINUE", new Vector2(0f, -120f), ContinueAfterResult);
@@ -127,6 +143,21 @@ public class MatchResultUI : MonoBehaviour
         rt.sizeDelta = new Vector2(900f, 90f);
         rt.anchoredPosition = pos;
         return txt;
+    }
+
+    Image MakeFlag(string name, Vector2 pos)
+    {
+        GameObject go = new GameObject(name);
+        go.transform.SetParent(canvasRoot, false);
+        Image image = go.AddComponent<Image>();
+        image.color = Color.white;
+        image.preserveAspect = true;
+        image.raycastTarget = false;
+        RectTransform rt = image.rectTransform;
+        rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 0.5f);
+        rt.anchoredPosition = pos;
+        rt.sizeDelta = new Vector2(92f, 62f);
+        return image;
     }
 
     void MakeButton(string label, Vector2 pos, UnityEngine.Events.UnityAction onClick)

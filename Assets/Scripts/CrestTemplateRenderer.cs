@@ -1,18 +1,13 @@
-using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-// Shared My Club crest presentation. Every screen uses the same normalized mask/name geometry;
-// only the outer RectTransform size changes.
+// Shared My Club crest presentation. Every screen uses the same normalized mask geometry;
+// club names belong to the surrounding screen UI and are never baked into the crest.
 public sealed class CrestTemplateView : MonoBehaviour
 {
     public const float ContentScale = 0.90f;
-    const float NameWidth = 0.66f;
-    const float NameHeight = 0.19f;
-    const float NameY = -0.02f;
 
     Image maskImage;
-    TextMeshProUGUI nameText;
     Material materialInstance;
 
     public Image MaskImage => maskImage;
@@ -44,20 +39,6 @@ public sealed class CrestTemplateView : MonoBehaviour
         maskRt.anchoredPosition = Vector2.zero;
         maskRt.sizeDelta = Vector2.zero;
 
-        GameObject nameGo = new GameObject("ClubName");
-        nameGo.transform.SetParent(transform, false);
-        nameText = nameGo.AddComponent<TextMeshProUGUI>();
-        nameText.fontStyle = FontStyles.Bold;
-        nameText.alignment = TextAlignmentOptions.Center;
-        nameText.color = Color.white;
-        nameText.enableAutoSizing = true;
-        nameText.textWrappingMode = TextWrappingModes.NoWrap;
-        nameText.overflowMode = TextOverflowModes.Ellipsis;
-        nameText.raycastTarget = false;
-        Shadow shadow = nameGo.AddComponent<Shadow>();
-        shadow.effectColor = new Color(0f, 0f, 0f, 0.95f);
-        shadow.effectDistance = new Vector2(1.5f, -1.5f);
-        shadow.useGraphicAlpha = true;
     }
 
     public void SetIdentity(ClubProfile profile)
@@ -66,11 +47,10 @@ public sealed class CrestTemplateView : MonoBehaviour
         SetIdentity(profile.logoId,
                     ClubCustomizationUI.ParseHex(profile.primaryColorHex, ClubCustomizationUI.Palette[0]),
                     ClubCustomizationUI.ParseHex(profile.secondaryColorHex, Color.white),
-                    ClubCustomizationUI.ParseHex(profile.tertiaryColorHex, ClubCustomizationUI.Palette[3]),
-                    profile.clubName);
+                    ClubCustomizationUI.ParseHex(profile.tertiaryColorHex, ClubCustomizationUI.Palette[3]));
     }
 
-    public void SetIdentity(int templateIndex, Color primary, Color secondary, Color tertiary, string clubName)
+    public void SetIdentity(int templateIndex, Color primary, Color secondary, Color tertiary)
     {
         if (maskImage == null) Build();
         CrestTemplateCatalog catalog = CrestTemplateCatalog.Instance;
@@ -91,9 +71,6 @@ public sealed class CrestTemplateView : MonoBehaviour
             materialInstance.SetColor("_TertiaryColor", tertiary);
         }
 
-        string cleanName = string.IsNullOrWhiteSpace(clubName) ? "MY CLUB" : clubName.Trim();
-        if (cleanName.Length > 9) cleanName = cleanName.Substring(0, 9);
-        nameText.text = cleanName.ToUpperInvariant();
         Layout();
     }
 
@@ -116,7 +93,7 @@ public sealed class CrestTemplateView : MonoBehaviour
 
     void OnRectTransformDimensionsChange()
     {
-        if (maskImage != null && nameText != null) Layout();
+        if (maskImage != null) Layout();
     }
 
     void Layout()
@@ -126,13 +103,6 @@ public sealed class CrestTemplateView : MonoBehaviour
         float side = Mathf.Min(root.rect.width, root.rect.height) * ContentScale;
         if (side <= 0f) return;
         maskImage.rectTransform.sizeDelta = new Vector2(side, side);
-
-        RectTransform nameRt = nameText.rectTransform;
-        nameRt.anchorMin = nameRt.anchorMax = nameRt.pivot = new Vector2(0.5f, 0.5f);
-        nameRt.anchoredPosition = new Vector2(0f, side * NameY);
-        nameRt.sizeDelta = new Vector2(side * NameWidth, side * NameHeight);
-        nameText.fontSizeMax = Mathf.Max(3f, side * 0.135f);
-        nameText.fontSizeMin = Mathf.Max(2f, side * 0.055f);
     }
 
     void OnDestroy()

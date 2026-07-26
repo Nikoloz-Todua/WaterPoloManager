@@ -46,9 +46,18 @@ public class ClubCustomizationUI : MonoBehaviour
     TMP_InputField nameField;
     TextMeshProUGUI templateLabel, capColorName, swimwearColorName, savedFlash;
     Image capColorPreview, swimwearColorPreview;
-    readonly List<Image> primaryFrames = new List<Image>();
-    readonly List<Image> secondaryFrames = new List<Image>();
-    readonly List<Image> tertiaryFrames = new List<Image>();
+    sealed class SwatchVisual
+    {
+        public Image frame;
+        public Image fill;
+        public RectTransform rect;
+        public GameObject checkBadge;
+        public Shadow glow;
+    }
+
+    readonly List<SwatchVisual> primaryFrames = new List<SwatchVisual>();
+    readonly List<SwatchVisual> secondaryFrames = new List<SwatchVisual>();
+    readonly List<SwatchVisual> tertiaryFrames = new List<SwatchVisual>();
     readonly List<Image> countryFrames = new List<Image>();
     Coroutine flashRoutine;
 
@@ -136,39 +145,64 @@ public class ClubCustomizationUI : MonoBehaviour
 
     void BuildCrestColorRows()
     {
-        BuildPaletteRow("PRIMARY", 132f, 94f, primaryFrames, index =>
+        BuildPaletteGroup("PRIMARY", 126f, Palette[0], primaryFrames, index =>
         {
             selPrimary = index; SyncSelectionVisuals();
         });
-        BuildPaletteRow("SECONDARY", 48f, 10f, secondaryFrames, index =>
+        BuildPaletteGroup("SECONDARY", 12f, new Color(0.52f, 0.31f, 0.82f, 1f),
+                          secondaryFrames, index =>
         {
             selSecondary = index; SyncSelectionVisuals();
         });
-        BuildPaletteRow("TERTIARY", -36f, -74f, tertiaryFrames, index =>
+        BuildPaletteGroup("TERTIARY", -102f, Gold, tertiaryFrames, index =>
         {
             selTertiary = index; SyncSelectionVisuals();
         });
     }
 
-    void BuildPaletteRow(string label, float labelY, float swatchY, List<Image> frames,
-                         System.Action<int> select)
+    void BuildPaletteGroup(string label, float y, Color accent, List<SwatchVisual> frames,
+                           System.Action<int> select)
     {
-        MakeText(root, label, 15f, new Vector2(0.5f, 0.5f), new Vector2(55f, labelY),
-                 new Vector2(240f, 22f), Gold, TextAlignmentOptions.Center);
+        Image card = MakeCard(root, new Vector2(55f, y), new Vector2(500f, 102f),
+                              new Color(accent.r, accent.g, accent.b, 0.86f));
+        card.gameObject.name = label + "_Palette";
+
+        Image accentBar = NewImage("Accent", card.transform);
+        accentBar.sprite = Rounded(); accentBar.type = Image.Type.Sliced;
+        accentBar.color = accent; accentBar.raycastTarget = false;
+        SetRect(accentBar.rectTransform, new Vector2(0f, 0.5f),
+                new Vector2(7f, 0f), new Vector2(7f, 76f));
+
+        MakeText(card.transform, label, 14f, new Vector2(0f, 0.5f),
+                 new Vector2(61f, 10f), new Vector2(100f, 24f),
+                 Color.white, TextAlignmentOptions.Center);
+        MakeText(card.transform, "COLOR", 10f, new Vector2(0f, 0.5f),
+                 new Vector2(61f, -12f), new Vector2(100f, 18f),
+                 new Color(accent.r, accent.g, accent.b, 0.95f),
+                 TextAlignmentOptions.Center);
+
+        Image divider = NewImage("Divider", card.transform);
+        divider.color = new Color(1f, 1f, 1f, 0.10f); divider.raycastTarget = false;
+        SetRect(divider.rectTransform, new Vector2(0f, 0.5f),
+                new Vector2(116f, 0f), new Vector2(2f, 70f));
+
         frames.Clear();
-        const float pitch = 34f;
         for (int i = 0; i < Palette.Length; i++)
         {
             int index = i;
-            float x = 55f + (i - (Palette.Length - 1) * 0.5f) * pitch;
-            frames.Add(MakeSwatch(new Vector2(x, swatchY), Palette[i], () => select(index)));
+            int column = i % 7;
+            int row = i / 7;
+            float x = 145f + column * 47f;
+            float swatchY = row == 0 ? 24f : -24f;
+            frames.Add(MakeSwatch(card.transform, new Vector2(x, swatchY), Palette[i],
+                                  () => select(index)));
         }
     }
 
     void BuildPlayerColorSelectors()
     {
-        BuildPlayerColorSelector("PLAYER CAP", -145f, true, out capColorPreview, out capColorName);
-        BuildPlayerColorSelector("PLAYER SWIMWEAR", -225f, false,
+        BuildPlayerColorSelector("PLAYER CAP", -188f, true, out capColorPreview, out capColorName);
+        BuildPlayerColorSelector("PLAYER SWIMWEAR", -265f, false,
                                  out swimwearColorPreview, out swimwearColorName);
     }
 
@@ -254,9 +288,9 @@ public class ClubCustomizationUI : MonoBehaviour
 
     void SyncSelectionVisuals()
     {
-        for (int i = 0; i < primaryFrames.Count; i++) primaryFrames[i].color = i == selPrimary ? Gold : TileDark;
-        for (int i = 0; i < secondaryFrames.Count; i++) secondaryFrames[i].color = i == selSecondary ? Gold : TileDark;
-        for (int i = 0; i < tertiaryFrames.Count; i++) tertiaryFrames[i].color = i == selTertiary ? Gold : TileDark;
+        SyncSwatchGroup(primaryFrames, selPrimary);
+        SyncSwatchGroup(secondaryFrames, selSecondary);
+        SyncSwatchGroup(tertiaryFrames, selTertiary);
         for (int i = 0; i < countryFrames.Count; i++) countryFrames[i].color = i == selCountry ? Gold : TileDark;
         if (templateLabel != null)
             templateLabel.text = "TEMPLATE " + (selTemplate + 1).ToString("00") + " / " + CrestCount;
@@ -264,11 +298,24 @@ public class ClubCustomizationUI : MonoBehaviour
         SyncPlayerColorPreviews();
     }
 
+    static void SyncSwatchGroup(List<SwatchVisual> swatches, int selected)
+    {
+        for (int i = 0; i < swatches.Count; i++)
+        {
+            bool active = i == selected;
+            SwatchVisual swatch = swatches[i];
+            swatch.frame.color = active ? Gold : new Color(0.20f, 0.27f, 0.36f, 1f);
+            swatch.rect.localScale = active ? Vector3.one * 1.12f : Vector3.one;
+            swatch.checkBadge.SetActive(active);
+            swatch.glow.enabled = active;
+        }
+    }
+
     void SyncPreview()
     {
         if (preview == null) return;
         preview.SetIdentity(selTemplate, Palette[selPrimary], Palette[selSecondary],
-                            Palette[selTertiary], nameField != null ? nameField.text : "MY CLUB");
+                            Palette[selTertiary]);
     }
 
     void SyncPlayerColorPreviews()
@@ -382,15 +429,53 @@ public class ClubCustomizationUI : MonoBehaviour
         return frame;
     }
 
-    Image MakeSwatch(Vector2 position, Color color, UnityEngine.Events.UnityAction onClick)
+    SwatchVisual MakeSwatch(Transform parent, Vector2 position, Color color,
+                            UnityEngine.Events.UnityAction onClick)
     {
-        Image frame = MakeTile(position, new Vector2(32f, 32f), onClick);
+        Image frame = NewImage("SwatchFrame", parent);
+        frame.sprite = Rounded(); frame.type = Image.Type.Sliced;
+        frame.color = new Color(0.20f, 0.27f, 0.36f, 1f);
+        SetRect(frame.rectTransform, new Vector2(0f, 0.5f), position, new Vector2(40f, 34f));
+        Button button = frame.gameObject.AddComponent<Button>();
+        button.targetGraphic = frame;
+        button.onClick.AddListener(onClick);
+        Shadow glow = frame.gameObject.AddComponent<Shadow>();
+        glow.effectColor = new Color(1f, 0.82f, 0.2f, 0.68f);
+        glow.effectDistance = new Vector2(0f, -3f);
+        glow.useGraphicAlpha = true;
+        glow.enabled = false;
+
         Image swatch = NewImage("Swatch", frame.transform);
-        swatch.sprite = Rounded(); swatch.type = Image.Type.Sliced; swatch.color = color; swatch.raycastTarget = false;
+        swatch.sprite = Rounded(); swatch.type = Image.Type.Sliced;
+        swatch.color = color; swatch.raycastTarget = false;
         RectTransform rt = swatch.rectTransform;
         rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
-        rt.offsetMin = new Vector2(5f, 5f); rt.offsetMax = new Vector2(-5f, -5f);
-        return frame;
+        rt.offsetMin = new Vector2(4f, 4f); rt.offsetMax = new Vector2(-4f, -4f);
+
+        Image badge = NewImage("SelectedBadge", frame.transform);
+        badge.sprite = Circle(); badge.color = Gold; badge.raycastTarget = false;
+        SetRect(badge.rectTransform, new Vector2(1f, 1f), new Vector2(-2f, -2f),
+                new Vector2(16f, 16f));
+        Image checkShort = NewImage("CheckShort", badge.transform);
+        checkShort.color = new Color(0.06f, 0.09f, 0.14f, 1f); checkShort.raycastTarget = false;
+        SetRect(checkShort.rectTransform, new Vector2(0.5f, 0.5f),
+                new Vector2(-2.5f, 0f), new Vector2(2.5f, 7f));
+        checkShort.rectTransform.localRotation = Quaternion.Euler(0f, 0f, -42f);
+        Image checkLong = NewImage("CheckLong", badge.transform);
+        checkLong.color = new Color(0.06f, 0.09f, 0.14f, 1f); checkLong.raycastTarget = false;
+        SetRect(checkLong.rectTransform, new Vector2(0.5f, 0.5f),
+                new Vector2(2.5f, -0.5f), new Vector2(2.5f, 10f));
+        checkLong.rectTransform.localRotation = Quaternion.Euler(0f, 0f, 42f);
+        badge.gameObject.SetActive(false);
+
+        return new SwatchVisual
+        {
+            frame = frame,
+            fill = swatch,
+            rect = frame.rectTransform,
+            checkBadge = badge.gameObject,
+            glow = glow
+        };
     }
 
     TMP_InputField MakeInputField(Transform parent, Vector2 position, Vector2 size)

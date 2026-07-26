@@ -141,8 +141,16 @@ public class QuarterBreakUI : MonoBehaviour
         opponentNameText = MakeClubName(panelGo.transform, "OpponentClub", rightName, new Vector2(220f, 5f));
         if (MatchPresentationContext.IsChampionshipFixture)
         {
-            MakeClubBadge(panelGo.transform, leftName, true, new Vector2(-220f, 73f));
-            MakeClubBadge(panelGo.transform, rightName, false, new Vector2(220f, 73f));
+            if (MatchPresentationContext.IsWorldCupFixture)
+            {
+                MakeCountryFlag(panelGo.transform, leftName, true, new Vector2(-220f, 73f));
+                MakeCountryFlag(panelGo.transform, rightName, false, new Vector2(220f, 73f));
+            }
+            else
+            {
+                MakeClubBadge(panelGo.transform, leftName, true, new Vector2(-220f, 73f));
+                MakeClubBadge(panelGo.transform, rightName, false, new Vector2(220f, 73f));
+            }
         }
 
         MakeButton(panelGo.transform, "RESUME", new Vector2(0f, -70f), OnResumeClicked);
@@ -205,6 +213,33 @@ public class QuarterBreakUI : MonoBehaviour
         crestRt.anchorMin = crestRt.anchorMax = crestRt.pivot = new Vector2(0.5f, 0.5f);
         crestRt.anchoredPosition = Vector2.zero;
         crestRt.sizeDelta = new Vector2(80f, 80f);
+    }
+
+    void MakeCountryFlag(Transform parent, string country, bool playerSide, Vector2 pos)
+    {
+        GameObject holder = new GameObject((playerSide ? "Player" : "Opponent") + "Flag");
+        holder.transform.SetParent(parent, false);
+        Image frame = holder.AddComponent<Image>();
+        frame.sprite = MakeRoundedRectSprite(94, 66, 12);
+        frame.color = playerSide ? new Color(0.18f, 0.5f, 1f, 1f)
+                                 : new Color(0.92f, 0.24f, 0.30f, 1f);
+        frame.raycastTarget = false;
+        RectTransform holderRt = frame.rectTransform;
+        holderRt.anchorMin = holderRt.anchorMax = holderRt.pivot = new Vector2(0.5f, 0.5f);
+        holderRt.anchoredPosition = pos;
+        holderRt.sizeDelta = new Vector2(94f, 66f);
+
+        GameObject flagGo = new GameObject("Flag");
+        flagGo.transform.SetParent(holder.transform, false);
+        Image flag = flagGo.AddComponent<Image>();
+        flag.sprite = CountryCatalog.Instance != null ? CountryCatalog.Instance.FlagFor(country) : null;
+        flag.color = Color.white;
+        flag.preserveAspect = true;
+        flag.raycastTarget = false;
+        RectTransform flagRt = flag.rectTransform;
+        flagRt.anchorMin = flagRt.anchorMax = flagRt.pivot = new Vector2(0.5f, 0.5f);
+        flagRt.anchoredPosition = Vector2.zero;
+        flagRt.sizeDelta = new Vector2(84f, 56f);
     }
 
     TextMeshProUGUI MakeText(Transform parent, string name, string content, float size, Vector2 pos)

@@ -58,6 +58,7 @@ public class NavigationManager : MonoBehaviour
     private TextMeshProUGUI gmGoldLabel, gmDiamondLabel; // game-mode top-bar currencies, fed by RosterManager
 
     private GameObject rankingOverlay, shopOverlay, teamOverlay, gameModeOverlay;
+    private WorldCupUI worldCupUI;
     private ShopUI shopUI;                           // the Shop screen component (for tab-jump shortcuts)
     private GameObject standingsOverlay, preMatchOverlay; // built lazily, content rebuilt on each open
     private GameObject restartChampionshipOverlay;
@@ -169,7 +170,8 @@ public class NavigationManager : MonoBehaviour
         SetRect(avGo.AddComponent<RectTransform>(), new Vector2(0f, 0.5f), new Vector2(48f, 0f), new Vector2(60f, 60f));
         avatarCircle = avGo.AddComponent<Image>();
         avatarCircle.sprite = Circle();
-        avatarCircle.color = new Color(0.08f, 0.13f, 0.20f, 1f);
+        // Keep the full clickable avatar hit area, but render the saved crest directly.
+        avatarCircle.color = Color.clear;
         Button avBtn = avGo.AddComponent<Button>();
         avBtn.targetGraphic = avatarCircle;
         avBtn.onClick.AddListener(OpenClubScreen);
@@ -282,6 +284,8 @@ public class NavigationManager : MonoBehaviour
     void BuildRightColumn()
     {
         const float x = -150f, step = 140f, yOff = -40f; // rows/offset match the left column
+        worldCupUI = gameObject.AddComponent<WorldCupUI>();
+        worldCupUI.Initialize(canvasRoot);
         MakeImageButton(canvasRoot, "BtnFriends", "Sprites/friends-button", new Vector2(1f, 0.5f),
                         new Vector2(x, yOff + step), new Vector2(135f, 135f), () => ShowOverlay(friendsOverlay),
                         trimArt: true);
@@ -290,6 +294,11 @@ public class NavigationManager : MonoBehaviour
         MakeImageButton(canvasRoot, "BtnClubs", "Sprites/clubs-button", new Vector2(1f, 0.5f),
                         new Vector2(x, yOff), new Vector2(150f, 150f), () => ShowOverlay(clubsOverlay),
                         trimArt: true);
+        CountryCatalog countryCatalog = CountryCatalog.Instance;
+        MakeDirectImageButton(canvasRoot, "BtnWorldCup",
+            countryCatalog != null ? countryCatalog.WorldCupTrophy : null,
+            new Vector2(1f, 0.5f), new Vector2(x, yOff - step),
+            new Vector2(135f, 135f), worldCupUI.Open);
     }
 
     // ------------------------------------------------------------ season timer
@@ -2257,26 +2266,46 @@ public class NavigationManager : MonoBehaviour
         string oppName = opp >= 0 ? s.teams[opp] : "TBD";
         int oppStars = opp >= 0 ? s.stars[opp] : 3;
 
-        const float poolW = 470f, poolH = 264f, poolY = 34f, poolX = 322f;
+        const float poolW = 450f, poolH = 246f, poolY = 43f, poolX = 320f;
+        BuildPreMatchSideCard(sheet, new Vector2(-poolX, -16f), new Vector2(492f, 492f),
+                              Blue, "MY CLUB");
+        BuildPreMatchSideCard(sheet, new Vector2(poolX, -16f), new Vector2(492f, 492f),
+                              Red, "OPPONENT");
         BuildPreMatchPool(sheet, new Vector2(-poolX, poolY), new Vector2(poolW, poolH), true, Blue);
         BuildPreMatchPool(sheet, new Vector2(poolX, poolY), new Vector2(poolW, poolH), false, Red);
 
-        // Center column: league badge (text), phase/match label, VS, PLAY.
+        // Center column: compact competition context, deliberate divider, VS badge and primary CTA.
         MakeText(sheet, CompNames[comp], 20f, new Vector2(0.5f, 0.5f), new Vector2(0f, 196f),
                  new Vector2(200f, 48f), Gold, TextAlignmentOptions.Center);
         MakeText(sheet, s.MatchLabel, 18f,
-                 new Vector2(0.5f, 0.5f), new Vector2(0f, 150f), new Vector2(300f, 26f), Color.white,
+                 new Vector2(0.5f, 0.5f), new Vector2(0f, 157f), new Vector2(250f, 26f),
+                 new Color(0.72f, 0.80f, 0.90f, 1f),
                  TextAlignmentOptions.Center);
+
+        Image divider = NewImage(sheet, "FixtureDivider");
+        divider.color = new Color(1f, 1f, 1f, 0.14f);
+        divider.raycastTarget = false;
+        SetRect(divider.rectTransform, new Vector2(0.5f, 0.5f),
+                new Vector2(0f, 42f), new Vector2(2f, 170f));
+
+        Image vsFrame = MakePanel(sheet, new Vector2(0.5f, 0.5f), new Vector2(0f, 67f),
+                                  new Vector2(94f, 70f), Gold);
+        vsFrame.gameObject.name = "VsBadge";
+        vsFrame.raycastTarget = false;
+        Image vsFill = MakePanel(vsFrame.transform, new Vector2(0.5f, 0.5f), Vector2.zero,
+                                 new Vector2(86f, 62f), new Color(0.035f, 0.07f, 0.13f, 1f));
+        vsFill.raycastTarget = false;
         TextMeshProUGUI vsLabel = MakeText(sheet, "VS", 44f, new Vector2(0.5f, 0.5f),
-                 new Vector2(0f, 70f), new Vector2(160f, 56f),
-                 new Color(1f, 1f, 1f, 0.9f), TextAlignmentOptions.Center);
-        MakeActionButton(sheet, "PLAY", new Vector2(0.5f, 0.5f), new Vector2(0f, -30f), new Vector2(180f, 72f),
-            Green, StartMatch);
+                 new Vector2(0f, 67f), new Vector2(90f, 62f),
+                 Color.white, TextAlignmentOptions.Center);
+        MakeActionButton(sheet, "PLAY MATCH", new Vector2(0.5f, 0.5f),
+                         new Vector2(0f, -68f), new Vector2(210f, 68f),
+                         Green, StartMatch);
 
         // Below each pool: logo + name + star rating.
-        RectTransform playerPanel = BuildTeamInfo(sheet, new Vector2(-poolX, -150f), playerName,
+        RectTransform playerPanel = BuildTeamInfo(sheet, new Vector2(-poolX, -166f), playerName,
                                                   s.stars[s.PlayerIndex], Blue, true);
-        RectTransform opponentPanel = BuildTeamInfo(sheet, new Vector2(poolX, -150f), oppName,
+        RectTransform opponentPanel = BuildTeamInfo(sheet, new Vector2(poolX, -166f), oppName,
                                                     oppStars, Red, false);
 
         // The requested horizontal fixture beat: both real club identities slide in from opposite
@@ -2286,7 +2315,27 @@ public class NavigationManager : MonoBehaviour
         fixtureFx.Configure(playerPanel, opponentPanel, vsLabel.rectTransform);
     }
 
-    // A pool render with a coloured frame and 6 formation markers. Opponent formations mirror vertically.
+    void BuildPreMatchSideCard(Transform sheet, Vector2 center, Vector2 size, Color accentColor,
+                               string label)
+    {
+        Image card = MakePanel(sheet, new Vector2(0.5f, 0.5f), center, size,
+                               new Color(0.035f, 0.075f, 0.14f, 0.96f));
+        card.gameObject.name = label == "MY CLUB" ? "PlayerFixtureCard" : "OpponentFixtureCard";
+        card.raycastTarget = false;
+
+        Image accent = NewImage(card.transform, "Accent");
+        accent.sprite = GetRoundedSprite(); accent.type = Image.Type.Sliced;
+        accent.color = accentColor; accent.raycastTarget = false;
+        SetRect(accent.rectTransform, new Vector2(0.5f, 1f),
+                new Vector2(0f, -5f), new Vector2(size.x - 24f, 7f));
+        MakeText(card.transform, label, 13f, new Vector2(0.5f, 1f),
+                 new Vector2(0f, -25f), new Vector2(220f, 22f),
+                 new Color(accentColor.r, accentColor.g, accentColor.b, 1f),
+                 TextAlignmentOptions.Center);
+    }
+
+    // Tactical position markers are functional; compact broadcast-style dots replace the old
+    // large white debug-looking rectangles. Opponent formations mirror vertically.
     void BuildPreMatchPool(Transform sheet, Vector2 center, Vector2 size, bool isPlayer, Color color)
     {
         Image frame = NewImage(sheet, isPlayer ? "PlayerPoolFrame" : "OpponentPoolFrame");
@@ -2303,10 +2352,10 @@ public class NavigationManager : MonoBehaviour
         pool.color = pool.sprite != null ? Color.white : new Color(0.10f, 0.35f, 0.60f, 1f);
         SetRect(pool.rectTransform, new Vector2(0.5f, 0.5f), center, size);
 
-        BuildFormationMarkers(pool.transform, size, isPlayer);
+        BuildFormationMarkers(pool.transform, size, isPlayer, color);
     }
 
-    void BuildFormationMarkers(Transform pool, Vector2 size, bool isPlayer)
+    void BuildFormationMarkers(Transform pool, Vector2 size, bool isPlayer, Color teamColor)
     {
         // Labels mirror TeamSide's field roles (+ a GK marker); positions are fractions of the pool rect.
         (string label, float fx, float fy)[] form =
@@ -2318,15 +2367,24 @@ public class NavigationManager : MonoBehaviour
         foreach (var f in form)
         {
             float my = isPlayer ? f.fy : -f.fy; // opponent attacks the other way → mirror
-            Image m = NewImage(pool, "Pos_" + f.label);
-            m.sprite = GetRoundedSprite();
-            m.type = Image.Type.Sliced;
-            m.color = new Color(0.96f, 0.97f, 1f, 0.95f);
+            Image m = NewImage(pool, "PositionMarker_" + f.label);
+            m.sprite = Circle();
+            m.color = f.label == "GK" ? Gold : teamColor;
             m.raycastTarget = false;
             SetRect(m.rectTransform, new Vector2(0.5f, 0.5f),
-                    new Vector2(f.fx * size.x, my * size.y), new Vector2(42f, 50f));
-            MakeText(m.transform, f.label, 15f, new Vector2(0.5f, 0.5f), Vector2.zero,
-                     new Vector2(42f, 50f), new Color(0.06f, 0.10f, 0.18f, 1f), TextAlignmentOptions.Center);
+                    new Vector2(f.fx * size.x, my * size.y), new Vector2(36f, 36f));
+            Shadow markerShadow = m.gameObject.AddComponent<Shadow>();
+            markerShadow.effectColor = new Color(0f, 0f, 0f, 0.55f);
+            markerShadow.effectDistance = new Vector2(0f, -2f);
+
+            Image inner = NewImage(m.transform, "Fill");
+            inner.sprite = Circle();
+            inner.color = new Color(0.035f, 0.08f, 0.14f, 0.94f);
+            inner.raycastTarget = false;
+            SetRect(inner.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero,
+                    new Vector2(29f, 29f));
+            MakeText(m.transform, f.label, 11f, new Vector2(0.5f, 0.5f), Vector2.zero,
+                     new Vector2(34f, 30f), Color.white, TextAlignmentOptions.Center);
         }
     }
 
@@ -2340,7 +2398,7 @@ public class NavigationManager : MonoBehaviour
         panel.AddComponent<CanvasGroup>();
 
         AddClubLogo(panel.transform, name, new Vector2(0f, 31f), 78f,
-                    new Vector2(0.5f, 0.5f), playerClub);
+                    new Vector2(0.5f, 0.5f), playerClub, true);
         TextMeshProUGUI teamName = MakeText(panel.transform, name, 22f, new Vector2(0.5f, 0.5f),
                  new Vector2(0f, -22f), new Vector2(360f, 32f), Color.white,
                  TextAlignmentOptions.Center);
@@ -2571,35 +2629,38 @@ public class NavigationManager : MonoBehaviour
     // `playerClub` is always supplied from the actual tournament slot; never infer it from the club
     // name because a saved name can collide with an official club (for example Dinamo).
     Image AddClubLogo(Transform parent, string club, Vector2 position, float size, Vector2 anchor,
-                      bool playerClub = false)
+                      bool playerClub = false, bool bare = false)
     {
         GameObject holder = new GameObject("Logo_" + club);
         holder.transform.SetParent(parent, false);
         RectTransform holderRt = holder.AddComponent<RectTransform>();
         SetRect(holderRt, anchor, position, new Vector2(size, size));
 
-        // Compact layered badge: a soft shadow + thin tier rim + close-fitting white fallback plate.
-        // The crest deliberately fills/overlaps the plate so the old giant-white-circle look is gone.
-        Image shadow = NewImage(holder.transform, "Shadow");
-        shadow.sprite = Circle();
-        shadow.color = new Color(0f, 0f, 0f, 0.38f);
-        shadow.raycastTarget = false;
-        SetRect(shadow.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, -size * 0.045f),
-                new Vector2(size * 0.96f, size * 0.96f));
+        // My Club renders bare everywhere. Official clubs retain the legacy fallback treatment
+        // except where a screen explicitly requests direct/bare crests (for example pre-match).
+        if (!playerClub && !bare)
+        {
+            Image shadow = NewImage(holder.transform, "Shadow");
+            shadow.sprite = Circle();
+            shadow.color = new Color(0f, 0f, 0f, 0.38f);
+            shadow.raycastTarget = false;
+            SetRect(shadow.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, -size * 0.045f),
+                    new Vector2(size * 0.96f, size * 0.96f));
 
-        Image rim = NewImage(holder.transform, "Rim");
-        rim.sprite = Circle();
-        rim.color = playerClub ? Gold : new Color(0.30f, 0.47f, 0.64f, 1f);
-        rim.raycastTarget = false;
-        SetRect(rim.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero,
-                new Vector2(size * 0.92f, size * 0.92f));
+            Image rim = NewImage(holder.transform, "Rim");
+            rim.sprite = Circle();
+            rim.color = new Color(0.30f, 0.47f, 0.64f, 1f);
+            rim.raycastTarget = false;
+            SetRect(rim.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero,
+                    new Vector2(size * 0.92f, size * 0.92f));
 
-        Image plate = NewImage(holder.transform, "Plate");
-        plate.sprite = Circle();
-        plate.color = playerClub ? Color.clear : new Color(0.97f, 0.98f, 1f, 1f);
-        plate.raycastTarget = false;
-        SetRect(plate.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero,
-                new Vector2(size * 0.82f, size * 0.82f));
+            Image plate = NewImage(holder.transform, "Plate");
+            plate.sprite = Circle();
+            plate.color = new Color(0.97f, 0.98f, 1f, 1f);
+            plate.raycastTarget = false;
+            SetRect(plate.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero,
+                    new Vector2(size * 0.82f, size * 0.82f));
+        }
 
         if (playerClub)
         {
@@ -2914,6 +2975,30 @@ public class NavigationManager : MonoBehaviour
         if (onClick != null) btn.onClick.AddListener(onClick);
         AddHover(go);
         return btn;
+    }
+
+    Button MakeDirectImageButton(Transform parent, string name, Sprite sprite, Vector2 anchor,
+                                 Vector2 pos, Vector2 size,
+                                 UnityEngine.Events.UnityAction onClick)
+    {
+        GameObject go = new GameObject(name);
+        go.transform.SetParent(parent, false);
+        RectTransform rt = go.AddComponent<RectTransform>();
+        SetRect(rt, anchor, pos, size);
+
+        Image image = go.AddComponent<Image>();
+        image.sprite = sprite != null ? sprite : GetRoundedSprite();
+        image.preserveAspect = true;
+        if (sprite == null)
+        {
+            image.type = Image.Type.Sliced;
+            image.color = DarkPanel;
+        }
+        Button button = go.AddComponent<Button>();
+        button.targetGraphic = image;
+        if (onClick != null) button.onClick.AddListener(onClick);
+        AddHover(go);
+        return button;
     }
 
     // Small green rounded [+] button.
