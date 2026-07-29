@@ -49,7 +49,7 @@ public class PauseMenuUI : MonoBehaviour
     static void LoadScene(string sceneName)
     {
         Time.timeScale = 1f; // never carry a frozen timescale into the next scene
-        SceneManager.LoadScene(sceneName);
+        LoadingOverlayUI.LoadScene(sceneName, false, "RETURNING TO HUB...");
     }
 
     void BuildUI()

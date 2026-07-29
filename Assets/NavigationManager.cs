@@ -19,6 +19,7 @@ using System.Globalization;
 public class NavigationManager : MonoBehaviour
 {
     [SerializeField] private float fadeSeconds = 0.3f; // slide / fade duration for overlays + hub fade-in
+    [SerializeField] private Sprite[] spinnerFrames;
 
     private static readonly Color DarkBar = new Color(0.04f, 0.06f, 0.13f, 0.86f);
     private static readonly Color DarkPanel = new Color(0.03f, 0.05f, 0.11f, 0.92f);
@@ -105,6 +106,7 @@ public class NavigationManager : MonoBehaviour
 
     void Start()
     {
+        LoadingOverlayUI.ConfigureSpinner(spinnerFrames);
         EnsureEventSystem();
         BuildRoot();
         BuildTopBar();
@@ -921,7 +923,9 @@ public class NavigationManager : MonoBehaviour
     // Fake rewarded ad: ~0.8s pause then the grant. TODO(ads): swap for the real ad SDK.
     IEnumerator HubFakeAd(System.Action grant)
     {
+        LoadingOverlayUI.ShowSpinner("LOADING VIDEO...");
         yield return new WaitForSecondsRealtime(0.8f);
+        LoadingOverlayUI.HideSpinner();
         grant?.Invoke();
     }
 
@@ -1230,6 +1234,14 @@ public class NavigationManager : MonoBehaviour
 
     public void OpenStandings(int competitionIndex)
     {
+        StartCoroutine(OpenStandingsWithLoading(competitionIndex));
+    }
+
+    IEnumerator OpenStandingsWithLoading(int competitionIndex)
+    {
+        int safeIndex = Mathf.Clamp(competitionIndex, 0, CompNames.Length - 1);
+        LoadingOverlayUI.ShowSpinner("LOADING " + CompNames[safeIndex] + "...");
+        yield return null; // draw the spinner before season generation and the large UI rebuild
         competitionViewIndex = competitionIndex;
         if (IsCompetitionUnlocked(competitionIndex))
             LeagueSeason.Ensure(competitionIndex, PlayerTeamName());
@@ -1243,6 +1255,7 @@ public class NavigationManager : MonoBehaviour
         ClearChildren(sheet);
         BuildStandingsContent(sheet);
         ShowOverlay(standingsOverlay);
+        LoadingOverlayUI.HideSpinner();
     }
 
     // Rebuild the competition sheet in place — used by the tabs and the group expand/collapse taps
@@ -1415,7 +1428,14 @@ public class NavigationManager : MonoBehaviour
 
     void StartChampionship(int competition)
     {
-        if (!IsCompetitionUnlocked(competition)) return;
+        StartCoroutine(StartChampionshipWithLoading(competition));
+    }
+
+    IEnumerator StartChampionshipWithLoading(int competition)
+    {
+        if (!IsCompetitionUnlocked(competition)) yield break;
+        LoadingOverlayUI.ShowSpinner("CREATING CHAMPIONSHIP...");
+        yield return null;
         LeagueSeason.StartNew(competition, PlayerTeamName());
         if (standingsOverlay == null) standingsOverlay = BuildScreenOverlay("Overlay_STANDINGS");
         RectTransform sheet = standingsOverlay.transform.Find("Sheet") as RectTransform;
@@ -1423,6 +1443,7 @@ public class NavigationManager : MonoBehaviour
         compTab = 0;
         BuildStandingsContent(sheet);
         ShowOverlay(standingsOverlay);
+        LoadingOverlayUI.HideSpinner();
     }
 
     void OpenPreMatch()
@@ -1471,7 +1492,7 @@ public class NavigationManager : MonoBehaviour
 
         MatchPresentationContext.SetFixture(s.competitionIndex, s.teams[s.PlayerIndex], s.teams[s.NextOpponent]);
 
-        SceneManager.LoadScene(MatchScene);
+        LoadingOverlayUI.LoadScene(MatchScene, false, "PREPARING MATCH...");
     }
 
     void BuildStandingsContent(Transform sheet)

@@ -444,7 +444,7 @@ public sealed class WorldCupUI : MonoBehaviour
         WorldCupSeason season = WorldCupSeason.Current;
         if (season == null || season.NextOpponent < 0) return;
         MatchPresentationContext.SetWorldCupFixture(season.selectedCountry, season.NextOpponentName);
-        SceneManager.LoadScene(NavigationManager.MatchScene);
+        LoadingOverlayUI.LoadScene(NavigationManager.MatchScene, false, "PREPARING WORLD CUP MATCH...");
     }
 
     void RequestRestart()

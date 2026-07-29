@@ -119,7 +119,7 @@ public class MatchResultUI : MonoBehaviour
     static void LoadScene(string sceneName)
     {
         Time.timeScale = 1f; // the match end froze time — never carry that into the next scene
-        SceneManager.LoadScene(sceneName);
+        LoadingOverlayUI.LoadScene(sceneName, false, "LOADING...");
     }
 
     static void ContinueAfterResult()

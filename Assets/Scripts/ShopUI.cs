@@ -743,7 +743,9 @@ public class ShopUI : MonoBehaviour
     // Fake ad: ~0.8s "loading" pause, then the reward. TODO(ads): replace with the real SDK call.
     IEnumerator FakeAdThen(Action grant)
     {
+        LoadingOverlayUI.ShowSpinner("LOADING VIDEO...");
         yield return new WaitForSecondsRealtime(0.8f);
+        LoadingOverlayUI.HideSpinner();
         grant?.Invoke();
     }
 

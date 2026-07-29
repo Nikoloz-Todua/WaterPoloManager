@@ -82,7 +82,7 @@ public class QuarterBreakUI : MonoBehaviour
         // Prefer a clean return to the hub if that scene exists in the build; otherwise quit.
         if (Application.CanStreamedLevelBeLoaded("HubScene"))
         {
-            SceneManager.LoadScene("HubScene");
+            LoadingOverlayUI.LoadScene("HubScene", false, "RETURNING TO HUB...");
             return;
         }
 #if UNITY_EDITOR

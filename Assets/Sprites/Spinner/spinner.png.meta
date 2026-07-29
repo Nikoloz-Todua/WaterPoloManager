@@ -1,0 +1,596 @@
+fileFormatVersion: 2
+guid: ced452cad5bbab54986d2edbb7ba3225
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: -6019722226161093732
+    second: spinner_0
+  - first:
+      213: -5134952779202485544
+    second: spinner_1
+  - first:
+      213: -5726398647286544521
+    second: spinner_2
+  - first:
+      213: 3167318411406360526
+    second: spinner_3
+  - first:
+      213: 1045432808422478720
+    second: spinner_4
+  - first:
+      213: -9091927987733010543
+    second: spinner_5
+  - first:
+      213: 275820409204642176
+    second: spinner_6
+  - first:
+      213: 7924525843249450009
+    second: spinner_7
+  - first:
+      213: 13394231154067341
+    second: spinner_8
+  - first:
+      213: -3135066868991833832
+    second: spinner_9
+  - first:
+      213: -6077835701921201856
+    second: spinner_10
+  - first:
+      213: 969604631075248793
+    second: spinner_11
+  - first:
+      213: 2213925736002815972
+    second: spinner_12
+  - first:
+      213: 3856333286445033708
+    second: spinner_13
+  - first:
+      213: -1139146528852949914
+    second: spinner_14
+  - first:
+      213: -7066740514562807730
+    second: spinner_15
+  - first:
+      213: -5416236832617920711
+    second: spinner_16
+  - first:
+      213: -5039562215045001617
+    second: spinner_17
+  - first:
+      213: -2388183920503020957
+    second: spinner_18
+  - first:
+      213: -2313835063173629978
+    second: spinner_19
+  - first:
+      213: 8350642465358856328
+    second: spinner_20
+  - first:
+      213: 292573517260001871
+    second: spinner_21
+  - first:
+      213: -7528775256086342702
+    second: spinner_22
+  - first:
+      213: 2469280566106422780
+    second: spinner_23
+  - first:
+      213: 4131770425941605755
+    second: spinner_24
+  - first:
+      213: -7333659562195000751
+    second: spinner_25
+  - first:
+      213: -1629266557743331135
+    second: spinner_26
+  - first:
+      213: -5500926606279319291
+    second: spinner_27
+  - first:
+      213: -6489329796649377480
+    second: spinner_28
+  - first:
+      213: -5531412637348412358
+    second: spinner_29
+  - first:
+      213: -8906146765428671202
+    second: spinner_30
+  - first:
+      213: -5456723970409929814
+    second: spinner_31
+  - first:
+      213: -6168636267729347324
+    second: spinner_32
+  - first:
+      213: 2719861577492637326
+    second: spinner_33
+  - first:
+      213: 1560851491521795815
+    second: spinner_34
+  - first:
+      213: 7094720476340514415
+    second: spinner_35
+  - first:
+      213: 1811035740725892083
+    second: spinner_36
+  - first:
+      213: 8167863827205557807
+    second: spinner_37
+  - first:
+      213: 3970827829391064170
+    second: spinner_38
+  - first:
+      213: -1975948638455640144
+    second: spinner_39
+  - first:
+      213: -7440653105538729965
+    second: spinner_40
+  - first:
+      213: 2938736756960122256
+    second: spinner_41
+  - first:
+      213: -8866303976402293612
+    second: spinner_42
+  - first:
+      213: 3542220922582777042
+    second: spinner_43
+  - first:
+      213: 443933725093148901
+    second: spinner_44
+  - first:
+      213: 2674626151089337741
+    second: spinner_45
+  - first:
+      213: -5817507875952876688
+    second: spinner_46
+  - first:
+      213: 3650498811656220947
+    second: spinner_47
+  - first:
+      213: -5284201166301099499
+    second: spinner_48
+  - first:
+      213: -4837768055302843947
+    second: spinner_49
+  - first:
+      213: 8968048453065348089
+    second: spinner_50
+  - first:
+      213: -6192386047536021305
+    second: spinner_51
+  - first:
+      213: 3840968722499694030
+    second: spinner_52
+  - first:
+      213: -5837506239576446697
+    second: spinner_53
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 100
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Android
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: WebGL
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: iOS
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: spinner_0
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 518
+        width: 238
+        height: 258
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: c93f4277786a57ca0800000000000000
+      internalID: -6019722226161093732
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: spinner_1
+      rect:
+        serializedVersion: 2
+        x: 238
+        y: 518
+        width: 238
+        height: 258
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 8d22b3947abfcb8b0800000000000000
+      internalID: -5134952779202485544
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: spinner_2
+      rect:
+        serializedVersion: 2
+        x: 476
+        y: 518
+        width: 238
+        height: 258
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 777453225ceb780b0800000000000000
+      internalID: -5726398647286544521
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: spinner_3
+      rect:
+        serializedVersion: 2
+        x: 714
+        y: 518
+        width: 238
+        height: 258
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: ecf3e62605394fb20800000000000000
+      internalID: 3167318411406360526
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: spinner_4
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 260
+        width: 238
+        height: 258
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 0839f8ea99f128e00800000000000000
+      internalID: 1045432808422478720
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: spinner_5
+      rect:
+        serializedVersion: 2
+        x: 238
+        y: 260
+        width: 238
+        height: 258
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 197edbf8aabf2d180800000000000000
+      internalID: -9091927987733010543
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: spinner_6
+      rect:
+        serializedVersion: 2
+        x: 476
+        y: 260
+        width: 238
+        height: 258
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 08112786339e3d300800000000000000
+      internalID: 275820409204642176
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: spinner_7
+      rect:
+        serializedVersion: 2
+        x: 714
+        y: 260
+        width: 238
+        height: 258
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 91c494cb44299fd60800000000000000
+      internalID: 7924525843249450009
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: spinner_8
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 2
+        width: 238
+        height: 258
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: d874af57bf59f2000800000000000000
+      internalID: 13394231154067341
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: spinner_9
+      rect:
+        serializedVersion: 2
+        x: 238
+        y: 2
+        width: 238
+        height: 258
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 81945aefa410e74d0800000000000000
+      internalID: -3135066868991833832
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: spinner_10
+      rect:
+        serializedVersion: 2
+        x: 476
+        y: 2
+        width: 238
+        height: 258
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 041cccf71a037aba0800000000000000
+      internalID: -6077835701921201856
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: spinner_11
+      rect:
+        serializedVersion: 2
+        x: 714
+        y: 2
+        width: 238
+        height: 258
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 99a50d7564ab47d00800000000000000
+      internalID: 969604631075248793
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 5e97eb03825dee720800000000000000
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries:
+      - key: SpriteEditor.SliceSettings
+        value: '{"sliceOnImport":false,"gridCellCount":{"x":4.0,"y":3.0},"gridSpriteSize":{"x":238.0,"y":258.0},"gridSpriteOffset":{"x":0.0,"y":0.0},"gridSpritePadding":{"x":0.0,"y":0.0},"pivot":{"x":0.5,"y":0.5},"pivotPixels":{"x":0.0,"y":0.0},"autoSlicingMethod":0,"spriteAlignment":0,"pivotUnitMode":0,"slicingType":2,"keepEmptyRects":false,"isAlternate":false}'
+    nameFileIdTable:
+      spinner_0: -6019722226161093732
+      spinner_1: -5134952779202485544
+      spinner_10: -6077835701921201856
+      spinner_11: 969604631075248793
+      spinner_2: -5726398647286544521
+      spinner_3: 3167318411406360526
+      spinner_4: 1045432808422478720
+      spinner_5: -9091927987733010543
+      spinner_6: 275820409204642176
+      spinner_7: 7924525843249450009
+      spinner_8: 13394231154067341
+      spinner_9: -3135066868991833832
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

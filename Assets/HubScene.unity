@@ -149,6 +149,19 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::NavigationManager
   fadeSeconds: 0.3
+  spinnerFrames:
+  - {fileID: -6019722226161093732, guid: ced452cad5bbab54986d2edbb7ba3225, type: 3}
+  - {fileID: -5134952779202485544, guid: ced452cad5bbab54986d2edbb7ba3225, type: 3}
+  - {fileID: -5726398647286544521, guid: ced452cad5bbab54986d2edbb7ba3225, type: 3}
+  - {fileID: 3167318411406360526, guid: ced452cad5bbab54986d2edbb7ba3225, type: 3}
+  - {fileID: 1045432808422478720, guid: ced452cad5bbab54986d2edbb7ba3225, type: 3}
+  - {fileID: -9091927987733010543, guid: ced452cad5bbab54986d2edbb7ba3225, type: 3}
+  - {fileID: 275820409204642176, guid: ced452cad5bbab54986d2edbb7ba3225, type: 3}
+  - {fileID: 7924525843249450009, guid: ced452cad5bbab54986d2edbb7ba3225, type: 3}
+  - {fileID: 13394231154067341, guid: ced452cad5bbab54986d2edbb7ba3225, type: 3}
+  - {fileID: -3135066868991833832, guid: ced452cad5bbab54986d2edbb7ba3225, type: 3}
+  - {fileID: -6077835701921201856, guid: ced452cad5bbab54986d2edbb7ba3225, type: 3}
+  - {fileID: 969604631075248793, guid: ced452cad5bbab54986d2edbb7ba3225, type: 3}
 --- !u!4 &441860069
 Transform:
   m_ObjectHideFlags: 0
