@@ -6,7 +6,7 @@ using UnityEngine.EventSystems;
 using TMPro;
 
 // Builds the entire main menu in code at runtime — canvas, background,
-// LOGIN / PLAY buttons, hover scaling, and a 1-second
+// LOG IN / PLAY AS A GUEST buttons, hover scaling, and a 1-second
 // fade-in. No prefabs, no Inspector wiring: drop it on an empty GameObject in
 // the MainMenu scene. The background loads from Assets/Resources/Sprites/background.png.
 public class MainMenuUI : MonoBehaviour
@@ -14,8 +14,8 @@ public class MainMenuUI : MonoBehaviour
     [SerializeField] private float fadeSeconds = 1f;
     [SerializeField] private Sprite[] spinnerFrames;
 
-    private static readonly Color PlayColor = new Color(0.01f, 0.62f, 0.91f, 0.96f);
-    private static readonly Color LoginColor = new Color(0.025f, 0.10f, 0.19f, 0.94f);
+    private static readonly Color LoginColor = new Color(0.01f, 0.58f, 1f, 0.98f);
+    private static readonly Color GuestColor = new Color(0.025f, 0.14f, 0.31f, 0.98f);
 
     private CanvasGroup fadeGroup;
     private Transform canvasRoot;
@@ -56,10 +56,12 @@ public class MainMenuUI : MonoBehaviour
             Debug.LogWarning("MainMenuUI: Sprites/background not found in a Resources folder.");
         }
 
-        // The new background already contains the logo. Keep the foreground intentionally clean.
-        MakeButton("PLAY", new Vector2(0f, -85f), true,
-                   () => LoadingOverlayUI.LoadScene("HubScene", true, "ENTERING THE POOL..."));
-        MakeButton("LOGIN", new Vector2(0f, -170f), false, () => { });
+        // Authentication is intentionally bypassed until Firebase lands. Both entry points use the
+        // exact same safe local-profile route, while preserving the future login choice in the UI.
+        UnityEngine.Events.UnityAction enterGame =
+            () => LoadingOverlayUI.LoadScene("HubScene", true, "ENTERING THE POOL...");
+        MakeButton("Log In", new Vector2(0f, -70f), true, enterGame);
+        MakeButton("Play as a Guest", new Vector2(0f, -158f), false, enterGame);
     }
 
     Image MakeImage(string name, Sprite sprite)
@@ -92,7 +94,7 @@ public class MainMenuUI : MonoBehaviour
         shadow.transform.SetParent(canvasRoot, false);
         RectTransform shadowRt = shadow.AddComponent<RectTransform>();
         shadowRt.anchorMin = shadowRt.anchorMax = new Vector2(0.5f, 0.5f);
-        shadowRt.sizeDelta = new Vector2(344f, 72f);
+        shadowRt.sizeDelta = new Vector2(372f, 76f);
         shadowRt.anchoredPosition = pos + new Vector2(0f, -7f);
         Image shadowImage = shadow.AddComponent<Image>();
         shadowImage.sprite = LoadingOverlayUI.RoundedSprite();
@@ -104,32 +106,61 @@ public class MainMenuUI : MonoBehaviour
         go.transform.SetParent(canvasRoot, false);
         RectTransform rt = go.AddComponent<RectTransform>();
         rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
-        rt.sizeDelta = new Vector2(344f, 72f);
+        rt.sizeDelta = new Vector2(372f, 76f);
         rt.anchoredPosition = pos;
 
         Image img = go.AddComponent<Image>();
         img.sprite = LoadingOverlayUI.RoundedSprite();
         img.type = Image.Type.Sliced;
-        img.color = primary ? PlayColor : LoginColor;
+        img.color = primary ? LoginColor : GuestColor;
         Outline outline = go.AddComponent<Outline>();
-        outline.effectColor = primary ? new Color(0.45f, 0.96f, 1f, 0.9f)
-                                      : new Color(0.12f, 0.72f, 0.92f, 0.75f);
+        outline.effectColor = primary ? new Color(0.54f, 0.96f, 1f, 0.92f)
+                                      : new Color(0.12f, 0.58f, 0.96f, 0.82f);
         outline.effectDistance = new Vector2(2f, -2f);
+
+        Image gloss = new GameObject("TopGloss").AddComponent<Image>();
+        gloss.transform.SetParent(go.transform, false);
+        gloss.sprite = LoadingOverlayUI.RoundedSprite();
+        gloss.type = Image.Type.Sliced;
+        gloss.color = new Color(1f, 1f, 1f, primary ? 0.24f : 0.13f);
+        gloss.raycastTarget = false;
+        RectTransform glossRt = gloss.rectTransform;
+        glossRt.anchorMin = new Vector2(0.04f, 0.56f);
+        glossRt.anchorMax = new Vector2(0.96f, 0.91f);
+        glossRt.offsetMin = glossRt.offsetMax = Vector2.zero;
+
+        Image edge = new GameObject("BottomEdge").AddComponent<Image>();
+        edge.transform.SetParent(go.transform, false);
+        edge.sprite = LoadingOverlayUI.RoundedSprite();
+        edge.type = Image.Type.Sliced;
+        edge.color = primary ? new Color(0f, 0.28f, 0.72f, 0.78f)
+                             : new Color(0f, 0.04f, 0.13f, 0.82f);
+        edge.raycastTarget = false;
+        RectTransform edgeRt = edge.rectTransform;
+        edgeRt.anchorMin = new Vector2(0.05f, 0f);
+        edgeRt.anchorMax = new Vector2(0.95f, 0f);
+        edgeRt.pivot = new Vector2(0.5f, 0f);
+        edgeRt.sizeDelta = new Vector2(0f, 6f);
+        edgeRt.anchoredPosition = new Vector2(0f, 3f);
 
         Button btn = go.AddComponent<Button>();
         btn.targetGraphic = img;
         btn.onClick.AddListener(onClick);
 
         // Crisp, widely tracked white type with a restrained aqua glow.
-        TextMeshProUGUI txt = MakeText("Label", label, 28f, FontStyles.Bold);
+        TextMeshProUGUI txt = MakeText("Label", label, primary ? 29f : 26f, FontStyles.Bold);
         txt.transform.SetParent(go.transform, false);
         RectTransform trt = txt.rectTransform;
         trt.anchorMin = Vector2.zero;
         trt.anchorMax = Vector2.one;
         trt.offsetMin = trt.offsetMax = Vector2.zero;
-        txt.characterSpacing = 4f;
-        txt.outlineWidth = 0.12f;
-        txt.outlineColor = new Color32(0, 80, 110, 230);
+        txt.characterSpacing = primary ? 3f : 1.5f;
+        txt.enableAutoSizing = true;
+        txt.fontSizeMin = 18f;
+        txt.fontSizeMax = primary ? 29f : 26f;
+        Shadow textShadow = txt.gameObject.AddComponent<Shadow>();
+        textShadow.effectColor = new Color(0f, 0.08f, 0.2f, 0.86f);
+        textShadow.effectDistance = new Vector2(0f, -2f);
 
         // Hover effect: grow to 1.05x on pointer enter, back to 1x on exit.
         EventTrigger trigger = go.AddComponent<EventTrigger>();

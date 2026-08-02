@@ -85,7 +85,7 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 | `GoalkeeperAnimationBuilder.cs` | Editor tool (Tools → Build Goalkeeper Animations). Builds 8 animation clips from goalkeeper_sheet.png frames, assigns them to GoalkeeperAnimation.controller states, wires DiveState int parameter and Any State transitions. Idempotent. |
 | `TouchControls.cs` | Runtime-built mobile touch UI (no prefabs), **singleton** (`Instance` + `JoystickAxis`, read by the keeper for its aim): virtual joystick bottom-left + **3 circular image buttons** bottom-right (`actionButtonSize`/`mainButtonSize` 270) that swap icon + behaviour with possession. **Attack** (we hold / loose): Sprint (top) / Shoot (bottom-right) / Pass (bottom-left). **Defense** (enemy holds): Switch (top) / Defend (bottom-right) / Block (bottom-left). Mode read each frame from `MatchContext.PossessingTeam` (==BotTeam → defense), SmoothStep fade-out→swap→fade-in (0.22s); icons from `Resources/Sprites/` (`sprint/shoot/pass/Defend/switch/block`). Attack actions feed `PlayerMovement.SetTouchInput` (merged with keyboard via `\|\|`); Switch rides `TouchSwitchDown`; Block → `TouchBlockSteal()`; Defend feeds a chase-the-carrier axis. **Player-keeper control:** while your own keeper holds the ball the 3 attack buttons + joystick route to the `Goalkeeper` (Shoot/Pass/Sprint) — the old single **PASS OUT** button is RETIRED. **Stamina HUD panel** above the joystick: `P#` (or "GK") + a green→yellow→red fill bar reading `PlayerMovement`/`Goalkeeper.StaminaPercent01` + `TeamManager.ActivePlayerIndex` (Lerp-smoothed; label pulses red below 20%). Press feedback = scale to 0.9x. Visible on mobile, or in Editor when `showInEditor`. |
 | `PoolLineFloat.cs` | Standalone gentle bob (±0.04u) + sway (±1.5°) for the 12 pool lane-line sprites; random phase/speed (0.6–0.9 Hz) per object; offsets from the Start pose so it never drifts. |
-| `MainMenuUI.cs` | MainMenu scene. Builds the whole main menu in code at runtime: canvas (1280x720), background + logo from `Assets/Resources/Sprites/`, PLAY/SETTINGS/QUIT buttons with hover scale + cyan-outline TMP labels, 1s fade-in, version footer. PLAY → **HubScene**. |
+| `MainMenuUI.cs` | MainMenu scene. Builds the whole launch screen in code at runtime: canvas (1280x720), background from `Assets/Resources/Sprites/`, and polished **Log In** (bright blue) / **Play as a Guest** (dark blue) entry buttons with hover scale and 1s fade-in. Firebase is not integrated yet, so both buttons intentionally use the same local-profile route → **HubScene**. |
 | `NavigationManager.cs` | HubScene. The whole hub built in code. **Top bar:** left = profile cluster (circular avatar tinted club-primary with the club CREST as its glyph + country "flag" dot + club name/XP/level — avatar OR name opens the My Club screen; settings/inbox/gifts icon buttons with real art (`settings/message/gifts-button.png`, 42px group at 95px pitch; labels are hover / 0.4s press-hold **tooltips** with a dark pill backing via the nested `IconTooltip` — no permanent captions) → stub settings panel + COMING SOON overlays; **FREE +100** watch-ad pill at x 660, 3/day via `AdWatchCap`), right = live gold/diamond with [+]. **Left column:** RANKING (coming soon) / SHOP (`ShopUI` overlay) / TEAM (`TeamScreenUI`) — 135/140/135px, rows at yOff −40 ± 140. **Right column:** FRIENDS 135 / CLUBS 150 (bigger box: its trimmed art is ~1.8:1 wide), same rows/offset as the left column → COMING SOON stubs (no online backend yet). ALL hub button art loads via the nested **`LoadTrimmedSprite`** (alpha-trim, needs `isReadable: 1` metas) because the source PNGs carry 10-60% transparent margins. **Bottom bar:** season pass (locked) + missions + **4 live post-match reward slots** (state from `PostMatchRewardManager`; pitch 84; Ready/Unlocking slots scale 1.18x + get `PackCardFX` float/shine; a slot filled by the last match scale-ins with overshoot on hub load via `ConsumeNewRewardSlot`) + PLAY → Game Mode overlay. Also hosts: Game Mode / Standings / Pre-Match / Club-customization overlays, the reward-slot unlock popup (odds table via shared `PackInfoPopup`), and `RefreshClubProfile()` (re-reads `RosterManager.Club` into the cluster). |
 | `PlayerData.cs` | **(Player data foundation, NEW)** ScriptableObject = one player CARD: `id`, `fullName`, `nation`, `position` (enum GK/CB/LW/RW/CF/LF/RF — enum order == starter-slot order), `overall` 0–100, a `Stats` struct (speed/shooting/passing/defense/stamina/goalKeeping 0–100), `rarity` (Common/Rare/Legendary → `RarityColor`), `portrait` (Sprite, null for now → UI draws a silhouette), `priceGold`, `isBot`. `[CreateAssetMenu]` (Create → Water Polo/Player). Static `ComputeOverall(stats,pos)` (GK leans on goalkeeping, field = outfield avg) shared by the generator + UpgradePlayer; `Clone()` so owned cards are mutated as runtime copies, never the source asset. PURELY data — never touched by the match. |
 | `PlayerDatabase.cs` | **(NEW)** Read-only player CATALOG: lazy C# singleton that `Resources.LoadAll`s every `PlayerData` under `Resources/Players/` into a dict by id (`Get`/`Has`/`AllPlayers`/`FirstOfPosition`/`Count`). No scene object. |
@@ -116,7 +116,7 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 | `MissionManager.cs` | **(NEW 2026-07)** Missions: plain C# singleton + `MissionsUI` (hub MISSIONS button → overlay; left tabs Newcomer/Daily/Weekly/Global Cup, right list with progress bars + CLAIM). Own JSON (missions.json). 3 real stats only — matches_played / matches_won / packs_opened — in 4 scopes: lifetime (Newcomer), UTC-day (Daily), 7-day (Weekly), season (Global Cup, follows SeasonPassManager's epoch). Stat hooks: MatchTimer.EndMatch + CardPack.OpenTierPack — no parallel tracking. Claims grant via `GrantReward` (the ONE reward funnel → RosterManager / CardPack) + 10 season XP. Red claim-ready badge on the hub missions button. |
 | `LeaderboardManager.cs` | **(NEW 2026-07)** League leaderboard: plain C# singleton + `RankingUI` (hub RANKING button). HONESTLY SIMULATED — 24 deterministic fake rivals per season (gamer-tag pool); only the PLAYER's points are real (+20 win / +5 loss from the EndMatch hook). 5-tier ladder IRON→DIAMOND; at season rollover (SeasonPassManager epoch) top 5 promote, rank 20+ demotes, prev result stored for "LAST WEEK". Player row always pinned at the bottom. Elite/World/Friends/Country tabs = locked COMING SOON stubs (need real accounts — NOT fake data). Own JSON (leaderboard.json). |
 | `SeasonPassManager.cs` | **(NEW 2026-07)** THE canonical season: 14-day epoch in seasonpass.json drives the hub "SEASON ENDS IN" countdown (now real + tappable → this screen), Global Cup mission scope, league rollover, and the shop EVENT badges. 16 tiers × 100 XP; XP from matches (+25 win / +10 loss, EndMatch hook) + mission claims (+10). `SeasonPassUI`: Gold Pass card (ACTIVATE = 500 gems PLACEHOLDER price, via SpendDiamonds), tier/XP progress, horizontal 16-tier track — free row always collectible, gold row padlocked until activated, COLLECT grants via the shared reward funnel. Free Pass "card" is just a note — the free row IS the free pass (no duplicate track). |
-| `ClubCustomizationUI.cs` | **(NEW 2026-07)** The "My Club" screen (code-built, hosted in NavigationManager's club overlay; opened from the hub avatar/name). Crest picker (8 PROCEDURAL shapes — real crest art still needed), primary/secondary color swatches (10 preset), country picker (12 text chips, colored-dot placeholder until flag art exists), TMP_InputField rename (max 16 chars), live preview, APPLY → `RosterManager.Club`/`SaveClub()` + `nav.RefreshClubProfile()`. Statics shared with the hub: `CrestSprite(id)`, `ParseHex`, `CountryColor`. |
+| `ClubCustomizationUI.cs` | The code-built My Club screen hosted by NavigationManager. It has the 20-template tintable crest browser (18 currently valid), three 14-colour crest palettes, player cap/swimwear colours, nine-character name, and a full **36-country flag selector**: inline `< Country >` arrows plus a `v` opener into a scrollable modal; the active country has a green check and a new selection saves immediately. Crest/name changes still save through the existing `RosterManager.Club` / `roster.json` contract. |
 
 | `PoolTheme.cs` | **(NEW 2026-07)** Data-driven pool theming: `PoolTheme` (id, background sprite path, water tint, ambient-layer defs) + static `PoolThemes` catalog (CardPack-style registry; `Get(id)` / `ForDivision(competitionIndex)`) + `PoolThemeApplier` (self-bootstrapping like StaminaSystem: on scene load, finds "PoolWater" and applies overrides; hub scenes no-op). ONE real theme ("classic") = the current art expressed as no-overrides, all 4 divisions map to it. Future themed pools = register an entry + map the division; ambient ANIMATION plugs into the spawned "PoolThemeAmbient" group later. |
 
@@ -689,14 +689,14 @@ Both in `Assets/Sprites/Players/Animations/`.
 - If onboarding complete, after loading screen go straight to Main Menu. (No onboarding/menu built yet, but the "skip to game" idea is trivial once menus exist.)
 
 ## B6. Main Screen Layout 🟡 PARTIAL (main menu + hub navigation shell DONE; real data/economy not)
-- ✅ **DONE (June 2026):** `MainMenu` scene with `MainMenuUI.cs` — entire menu built in code at runtime (no prefabs): full-screen canvas (1280x720 scale-with-screen), background + logo from `Assets/Resources/Sprites/` via `Resources.Load<Sprite>`, PLAY / SETTINGS / QUIT buttons (navy, white bold TMP with cyan outline, 1.05x hover scale), 1s fade-in, "Water Polo Manager v0.1" footer. PLAY loads **HubScene**; SETTINGS is a stub (logs "coming soon"); QUIT quits.
+- ✅ **DONE (updated 2026-08-03):** `MainMenu` scene with `MainMenuUI.cs` — full-screen code-built launch screen with polished **Log In** and **Play as a Guest** choices. Both intentionally bypass authentication and load **HubScene** until Firebase is integrated.
 - ✅ **DONE (June 2026, shell only):** `HubScene` + `NavigationManager.cs` — full navigation shell for B6–B15: persistent top bar (logo placeholder, team name, gold/diamond displays, settings gear stub) + bottom nav with 5 tabs, Career/Team/Transfers/My Club/Challenges placeholder screens, 0.3s fades. **All numbers are hardcoded placeholders; no economy, saving, or real data.**
 - **Still future (the full vision):**
 - **Top horizontal tab (always visible):** Settings icon + social link icon; Claim Rewards; Diamond currency (diamond + cyan bg + number); Gold currency (coin + number); Club logo + Team name.
 - **Large buttons:** Career; Live ("Coming Soon", inactive).
 - **Smaller buttons:** TEAM, TRANSFERS, My Club, Challenges.
 
-## B7. Settings Screen 🟡 PARTIAL (hub gear opens a minimal stub panel — title + "nothing to configure yet" + OK; real options not built)
+## B7. Settings Screen 🟡 PARTIAL (hub gear now has a working persisted English/Georgian/Russian language selector; sound/account/info options remain future)
 - Top tab stays; content area swaps; back arrow appears.
 - Options: (1) Language `< >` instant — English/Russian/Georgian (+more). (2) Bot difficulty `< >` — Medium/Hard, default Medium. (3) Account — Log In/Out/Sign Up/Delete (Apple or Google Play); progress saved & synced across devices (Firebase planned). (4) Info links — FAQs, Legal Notices, ToS, System Info (external links).
 
@@ -709,7 +709,7 @@ Both in `Assets/Sprites/Players/Animations/`.
 - **Gold:** coin + number; buy normal/good players, upgrade pool, upgrade players, buy caps/swimwear.
 - Both have **+** → shop popup (real-money items/players via Apple/Google billing); purchase adds item to game.
 
-## B10. Club Logo / Team Name Popup 🟡 MOSTLY DONE (2026-07: full My Club customization screen — `ClubCustomizationUI` — crest/colors/country/rename, persisted in `Roster.club`, hub cluster updates live; crests + flags are procedural placeholders until real art)
+## B10. Club Logo / Team Name Popup 🟡 MOSTLY DONE (`ClubCustomizationUI`: template crest/three colours/player colours/name plus all 36 real country flags; country changes save immediately and the hub cluster shows the real selected flag. Records/highlights remain future.)
 - Manager standing, large club logo, overall team rating, changeable nationality flag, **Highlights** (saved goals), **Records** (games, W/L/D, goals for/against, biggest win/loss, win %, trophies).
 
 ## B11. Career / Championship Screen ✅ CORE COMPLETE (2026-07-26)
@@ -2383,3 +2383,55 @@ This corrects the 2026-07-26c interpretation after an actual visual report from 
 - PoolB assertions confirmed `GEO` plus the opponent tag, both HUD flags, both quarter-break flags,
   result flags, and a real result advancing all 18 fixtures in its group round.
 - Unity logged `CODEX WORLD CUP PLAY MODE CHECK PASSED`; any pre-existing World Cup save was restored.
+
+---
+
+## SESSION LOG — 2026-08-03 (authentication-skip launch, button catalog/localization, profile country selector)
+
+### Launch screen
+
+- `MainMenuUI` now presents exactly two polished choices: bright-blue **Log In** and dark-blue
+  **Play as a Guest**, both with layered gloss/edge/shadow treatment and crisp auto-sized white TMP.
+- Firebase remains unintegrated, so both choices intentionally call the same loading-overlay route
+  into HubScene. The Log In button is no longer a dead click.
+
+### Button asset migration and localization foundation
+
+- Added `ButtonSpriteCatalog` plus the revisioned `ButtonSpriteCatalogBuilder`. The source sprites
+  remain exactly in `Assets/Sprites/Buttons`; the Resources catalog contains only direct references
+  and editor-measured alpha bounds, so runtime/player builds never use `AssetDatabase` or depend on
+  the deleted `Assets/Resources/Sprites` button copies.
+- All 26 supplied button assets are registered. Hub/settings/message/gifts/back/info/pause, main hub
+  buttons, touch actions, Team position filters, and generic code-built button helpers now resolve
+  through the new catalog. The catalog keeps the old Resources lookup only as a missing-catalog
+  fallback; removed Resources art is not a runtime dependency.
+- `Button1` is now the universal background for generic labelled actions across NavigationManager,
+  Team, Shop, Missions, Ranking, Season Pass, Pause, quarter-break, and result UI. The Team tactic
+  buttons now draw FORMATIONS / PLAYERS / SUBSTITUTIONS as live TMP instead of baked image text.
+- `UILocalization` provides persisted English/Georgian/Russian lookup and a live Settings selector.
+  `LocalizedButtonText` uses TMP auto-sizing plus bounded horizontal expansion; specialty art uses
+  lower text zones so protruding symbols remain clear. The supplied Play art still contains English
+  lettering, so translated languages automatically swap that background to clean `Button1`.
+
+### Profile country flow
+
+- Replaced the old 12-code coloured-dot grid with an inline `<  flag  Country  >` selector and a
+  separate `v` button.
+- The dropdown opens a dimmed, scrollable three-column modal containing all 36 exact CountryCatalog
+  countries and real flags from `Assets/Sprites/Countries`. The active row is green with a drawn
+  check badge. Choosing a row saves `ClubProfile.countryId` immediately, closes the modal, and
+  refreshes the hub badge; left/right arrows also cycle and persist immediately.
+- Legacy three-letter country saves migrate to exact CountryCatalog names. The hub avatar badge now
+  shows the real saved flag rather than a generated colour dot.
+
+### Verification
+
+- Button catalog audit: **26/26 entries have matching source PNGs**.
+- Country asset audit: **36/36 requested flag files present**.
+- `dotnet build Assembly-CSharp.csproj --no-restore` → **0 warnings, 0 errors**.
+- `dotnet build Assembly-CSharp-Editor.csproj --no-restore` → **0 warnings, 0 errors**.
+- `git diff --check` clean apart from informational LF→CRLF notices.
+- No scene objects or Inspector slots were added. Focused Play Mode visual verification is still
+  required because the two already-running Unity processes are parked on `Temp/__Backupscenes/0.backup`
+  and are not importing the project. On the next normal editor refresh, the revision-0 bootstrap
+  catalog rebuilds automatically (or run **Tools → Water Polo → Rebuild Button Sprite Catalog**).

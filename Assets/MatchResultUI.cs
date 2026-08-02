@@ -170,27 +170,14 @@ public class MatchResultUI : MonoBehaviour
         rt.anchoredPosition = pos;
 
         Image img = go.AddComponent<Image>();
+        img.sprite = LocalizedButtonStyler.UniversalSprite();
         img.color = ButtonColor;
 
         Button btn = go.AddComponent<Button>();
         btn.targetGraphic = img;
         btn.onClick.AddListener(onClick);
 
-        GameObject t = new GameObject("Label");
-        t.transform.SetParent(go.transform, false);
-        TextMeshProUGUI txt = t.AddComponent<TextMeshProUGUI>();
-        txt.text = label;
-        txt.fontSize = 28f;
-        txt.fontStyle = FontStyles.Bold;
-        txt.color = Color.white;
-        txt.alignment = TextAlignmentOptions.Center;
-        txt.raycastTarget = false;
-        txt.outlineWidth = 0.2f;
-        txt.outlineColor = new Color32(0, 255, 255, 255); // cyan, same style as MainMenuUI
-        RectTransform trt = txt.rectTransform;
-        trt.anchorMin = Vector2.zero;
-        trt.anchorMax = Vector2.one;
-        trt.offsetMin = trt.offsetMax = Vector2.zero;
+        LocalizedButtonStyler.AddLabel(go.transform, label, 28f, new Vector2(300f, 70f));
     }
 
     IEnumerator FadeIn()

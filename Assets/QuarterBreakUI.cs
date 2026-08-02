@@ -270,7 +270,8 @@ public class QuarterBreakUI : MonoBehaviour
         rt.anchoredPosition = pos;
 
         Image img = go.AddComponent<Image>();
-        img.sprite = MakeRoundedRectSprite(280, 66, 20);
+        img.sprite = LocalizedButtonStyler.UniversalSprite();
+        if (img.sprite == null) img.sprite = MakeRoundedRectSprite(280, 66, 20);
         img.type = Image.Type.Simple;
         img.color = ButtonColor;
 
@@ -278,20 +279,7 @@ public class QuarterBreakUI : MonoBehaviour
         btn.targetGraphic = img;
         btn.onClick.AddListener(onClick);
 
-        GameObject t = new GameObject("Label");
-        t.transform.SetParent(go.transform, false);
-        TextMeshProUGUI txt = t.AddComponent<TextMeshProUGUI>();
-        txt.text = label;
-        txt.fontSize = 28f;
-        txt.fontStyle = FontStyles.Bold;
-        txt.color = Color.white;
-        txt.alignment = TextAlignmentOptions.Center;
-        txt.raycastTarget = false;
-        txt.outlineWidth = 0.2f;
-        txt.outlineColor = new Color32(0, 255, 255, 255); // cyan, same style as MainMenuUI / result screen
-        RectTransform trt = txt.rectTransform;
-        trt.anchorMin = Vector2.zero; trt.anchorMax = Vector2.one;
-        trt.offsetMin = trt.offsetMax = Vector2.zero;
+        LocalizedButtonStyler.AddLabel(go.transform, label, 28f, new Vector2(280f, 66f));
     }
 
     IEnumerator FadeIn()

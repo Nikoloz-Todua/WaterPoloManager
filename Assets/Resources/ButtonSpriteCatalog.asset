@@ -1,0 +1,94 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8c4a674753a0427ca3b7b45c2002ac04, type: 3}
+  m_Name: ButtonSpriteCatalog
+  m_EditorClassIdentifier: 
+  buildRevision: 0
+  buttons:
+  - key: Ad-Button
+    sprite: {fileID: 21300000, guid: 957e41318bd5ac14490edde05129162b, type: 3}
+    visibleRect01: {x: 0, y: 0, width: 1, height: 1}
+  - key: Back-Button
+    sprite: {fileID: 21300000, guid: 1b97b319425d5854495fe2b79add0131, type: 3}
+    visibleRect01: {x: 0, y: 0, width: 1, height: 1}
+  - key: Button1
+    sprite: {fileID: 21300000, guid: 33384364e4cb99449b2314654aa09a21, type: 3}
+    visibleRect01: {x: 0, y: 0, width: 1, height: 1}
+  - key: Center-Button
+    sprite: {fileID: 21300000, guid: 4486a5ceaab862948bde12db7ab2af8f, type: 3}
+    visibleRect01: {x: 0, y: 0, width: 1, height: 1}
+  - key: Clubs-Button
+    sprite: {fileID: 21300000, guid: 25a93aa5d3b8956438cfdc7cf4c0bff4, type: 3}
+    visibleRect01: {x: 0, y: 0, width: 1, height: 1}
+  - key: Defend-Button
+    sprite: {fileID: 21300000, guid: fd07faf00f1eeff488d3c93e15e9f8f4, type: 3}
+    visibleRect01: {x: 0, y: 0, width: 1, height: 1}
+  - key: Defender-Button
+    sprite: {fileID: 21300000, guid: c5024356f87b78e41beb208b1b13f226, type: 3}
+    visibleRect01: {x: 0, y: 0, width: 1, height: 1}
+  - key: Friends-Button
+    sprite: {fileID: 21300000, guid: 40896f43ead25744b9e41d415b77ebc0, type: 3}
+    visibleRect01: {x: 0, y: 0, width: 1, height: 1}
+  - key: Gifts-Button
+    sprite: {fileID: 21300000, guid: 93fb40f817b24174aadd5aab162bc7d1, type: 3}
+    visibleRect01: {x: 0, y: 0, width: 1, height: 1}
+  - key: I-Button
+    sprite: {fileID: 21300000, guid: dacc9496d3a09944ab78e3c132a27f31, type: 3}
+    visibleRect01: {x: 0, y: 0, width: 1, height: 1}
+  - key: Keeper-Button
+    sprite: {fileID: 21300000, guid: 78925462783d2b64b9bc73ee5e32dd01, type: 3}
+    visibleRect01: {x: 0, y: 0, width: 1, height: 1}
+  - key: Lock-Button
+    sprite: {fileID: 21300000, guid: b576bdc5619a96348a3a1f9f65e62a07, type: 3}
+    visibleRect01: {x: 0, y: 0, width: 1, height: 1}
+  - key: Message-Button
+    sprite: {fileID: 21300000, guid: 0bf5ae7569ed0e44883278de21d4f64c, type: 3}
+    visibleRect01: {x: 0, y: 0, width: 1, height: 1}
+  - key: Missions-Button
+    sprite: {fileID: 21300000, guid: 6c4e8081fc8c8374abf4e6184d59b6be, type: 3}
+    visibleRect01: {x: 0, y: 0, width: 1, height: 1}
+  - key: Pass-Button
+    sprite: {fileID: 21300000, guid: af938e5b50879644d9a32bd50db855d6, type: 3}
+    visibleRect01: {x: 0, y: 0, width: 1, height: 1}
+  - key: Pause-Button
+    sprite: {fileID: 21300000, guid: fbefec5943cdcee4ea9a76e20f7a5c63, type: 3}
+    visibleRect01: {x: 0, y: 0, width: 1, height: 1}
+  - key: Play-Button
+    sprite: {fileID: 21300000, guid: 6af65d3675d5404499a370388e51db97, type: 3}
+    visibleRect01: {x: 0, y: 0, width: 1, height: 1}
+  - key: Ranking-Button
+    sprite: {fileID: 21300000, guid: 06951133abc972b4ab43060419e57ab6, type: 3}
+    visibleRect01: {x: 0, y: 0, width: 1, height: 1}
+  - key: Season-Pass
+    sprite: {fileID: 21300000, guid: 0d0d6e3f696df9d409a3d7919ecae146, type: 3}
+    visibleRect01: {x: 0, y: 0, width: 1, height: 1}
+  - key: Settings-Button
+    sprite: {fileID: 21300000, guid: 85f6d4cee074970409316caefd2c01b7, type: 3}
+    visibleRect01: {x: 0, y: 0, width: 1, height: 1}
+  - key: Shoot-Button
+    sprite: {fileID: 21300000, guid: 1764f7330add7154b840b4a8a87d2c7b, type: 3}
+    visibleRect01: {x: 0, y: 0, width: 1, height: 1}
+  - key: Shop-Button
+    sprite: {fileID: 21300000, guid: c79703b0b09cadd4592358c59fc6b805, type: 3}
+    visibleRect01: {x: 0, y: 0, width: 1, height: 1}
+  - key: Sprint-Button
+    sprite: {fileID: 21300000, guid: b07f39e14158d3f46957091fc56a54f2, type: 3}
+    visibleRect01: {x: 0, y: 0, width: 1, height: 1}
+  - key: Switch-Button
+    sprite: {fileID: 21300000, guid: 7049582d9cad7654e8ba901fd16c7951, type: 3}
+    visibleRect01: {x: 0, y: 0, width: 1, height: 1}
+  - key: Team-Button
+    sprite: {fileID: 21300000, guid: d09e86ca89834554388fd8902a732ec6, type: 3}
+    visibleRect01: {x: 0, y: 0, width: 1, height: 1}
+  - key: Wing-Button
+    sprite: {fileID: 21300000, guid: 481b74b560bc49041a6e6f87bb4dce22, type: 3}
+    visibleRect01: {x: 0, y: 0, width: 1, height: 1}

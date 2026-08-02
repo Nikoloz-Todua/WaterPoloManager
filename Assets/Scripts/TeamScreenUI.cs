@@ -54,7 +54,7 @@ public class TeamScreenUI : MonoBehaviour
     static readonly string[] PosName = { "GK", "CB", "LW", "RW", "CF", "LF", "RF" };
     static readonly string[] TabLabel = { "WINGS", "CENTER", "DEFENSE", "GK" };
     static readonly string[] TabSprite =
-        { "Sprites/wings-button", "Sprites/center-button", "Sprites/defender-button", "Sprites/goalkeeper-button" };
+        { "Wing-Button", "Center-Button", "Defender-Button", "Keeper-Button" };
 
     private Transform root;
     private NavigationManager nav;
@@ -157,9 +157,9 @@ public class TeamScreenUI : MonoBehaviour
 
         // Three stacked sprite buttons, lowered to leave empty space above for future content.
         // FORMATIONS is bigger (220x80); the other two stay 200x70. All → COMING SOON.
-        MakeSpriteLabelButton(p, "Sprites/formations-button", "FORMATIONS", new Vector2(0f, 20f), new Vector2(220f, 80f), ShowComingSoon);
-        MakeSpriteLabelButton(p, "Sprites/players-button", "PLAYERS", new Vector2(0f, -55f), new Vector2(200f, 70f), ShowComingSoon);
-        MakeSpriteLabelButton(p, "Sprites/substitutions-button", "SUBSTITUTIONS", new Vector2(0f, -130f), new Vector2(200f, 70f), ShowComingSoon);
+        MakeSpriteLabelButton(p, "Button1", "FORMATIONS", new Vector2(0f, 20f), new Vector2(220f, 80f), ShowComingSoon);
+        MakeSpriteLabelButton(p, "Button1", "PLAYERS", new Vector2(0f, -55f), new Vector2(200f, 70f), ShowComingSoon);
+        MakeSpriteLabelButton(p, "Button1", "SUBSTITUTIONS", new Vector2(0f, -130f), new Vector2(200f, 70f), ShowComingSoon);
     }
 
     void MakeSpriteLabelButton(Transform parent, string spritePath, string label, Vector2 pos,
@@ -171,7 +171,7 @@ public class TeamScreenUI : MonoBehaviour
         SetRect(rt, new Vector2(0.5f, 0.5f), pos, size);
 
         Image img = go.AddComponent<Image>();
-        img.sprite = LoadSprite(spritePath);
+        img.sprite = ButtonSpriteCatalog.SpriteFor("Button1");
         img.preserveAspect = true;
         if (img.sprite == null) { img.sprite = Rounded(); img.type = Image.Type.Sliced; img.color = Navy; }
 
@@ -179,7 +179,7 @@ public class TeamScreenUI : MonoBehaviour
         btn.targetGraphic = img;
         if (onClick != null) btn.onClick.AddListener(onClick);
 
-        // No text label drawn on top — the button sprites already have their text baked in.
+        LocalizedButtonStyler.AddLabel(go.transform, label, Mathf.Min(20f, size.y * 0.30f), size);
         AddHover(go);
     }
 
@@ -627,22 +627,15 @@ public class TeamScreenUI : MonoBehaviour
         SetRect(rt, anchor, pos, size);
 
         Image frame = go.AddComponent<Image>();
-        frame.sprite = Rounded(); frame.type = Image.Type.Sliced; frame.color = border;
-
-        Image fill = NewImage("Fill", go.transform);
-        fill.sprite = Rounded(); fill.type = Image.Type.Sliced; fill.color = new Color(0.05f, 0.1f, 0.25f, 1f);
-        fill.raycastTarget = false;
-        RectTransform frt = fill.rectTransform;
-        frt.anchorMin = Vector2.zero; frt.anchorMax = Vector2.one;
-        frt.offsetMin = new Vector2(3f, 3f); frt.offsetMax = new Vector2(-3f, -3f);
+        frame.sprite = ButtonSpriteCatalog.SpriteFor("Button1");
+        if (frame.sprite == null) { frame.sprite = Rounded(); frame.type = Image.Type.Sliced; }
+        frame.color = Color.Lerp(Color.white, border, 0.24f);
 
         Button btn = go.AddComponent<Button>();
         btn.targetGraphic = frame;
         if (onClick != null) btn.onClick.AddListener(onClick);
 
-        TextMeshProUGUI txt = MakeText(go.transform, label, fontSize, new Vector2(0.5f, 0.5f),
-                                       Vector2.zero, Vector2.zero, Color.white, TextAlignmentOptions.Center);
-        Stretch(txt.rectTransform);
+        LocalizedButtonStyler.AddLabel(go.transform, label, fontSize, size);
 
         AddHover(go);
         return btn;
@@ -706,9 +699,7 @@ public class TeamScreenUI : MonoBehaviour
     static Sprite BackButtonSprite()
     {
         if (backButtonSprite != null) return backButtonSprite;
-        Texture2D tex = Resources.Load<Texture2D>("Sprites/back-button");
-        if (tex == null) return null;
-        backButtonSprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f), 100f);
+        backButtonSprite = ButtonSpriteCatalog.SpriteFor("Back-Button");
         return backButtonSprite;
     }
 
@@ -742,7 +733,8 @@ public class TeamScreenUI : MonoBehaviour
 
     static Sprite LoadSprite(string path)
     {
-        Sprite s = Resources.Load<Sprite>(path);
+        Sprite s = ButtonSpriteCatalog.SpriteForLegacyPath(path);
+        if (s == null) s = Resources.Load<Sprite>(path);
         if (s == null)
             Debug.LogWarning("TeamScreenUI: sprite not found at Resources/" + path +
                              " — check the file exists there and its Texture Type is 'Sprite (2D and UI)'.");

@@ -32,5 +32,5 @@ public class ClubProfile
     public string tertiaryColorHex = "F9A825";
     public string capColorHex = "D90D1A";       // player-team palette-swap cap color
     public string swimwearColorHex = "FFFFFF";  // player-team palette-swap swimwear color
-    public string countryId = "";               // e.g. "GEO"; "" = not chosen yet
+    public string countryId = "";               // exact CountryCatalog name; legacy 3-letter ids migrate in UI
 }

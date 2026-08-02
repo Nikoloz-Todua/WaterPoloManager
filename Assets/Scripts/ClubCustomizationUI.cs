@@ -34,8 +34,14 @@ public class ClubCustomizationUI : MonoBehaviour
         "NAVY", "CHARCOAL", "WHITE", "PINK", "CYAN", "BLACK", "LIME"
     };
 
-    public static readonly string[] CountryIds =
-        { "GEO", "USA", "ESP", "ITA", "GER", "FRA", "GRE", "HUN", "SRB", "CRO", "AUS", "JPN" };
+    public static readonly string[] CountryNames =
+    {
+        "Armenia", "Australia", "Austria", "Azerbaijan", "Canada", "China", "Croatia",
+        "France", "Georgia", "Germany", "Greece", "Hungary", "Iran", "Israel", "Italy",
+        "Japan", "Kazakhstan", "Latvia", "Lithuania", "Malta", "Mexico", "Montenegro",
+        "Netherlands", "Poland", "Portugal", "Romania", "Russia", "Serbia", "Slovakia",
+        "Slovenia", "Spain", "Sweden", "Turkey", "UK", "Ukraine", "USA"
+    };
 
     Transform root;
     NavigationManager nav;
@@ -44,8 +50,9 @@ public class ClubCustomizationUI : MonoBehaviour
 
     CrestTemplateView preview;
     TMP_InputField nameField;
-    TextMeshProUGUI templateLabel, capColorName, swimwearColorName, savedFlash;
-    Image capColorPreview, swimwearColorPreview;
+    TextMeshProUGUI templateLabel, capColorName, swimwearColorName, savedFlash, countryNameLabel;
+    Image capColorPreview, swimwearColorPreview, currentCountryFlag;
+    GameObject countryOverlay;
     sealed class SwatchVisual
     {
         public Image frame;
@@ -59,6 +66,7 @@ public class ClubCustomizationUI : MonoBehaviour
     readonly List<SwatchVisual> secondaryFrames = new List<SwatchVisual>();
     readonly List<SwatchVisual> tertiaryFrames = new List<SwatchVisual>();
     readonly List<Image> countryFrames = new List<Image>();
+    readonly List<GameObject> countryChecks = new List<GameObject>();
     Coroutine flashRoutine;
 
     public void Build(Transform parent, NavigationManager navigation)
@@ -75,7 +83,7 @@ public class ClubCustomizationUI : MonoBehaviour
         BuildTemplateBrowser();
         BuildCrestColorRows();
         BuildPlayerColorSelectors();
-        BuildCountryGrid();
+        BuildCountrySelector();
         SyncFromProfile();
     }
 
@@ -92,7 +100,7 @@ public class ClubCustomizationUI : MonoBehaviour
         brt.anchoredPosition = Vector2.zero;
         brt.sizeDelta = new Vector2(0f, 80f);
 
-        Sprite back = Resources.Load<Sprite>("Sprites/back-button");
+        Sprite back = ButtonSpriteCatalog.SpriteFor("Back-Button");
         GameObject backGo = new GameObject("BtnBack");
         backGo.transform.SetParent(bar.transform, false);
         SetRect(backGo.AddComponent<RectTransform>(), new Vector2(0f, 0.5f),
@@ -227,27 +235,136 @@ public class ClubCustomizationUI : MonoBehaviour
         Stretch(colorName.rectTransform);
     }
 
-    void BuildCountryGrid()
+    void BuildCountrySelector()
     {
-        const float centerX = 470f;
+        const float centerX = 420f;
         MakeText(root, "COUNTRY", 18f, new Vector2(0.5f, 0.5f), new Vector2(centerX, 242f),
-                 new Vector2(260f, 26f), Gold, TextAlignmentOptions.Center);
+                 new Vector2(310f, 26f), Gold, TextAlignmentOptions.Center);
+
+        Image selector = MakeCard(root, new Vector2(centerX, 184f), new Vector2(270f, 70f),
+                                  new Color(0.12f, 0.66f, 1f, 1f));
+        selector.gameObject.name = "CountryInlineSelector";
+        Button selectorButton = selector.gameObject.AddComponent<Button>();
+        selectorButton.targetGraphic = selector;
+        selectorButton.onClick.AddListener(OpenCountryOverlay);
+
+        MakeButton(selector.transform, "<", 26f, new Vector2(0f, 0.5f), new Vector2(26f, 0f),
+                   new Vector2(42f, 48f), Arrow, () => CycleCountry(-1));
+        MakeButton(selector.transform, ">", 26f, new Vector2(1f, 0.5f), new Vector2(-26f, 0f),
+                   new Vector2(42f, 48f), Arrow, () => CycleCountry(1));
+
+        currentCountryFlag = NewImage("CurrentFlag", selector.transform);
+        currentCountryFlag.preserveAspect = true;
+        currentCountryFlag.raycastTarget = false;
+        SetRect(currentCountryFlag.rectTransform, new Vector2(0.5f, 0.5f),
+                new Vector2(-65f, 0f), new Vector2(42f, 30f));
+        countryNameLabel = MakeText(selector.transform, "SELECT COUNTRY", 18f,
+            new Vector2(0.5f, 0.5f), new Vector2(18f, 0f), new Vector2(120f, 40f),
+            Color.white, TextAlignmentOptions.Center);
+        countryNameLabel.enableAutoSizing = true;
+        countryNameLabel.fontSizeMin = 12f;
+        countryNameLabel.fontSizeMax = 18f;
+
+        MakeButton(root, "v", 25f, new Vector2(0.5f, 0.5f), new Vector2(586f, 184f),
+                   new Vector2(50f, 56f), new Color(0.05f, 0.32f, 0.68f, 1f), OpenCountryOverlay);
+        BuildCountryOverlay();
+    }
+
+    void BuildCountryOverlay()
+    {
+        countryOverlay = new GameObject("CountrySelectionOverlay");
+        countryOverlay.transform.SetParent(root, false);
+        Stretch(countryOverlay.AddComponent<RectTransform>());
+        Image dim = countryOverlay.AddComponent<Image>();
+        dim.color = new Color(0.005f, 0.015f, 0.04f, 0.90f);
+        dim.raycastTarget = true;
+        Button dismiss = countryOverlay.AddComponent<Button>();
+        dismiss.targetGraphic = dim;
+        dismiss.onClick.AddListener(CloseCountryOverlay);
+
+        Image modal = MakeCard(countryOverlay.transform, new Vector2(0f, -4f),
+                               new Vector2(940f, 590f), new Color(0.08f, 0.70f, 1f, 1f));
+        modal.gameObject.name = "CountryModal";
+        modal.raycastTarget = true;
+        MakeText(modal.transform, "SELECT YOUR COUNTRY", 30f, new Vector2(0.5f, 1f),
+                 new Vector2(0f, -34f), new Vector2(620f, 42f), Color.white,
+                 TextAlignmentOptions.Center);
+        MakeText(modal.transform, "Choose a flag — your profile updates immediately", 15f,
+                 new Vector2(0.5f, 1f), new Vector2(0f, -69f), new Vector2(620f, 24f),
+                 Grey, TextAlignmentOptions.Center);
+        MakeButton(modal.transform, "X", 18f, new Vector2(1f, 1f), new Vector2(-34f, -34f),
+                   new Vector2(46f, 46f), new Color(0.55f, 0.12f, 0.18f, 1f), CloseCountryOverlay);
+
+        GameObject viewportGo = new GameObject("CountryViewport");
+        viewportGo.transform.SetParent(modal.transform, false);
+        RectTransform viewport = viewportGo.AddComponent<RectTransform>();
+        SetRect(viewport, new Vector2(0.5f, 0.5f), new Vector2(0f, -45f), new Vector2(870f, 440f));
+        Image viewportImage = viewportGo.AddComponent<Image>();
+        viewportImage.color = new Color(0.015f, 0.035f, 0.07f, 0.64f);
+        viewportGo.AddComponent<RectMask2D>();
+
+        GameObject contentGo = new GameObject("CountryGrid");
+        contentGo.transform.SetParent(viewportGo.transform, false);
+        RectTransform content = contentGo.AddComponent<RectTransform>();
+        content.anchorMin = new Vector2(0f, 1f);
+        content.anchorMax = new Vector2(1f, 1f);
+        content.pivot = new Vector2(0.5f, 1f);
+        content.anchoredPosition = Vector2.zero;
+        content.sizeDelta = new Vector2(0f, 12f * 76f + 12f);
+        GridLayoutGroup grid = contentGo.AddComponent<GridLayoutGroup>();
+        grid.padding = new RectOffset(18, 18, 14, 14);
+        grid.cellSize = new Vector2(268f, 62f);
+        grid.spacing = new Vector2(14f, 14f);
+        grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+        grid.constraintCount = 3;
+        grid.startAxis = GridLayoutGroup.Axis.Horizontal;
+        grid.childAlignment = TextAnchor.UpperCenter;
+
+        ScrollRect scroll = viewportGo.AddComponent<ScrollRect>();
+        scroll.viewport = viewport;
+        scroll.content = content;
+        scroll.horizontal = false;
+        scroll.vertical = true;
+        scroll.movementType = ScrollRect.MovementType.Clamped;
+        scroll.scrollSensitivity = 32f;
+
         countryFrames.Clear();
-        for (int i = 0; i < CountryIds.Length; i++)
+        countryChecks.Clear();
+        CountryCatalog catalog = CountryCatalog.Instance;
+        for (int i = 0; i < CountryNames.Length; i++)
         {
             int index = i;
-            float x = centerX + (i % 3 - 1) * 92f;
-            float y = 190f - (i / 3) * 54f;
-            Image frame = MakeTile(new Vector2(x, y), new Vector2(84f, 44f),
-                () => { selCountry = index; SyncSelectionVisuals(); });
+            GameObject row = new GameObject("Country_" + CountryNames[i]);
+            row.transform.SetParent(content.transform, false);
+            Image frame = row.AddComponent<Image>();
+            frame.sprite = Rounded();
+            frame.type = Image.Type.Sliced;
+            frame.color = TileDark;
+            Button button = row.AddComponent<Button>();
+            button.targetGraphic = frame;
+            button.onClick.AddListener(() => SelectCountry(index, true));
             countryFrames.Add(frame);
-            Image dot = NewImage("Dot", frame.transform);
-            dot.sprite = Circle(); dot.color = CountryColor(CountryIds[i]); dot.raycastTarget = false;
-            SetRect(dot.rectTransform, new Vector2(0f, 0.5f), new Vector2(15f, 0f), new Vector2(14f, 14f));
-            MakeText(frame.transform, CountryIds[i], 14f, new Vector2(0.5f, 0.5f),
-                     new Vector2(8f, 0f), new Vector2(62f, 24f), Color.white,
-                     TextAlignmentOptions.Center);
+
+            Image flag = NewImage("Flag", row.transform);
+            flag.sprite = catalog != null ? catalog.FlagFor(CountryNames[i]) : null;
+            flag.preserveAspect = true;
+            flag.raycastTarget = false;
+            if (flag.sprite == null) { flag.sprite = Circle(); flag.color = CountryColor(CountryNames[i]); }
+            SetRect(flag.rectTransform, new Vector2(0f, 0.5f), new Vector2(34f, 0f), new Vector2(48f, 34f));
+
+            TextMeshProUGUI country = MakeText(row.transform, CountryNames[i], 16f,
+                new Vector2(0f, 0.5f), new Vector2(142f, 0f), new Vector2(150f, 34f),
+                Color.white, TextAlignmentOptions.Left);
+            country.enableAutoSizing = true;
+            country.fontSizeMin = 12f;
+            country.fontSizeMax = 16f;
+
+            GameObject check = MakeGreenCheck(row.transform, new Vector2(1f, 0.5f),
+                                               new Vector2(-28f, 0f), 26f);
+            check.SetActive(false);
+            countryChecks.Add(check);
         }
+        countryOverlay.SetActive(false);
     }
 
     void SyncFromProfile()
@@ -265,7 +382,7 @@ public class ClubCustomizationUI : MonoBehaviour
         selTertiary = PaletteIndex(club.tertiaryColorHex, 3);
         selCap = PaletteIndex(club.capColorHex, DefaultCapPaletteIndex);
         selSwimwear = PaletteIndex(club.swimwearColorHex, DefaultSwimwearPaletteIndex);
-        selCountry = System.Array.IndexOf(CountryIds, club.countryId);
+        selCountry = System.Array.IndexOf(CountryNames, NormalizeCountryName(club.countryId));
         nameField.SetTextWithoutNotify(ClampClubName(club.clubName));
         SyncSelectionVisuals();
     }
@@ -286,16 +403,77 @@ public class ClubCustomizationUI : MonoBehaviour
         SyncPlayerColorPreviews();
     }
 
+    void CycleCountry(int direction)
+    {
+        int start = selCountry >= 0 ? selCountry : (direction > 0 ? -1 : 0);
+        SelectCountry((start + direction + CountryNames.Length) % CountryNames.Length, true);
+    }
+
+    void OpenCountryOverlay()
+    {
+        if (countryOverlay == null) return;
+        SyncCountryVisuals();
+        countryOverlay.SetActive(true);
+        countryOverlay.transform.SetAsLastSibling();
+    }
+
+    void CloseCountryOverlay()
+    {
+        if (countryOverlay != null) countryOverlay.SetActive(false);
+    }
+
+    void SelectCountry(int index, bool persistImmediately)
+    {
+        selCountry = Mathf.Clamp(index, 0, CountryNames.Length - 1);
+        SyncCountryVisuals();
+        if (persistImmediately)
+        {
+            ClubProfile club = RosterManager.Instance.Club;
+            club.countryId = CountryNames[selCountry];
+            RosterManager.Instance.SaveClub();
+            if (nav != null) nav.RefreshClubProfile();
+            if (savedFlash != null)
+            {
+                savedFlash.text = "COUNTRY UPDATED";
+                savedFlash.alpha = 1f;
+                if (flashRoutine != null) StopCoroutine(flashRoutine);
+                flashRoutine = StartCoroutine(FadeFlash());
+            }
+            CloseCountryOverlay();
+        }
+    }
+
     void SyncSelectionVisuals()
     {
         SyncSwatchGroup(primaryFrames, selPrimary);
         SyncSwatchGroup(secondaryFrames, selSecondary);
         SyncSwatchGroup(tertiaryFrames, selTertiary);
-        for (int i = 0; i < countryFrames.Count; i++) countryFrames[i].color = i == selCountry ? Gold : TileDark;
+        SyncCountryVisuals();
         if (templateLabel != null)
             templateLabel.text = "TEMPLATE " + (selTemplate + 1).ToString("00") + " / " + CrestCount;
         SyncPreview();
         SyncPlayerColorPreviews();
+    }
+
+    void SyncCountryVisuals()
+    {
+        string country = selCountry >= 0 && selCountry < CountryNames.Length
+            ? CountryNames[selCountry] : "";
+        if (countryNameLabel != null) countryNameLabel.text = string.IsNullOrEmpty(country) ? "SELECT COUNTRY" : country;
+        if (currentCountryFlag != null)
+        {
+            Sprite flag = !string.IsNullOrEmpty(country) && CountryCatalog.Instance != null
+                ? CountryCatalog.Instance.FlagFor(country) : null;
+            currentCountryFlag.sprite = flag != null ? flag : Circle();
+            currentCountryFlag.color = flag != null ? Color.white
+                : string.IsNullOrEmpty(country) ? new Color(0.38f, 0.42f, 0.48f, 1f) : CountryColor(country);
+        }
+        for (int i = 0; i < countryFrames.Count; i++)
+        {
+            bool selected = i == selCountry;
+            countryFrames[i].color = selected ? new Color(0.12f, 0.72f, 0.32f, 1f) : TileDark;
+            if (i < countryChecks.Count) countryChecks[i].SetActive(selected);
+        }
     }
 
     static void SyncSwatchGroup(List<SwatchVisual> swatches, int selected)
@@ -346,7 +524,7 @@ public class ClubCustomizationUI : MonoBehaviour
         club.tertiaryColorHex = ColorUtility.ToHtmlStringRGB(Palette[selTertiary]);
         club.capColorHex = ColorUtility.ToHtmlStringRGB(Palette[selCap]);
         club.swimwearColorHex = ColorUtility.ToHtmlStringRGB(Palette[selSwimwear]);
-        club.countryId = selCountry >= 0 ? CountryIds[selCountry] : "";
+        club.countryId = selCountry >= 0 ? CountryNames[selCountry] : "";
         RosterManager.Instance.SaveClub();
         nameField.SetTextWithoutNotify(club.clubName);
         SyncPreview();
@@ -401,6 +579,34 @@ public class ClubCustomizationUI : MonoBehaviour
         => !string.IsNullOrEmpty(hex) && ColorUtility.TryParseHtmlString("#" + hex, out Color color)
             ? color : fallback;
 
+    public static string NormalizeCountryName(string saved)
+    {
+        if (string.IsNullOrWhiteSpace(saved)) return "";
+        switch (saved.Trim().ToUpperInvariant())
+        {
+            case "ARM": return "Armenia"; case "AUS": return "Australia";
+            case "AUT": return "Austria"; case "AZE": return "Azerbaijan";
+            case "CAN": return "Canada"; case "CHN": return "China";
+            case "CRO": return "Croatia"; case "FRA": return "France";
+            case "GEO": return "Georgia"; case "GER": return "Germany";
+            case "GRE": return "Greece"; case "HUN": return "Hungary";
+            case "IRN": return "Iran"; case "ISR": return "Israel";
+            case "ITA": return "Italy"; case "JPN": return "Japan";
+            case "KAZ": return "Kazakhstan"; case "LVA": return "Latvia";
+            case "LTU": return "Lithuania"; case "MLT": return "Malta";
+            case "MEX": return "Mexico"; case "MNE": return "Montenegro";
+            case "NED": return "Netherlands"; case "POL": return "Poland";
+            case "POR": return "Portugal"; case "ROU": return "Romania";
+            case "RUS": return "Russia"; case "SRB": return "Serbia";
+            case "SVK": return "Slovakia"; case "SVN": return "Slovenia";
+            case "ESP": return "Spain"; case "SWE": return "Sweden";
+            case "TUR": return "Turkey"; case "GBR": return "UK";
+            case "UK": return "UK"; case "UKR": return "Ukraine";
+            case "USA": return "USA";
+            default: return saved.Trim();
+        }
+    }
+
     public static Sprite ClubBadgeBackgroundSprite() => Rounded();
 
     public static Color CountryColor(string id)
@@ -427,6 +633,27 @@ public class ClubCustomizationUI : MonoBehaviour
         button.targetGraphic = frame;
         button.onClick.AddListener(onClick);
         return frame;
+    }
+
+    GameObject MakeGreenCheck(Transform parent, Vector2 anchor, Vector2 position, float size)
+    {
+        Image badge = NewImage("SelectedCheck", parent);
+        badge.sprite = Circle();
+        badge.color = new Color(0.15f, 0.88f, 0.38f, 1f);
+        badge.raycastTarget = false;
+        SetRect(badge.rectTransform, anchor, position, new Vector2(size, size));
+
+        Image shortStroke = NewImage("Short", badge.transform);
+        shortStroke.color = Color.white; shortStroke.raycastTarget = false;
+        SetRect(shortStroke.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(-4f, -1f),
+                new Vector2(3.5f, size * 0.32f));
+        shortStroke.rectTransform.localRotation = Quaternion.Euler(0f, 0f, -42f);
+        Image longStroke = NewImage("Long", badge.transform);
+        longStroke.color = Color.white; longStroke.raycastTarget = false;
+        SetRect(longStroke.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(3.5f, 0.5f),
+                new Vector2(3.5f, size * 0.48f));
+        longStroke.rectTransform.localRotation = Quaternion.Euler(0f, 0f, 42f);
+        return badge.gameObject;
     }
 
     SwatchVisual MakeSwatch(Transform parent, Vector2 position, Color color,
@@ -539,13 +766,13 @@ public class ClubCustomizationUI : MonoBehaviour
         go.transform.SetParent(parent, false);
         SetRect(go.AddComponent<RectTransform>(), anchor, position, size);
         Image image = go.AddComponent<Image>();
-        image.sprite = Rounded(); image.type = Image.Type.Sliced; image.color = color;
+        image.sprite = ButtonSpriteCatalog.SpriteFor("Button1");
+        if (image.sprite == null) { image.sprite = Rounded(); image.type = Image.Type.Sliced; }
+        image.color = color;
         Button button = go.AddComponent<Button>();
         button.targetGraphic = image;
         if (onClick != null) button.onClick.AddListener(onClick);
-        TextMeshProUGUI text = MakeText(go.transform, label, fontSize, new Vector2(0.5f, 0.5f),
-                                       Vector2.zero, size, Color.white, TextAlignmentOptions.Center);
-        Stretch(text.rectTransform);
+        LocalizedButtonStyler.AddLabel(go.transform, label, fontSize, size, maxWidthMultiplier: 1.3f);
         return button;
     }
 

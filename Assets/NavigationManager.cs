@@ -180,11 +180,12 @@ public class NavigationManager : MonoBehaviour
         AddHover(avGo);
         avatarClubCrest = CrestTemplateView.Create(avGo.transform, "SavedClubCrest",
             new Vector2(58f, 58f), new Vector2(0.5f, 0.5f), Vector2.zero);
-        // Country "flag" badge: a colored dot until real flag art exists (grey = no country picked).
+        // Saved country flag badge (grey dot only when no country is selected).
         flagDot = NewImage(avGo.transform, "Flag");
         flagDot.sprite = Circle();
+        flagDot.preserveAspect = true;
         flagDot.raycastTarget = false;
-        SetRect(flagDot.rectTransform, new Vector2(1f, 0f), new Vector2(-4f, 6f), new Vector2(20f, 20f));
+        SetRect(flagDot.rectTransform, new Vector2(1f, 0f), new Vector2(-3f, 7f), new Vector2(28f, 20f));
 
         // Club name + XP bar + bronze level badge.
         clubNameLabel = MakeText(bar.transform, "My Club", 20f, new Vector2(0f, 0.5f), new Vector2(150f, 12f),
@@ -229,11 +230,11 @@ public class NavigationManager : MonoBehaviour
         // Settings / Inbox / Gifts — real button art (settings/message/gifts-button.png), one
         // group between the profile block and the pill. 42px icons (dev sized these down from
         // an 84px experiment) at 95px pitch.
-        MakeCaptionedIconButton(bar.transform, "BtnSettings", "Sprites/settings-button", "Settings",
+        MakeCaptionedIconButton(bar.transform, "BtnSettings", "Settings-Button", "Settings",
                                 new Vector2(330f, 0f), () => ShowOverlay(settingsOverlay));
-        MakeCaptionedIconButton(bar.transform, "BtnMessages", "Sprites/message-button", "Inbox",
+        MakeCaptionedIconButton(bar.transform, "BtnMessages", "Message-Button", "Inbox",
                                 new Vector2(425f, 0f), () => ShowOverlay(messagesOverlay));
-        MakeCaptionedIconButton(bar.transform, "BtnGifts", "Sprites/gifts-button", "Gifts",
+        MakeCaptionedIconButton(bar.transform, "BtnGifts", "Gifts-Button", "Gifts",
                                 new Vector2(520f, 0f), () => ShowOverlay(giftsOverlay));
 
         // FREE +100: watch an ad (stub) for 100 coins — same AdWatchCap 3/day system as the
@@ -267,15 +268,18 @@ public class NavigationManager : MonoBehaviour
     void BuildLeftColumn()
     {
         const float x = 150f, step = 140f, yOff = -40f;
-        MakeImageButton(canvasRoot, "BtnRanking", "Sprites/ranking-button", new Vector2(0f, 0.5f),
+        MakeImageButton(canvasRoot, "BtnRanking", "Ranking-Button", new Vector2(0f, 0.5f),
                         new Vector2(x, yOff + step), new Vector2(135f, 135f), () => ShowOverlay(rankingOverlay),
-                        trimArt: true);
-        MakeImageButton(canvasRoot, "BtnShop", "Sprites/shop-button", new Vector2(0f, 0.5f),
+                        trimArt: true, localizedLabel: "RANKING",
+                        textZone: LocalizedButtonStyler.TextZone.LowerPlate);
+        MakeImageButton(canvasRoot, "BtnShop", "Shop-Button", new Vector2(0f, 0.5f),
                         new Vector2(x, yOff), new Vector2(140f, 140f), () => ShowOverlay(shopOverlay),
-                        trimArt: true);
-        MakeImageButton(canvasRoot, "BtnTeam", "Sprites/team-button", new Vector2(0f, 0.5f),
+                        trimArt: true, localizedLabel: "SHOP",
+                        textZone: LocalizedButtonStyler.TextZone.LowerPlate);
+        MakeImageButton(canvasRoot, "BtnTeam", "Team-Button", new Vector2(0f, 0.5f),
                         new Vector2(x, yOff - step), new Vector2(135f, 135f), () => OpenTeamScreen("HUB"),
-                        trimArt: true);
+                        trimArt: true, localizedLabel: "TEAM",
+                        textZone: LocalizedButtonStyler.TextZone.LowerPlate);
     }
 
     // ------------------------------------------------------------ right column
@@ -288,12 +292,12 @@ public class NavigationManager : MonoBehaviour
         const float x = -150f, step = 140f, yOff = -40f; // rows/offset match the left column
         worldCupUI = gameObject.AddComponent<WorldCupUI>();
         worldCupUI.Initialize(canvasRoot);
-        MakeImageButton(canvasRoot, "BtnFriends", "Sprites/friends-button", new Vector2(1f, 0.5f),
+        MakeImageButton(canvasRoot, "BtnFriends", "Friends-Button", new Vector2(1f, 0.5f),
                         new Vector2(x, yOff + step), new Vector2(135f, 135f), () => ShowOverlay(friendsOverlay),
                         trimArt: true);
         // Clubs gets a bigger box (150 vs 135): its trimmed art is intrinsically wide (~1.8:1),
         // so at equal box sizes it reads smaller than the near-square art around it.
-        MakeImageButton(canvasRoot, "BtnClubs", "Sprites/clubs-button", new Vector2(1f, 0.5f),
+        MakeImageButton(canvasRoot, "BtnClubs", "Clubs-Button", new Vector2(1f, 0.5f),
                         new Vector2(x, yOff), new Vector2(150f, 150f), () => ShowOverlay(clubsOverlay),
                         trimArt: true);
         CountryCatalog countryCatalog = CountryCatalog.Instance;
@@ -339,16 +343,18 @@ public class NavigationManager : MonoBehaviour
         // ENDS IN" panel (two entry points to one screen, intentionally). The old dark overlay +
         // padlock + "UNLOCKED AT LEVEL 4" was a pre-Season-Pass placeholder for a player-level
         // system that never existed, so it's removed entirely (no lock, no disabled state).
-        Button sp = MakeImageButton(barGo.transform, "BtnSeasonPass", "Sprites/season-pass-button",
+        Button sp = MakeImageButton(barGo.transform, "BtnSeasonPass", "Season-Pass",
                                     new Vector2(0f, 0.5f), new Vector2(195f, 0f), new Vector2(260f, 80f),
-                                    () => ShowOverlay(seasonPassOverlay));
+                                    () => ShowOverlay(seasonPassOverlay), localizedLabel: "SEASON PASS",
+                                    textZone: LocalizedButtonStyler.TextZone.LowerPlate);
         sp.image.preserveAspect = false; // stretch/fill the 220x110 rect (Image Type stays Simple)
 
         // Missions (centre-left): opens the Missions screen; the red badge shows the live
         // claim-ready count (hidden at 0 — see RefreshMissionsBadge).
-        Button ms = MakeImageButton(barGo.transform, "BtnMissions", "Sprites/missions-button",
+        Button ms = MakeImageButton(barGo.transform, "BtnMissions", "Missions-Button",
                                     new Vector2(0f, 0.5f), new Vector2(455f, 0f), new Vector2(90f, 90f),
-                                    () => ShowOverlay(missionsOverlay));
+                                    () => ShowOverlay(missionsOverlay), localizedLabel: "MISSIONS",
+                                    textZone: LocalizedButtonStyler.TextZone.LowerPlate);
         Image dot = NewImage(ms.transform, "Badge");
         dot.sprite = Circle();
         dot.color = Red;
@@ -362,9 +368,10 @@ public class NavigationManager : MonoBehaviour
         BuildRewardSlots(barGo.transform);
 
         // Play (right) → open the Game Mode overlay (competition picker), not the match directly.
-        MakeImageButton(barGo.transform, "BtnPlay", "Sprites/play-button", new Vector2(1f, 0.5f),
+        MakeImageButton(barGo.transform, "BtnPlay", "Play-Button", new Vector2(1f, 0.5f),
                         new Vector2(-160f, 0f), new Vector2(320f, 120f), // centre shifted so the wider button stays flush-right on screen
-                        () => ShowOverlay(gameModeOverlay));
+                        () => ShowOverlay(gameModeOverlay), localizedLabel: "PLAY",
+                        textZone: LocalizedButtonStyler.TextZone.PlayPlate);
     }
 
     // ------------------------------------------------------ post-match reward slots
@@ -806,12 +813,17 @@ public class NavigationManager : MonoBehaviour
         if (clubNameLabel != null) clubNameLabel.text = club.clubName;
         if (avatarClubCrest != null) avatarClubCrest.SetIdentity(club);
         if (flagDot != null)
-            flagDot.color = string.IsNullOrEmpty(club.countryId)
-                ? new Color(0.4f, 0.44f, 0.5f, 1f) // placeholder: no country picked yet
-                : ClubCustomizationUI.CountryColor(club.countryId);
+        {
+            string country = ClubCustomizationUI.NormalizeCountryName(club.countryId);
+            Sprite flag = CountryCatalog.Instance != null ? CountryCatalog.Instance.FlagFor(country) : null;
+            flagDot.sprite = flag != null ? flag : Circle();
+            flagDot.color = flag != null ? Color.white : string.IsNullOrEmpty(country)
+                ? new Color(0.4f, 0.44f, 0.5f, 1f)
+                : ClubCustomizationUI.CountryColor(country);
+        }
     }
 
-    // Minimal stub settings panel — just states itself and closes. Real options come later.
+    // Settings foundation: language is live and persisted; sound/account remain future work.
     GameObject BuildSettingsOverlay()
     {
         GameObject ov = new GameObject("Overlay_SETTINGS");
@@ -826,13 +838,22 @@ public class NavigationManager : MonoBehaviour
         sheet.sprite = GetRoundedSprite();
         sheet.type = Image.Type.Sliced;
         sheet.color = DarkPanel;
-        SetRect(sheet.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(620f, 300f));
+        SetRect(sheet.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(620f, 360f));
 
         MakeText(sheet.transform, "SETTINGS", 24f, new Vector2(0.5f, 1f), new Vector2(0f, -52f),
                  new Vector2(560f, 32f), Cyan, TextAlignmentOptions.Center);
-        MakeText(sheet.transform, "Sound, language and account options will live here.\nNothing to configure yet.",
-                 18f, new Vector2(0.5f, 0.5f), new Vector2(0f, 10f), new Vector2(560f, 60f),
+        MakeText(sheet.transform, "LANGUAGE", 15f, new Vector2(0.5f, 0.5f), new Vector2(0f, 62f),
+                 new Vector2(300f, 24f), new Color(0.62f, 0.68f, 0.76f, 1f), TextAlignmentOptions.Center);
+        TextMeshProUGUI languageValue = MakeText(sheet.transform, UILanguageDisplay(), 23f,
+                 new Vector2(0.5f, 0.5f), new Vector2(0f, 22f), new Vector2(260f, 36f),
                  Color.white, TextAlignmentOptions.Center);
+        MakeActionButton(sheet.transform, "<", new Vector2(0.5f, 0.5f), new Vector2(-175f, 22f),
+                         new Vector2(58f, 48f), Blue, () => CycleUILanguage(-1, languageValue));
+        MakeActionButton(sheet.transform, ">", new Vector2(0.5f, 0.5f), new Vector2(175f, 22f),
+                         new Vector2(58f, 48f), Blue, () => CycleUILanguage(1, languageValue));
+        MakeText(sheet.transform, "Button labels update instantly. Sound and account options are coming later.",
+                 15f, new Vector2(0.5f, 0.5f), new Vector2(0f, -52f), new Vector2(540f, 48f),
+                 new Color(0.62f, 0.68f, 0.76f, 1f), TextAlignmentOptions.Center);
 
         GameObject self = ov;
         MakeActionButton(sheet.transform, "OK", new Vector2(0.5f, 0f), new Vector2(0f, 46f),
@@ -841,6 +862,22 @@ public class NavigationManager : MonoBehaviour
 
         ov.SetActive(false);
         return ov;
+    }
+
+    static string UILanguageDisplay()
+    {
+        string code = UILocalization.CurrentLanguage;
+        return code == UILocalization.Georgian ? "ქართული"
+            : code == UILocalization.Russian ? "РУССКИЙ" : "ENGLISH";
+    }
+
+    static void CycleUILanguage(int direction, TextMeshProUGUI value)
+    {
+        string[] languages = { UILocalization.English, UILocalization.Georgian, UILocalization.Russian };
+        int index = System.Array.IndexOf(languages, UILocalization.CurrentLanguage);
+        if (index < 0) index = 0;
+        UILocalization.SetLanguage(languages[(index + direction + languages.Length) % languages.Length]);
+        if (value != null) value.text = UILanguageDisplay();
     }
 
     // Top-bar icon button with real sprite art (alpha-trimmed — the raw PNGs are ~60% margin).
@@ -2171,8 +2208,9 @@ public class NavigationManager : MonoBehaviour
         brt.sizeDelta = new Vector2(0f, 92f);
 
         // TEAM shortcut — back from the team screen returns here, not to the hub.
-        MakeImageButton(bar.transform, "BtnTeam", "Sprites/team-button", new Vector2(1f, 0.5f),
-                        new Vector2(-70f, 0f), new Vector2(78f, 78f), () => OpenTeamScreen("COMPETITION"));
+        MakeImageButton(bar.transform, "BtnTeam", "Team-Button", new Vector2(1f, 0.5f),
+                        new Vector2(-70f, 0f), new Vector2(78f, 78f), () => OpenTeamScreen("COMPETITION"),
+                        localizedLabel: "TEAM", textZone: LocalizedButtonStyler.TextZone.LowerPlate);
 
         if (!s.IsComplete)
         {
@@ -2601,12 +2639,19 @@ public class NavigationManager : MonoBehaviour
         if (onClick != null) btn.onClick.AddListener(onClick);
 
         Image face = NewImage(go.transform, "Face");
-        face.sprite = GetRoundedSprite();
-        face.type = Image.Type.Sliced;
+        face.sprite = LocalizedButtonStyler.UniversalSprite();
+        if (face.sprite == null)
+        {
+            face.sprite = GetRoundedSprite();
+            face.type = Image.Type.Sliced;
+        }
         face.color = color;
         face.raycastTarget = false;
-        SetRect(face.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, 3f),
-                new Vector2(size.x - 4f, size.y - 8f));
+        RectTransform faceRt = face.rectTransform;
+        faceRt.anchorMin = Vector2.zero;
+        faceRt.anchorMax = Vector2.one;
+        faceRt.offsetMin = new Vector2(2f, 6f);
+        faceRt.offsetMax = new Vector2(-2f, -2f);
 
         Image shine = NewImage(face.transform, "TopShine");
         shine.sprite = GetRoundedSprite();
@@ -2616,10 +2661,7 @@ public class NavigationManager : MonoBehaviour
         SetRect(shine.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -4f),
                 new Vector2(size.x - 24f, 5f));
 
-        TextMeshProUGUI t = MakeText(go.transform, label, Mathf.Min(26f, size.y * 0.38f),
-                                     new Vector2(0.5f, 0.5f), Vector2.zero, size, Color.white,
-                                     TextAlignmentOptions.Center);
-        Stretch(t.rectTransform);
+        LocalizedButtonStyler.AddLabel(go.transform, label, Mathf.Min(26f, size.y * 0.38f), size);
         AddHover(go);
         return btn;
     }
@@ -2974,7 +3016,8 @@ public class NavigationManager : MonoBehaviour
     // A button whose whole face is a sprite (left column, season pass, missions, play).
     Button MakeImageButton(Transform parent, string name, string spritePath, Vector2 anchor,
                            Vector2 pos, Vector2 size, UnityEngine.Events.UnityAction onClick,
-                           bool trimArt = false)
+                           bool trimArt = false, string localizedLabel = null,
+                           LocalizedButtonStyler.TextZone textZone = LocalizedButtonStyler.TextZone.Center)
     {
         GameObject go = new GameObject(name);
         go.transform.SetParent(parent, false);
@@ -2982,7 +3025,8 @@ public class NavigationManager : MonoBehaviour
         SetRect(rt, anchor, pos, size);
 
         Image img = go.AddComponent<Image>();
-        img.sprite = trimArt ? LoadTrimmedSprite(spritePath) : LoadSprite(spritePath);
+        img.sprite = ButtonSpriteCatalog.SpriteForLegacyPath(spritePath, true);
+        if (img.sprite == null) img.sprite = trimArt ? LoadTrimmedSprite(spritePath) : LoadSprite(spritePath);
         img.preserveAspect = true;
         if (img.sprite == null) // visible rounded fallback so a missing sprite still shows a button
         {
@@ -2994,6 +3038,13 @@ public class NavigationManager : MonoBehaviour
         Button btn = go.AddComponent<Button>();
         btn.targetGraphic = img;
         if (onClick != null) btn.onClick.AddListener(onClick);
+        if (!string.IsNullOrEmpty(localizedLabel))
+        {
+            TextMeshProUGUI label = LocalizedButtonStyler.AddLabel(go.transform, localizedLabel,
+                Mathf.Clamp(size.y * 0.20f, 13f, 25f), size, textZone, 1f);
+            if (ButtonSpriteCatalog.KeyForLegacyPath(spritePath) == "Play-Button")
+                go.AddComponent<LocalizedPlayButtonBackground>().Configure(img, label);
+        }
         AddHover(go);
         return btn;
     }
@@ -3331,7 +3382,7 @@ public class NavigationManager : MonoBehaviour
     }
 
     static Sprite PoolScreenSprite() => TextureSprite("Sprites/pool-screen");
-    static Sprite BackButtonSprite() => TextureSprite("Sprites/back-button");
+    static Sprite BackButtonSprite() => ButtonSpriteCatalog.SpriteFor("Back-Button") ?? TextureSprite("Sprites/back-button");
     static Sprite CompetitionBgSprite() => TextureSprite("Sprites/competition-page-background");
 
     // lock-sign art, cropped to just the red padlock button. The source PNG has wide transparent
@@ -3339,6 +3390,8 @@ public class NavigationManager : MonoBehaviour
     // texture, so it survives a re-import at a different size) is cut out here via Sprite.Create.
     static Sprite LockSignSprite()
     {
+        if (lockSignSprite != null) return lockSignSprite;
+        lockSignSprite = ButtonSpriteCatalog.SpriteFor("Lock-Button");
         if (lockSignSprite != null) return lockSignSprite;
         Texture2D tex = Resources.Load<Texture2D>("Sprites/lock-sign");
         if (tex == null)

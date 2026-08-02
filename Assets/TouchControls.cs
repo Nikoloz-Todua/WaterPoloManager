@@ -482,7 +482,8 @@ public class TouchControls : MonoBehaviour
 
     static Sprite LoadButtonSprite(string file)
     {
-        Sprite s = Resources.Load<Sprite>("Sprites/" + file);
+        Sprite s = ButtonSpriteCatalog.SpriteForLegacyPath("Sprites/" + file);
+        if (s == null) s = Resources.Load<Sprite>("Sprites/" + file);
         if (s == null) s = Resources.Load<Sprite>("Sprites/" + file.ToLowerInvariant()); // case-safe fallback
         if (s == null)
             Debug.LogWarning("TouchControls: button sprite 'Sprites/" + file + "' not found in a Resources folder.");

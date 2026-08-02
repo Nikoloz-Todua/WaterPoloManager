@@ -1,0 +1,2366 @@
+fileFormatVersion: 2
+guid: 4486a5ceaab862948bde12db7ab2af8f
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: -4005325992075666043
+    second: Center-Button_0
+  - first:
+      213: 1507057618914364578
+    second: Center-Button_1
+  - first:
+      213: -5824673494381278884
+    second: Center-Button_2
+  - first:
+      213: 3752126274254641125
+    second: Center-Button_3
+  - first:
+      213: -6497240079379144197
+    second: Center-Button_4
+  - first:
+      213: 6960919228916699851
+    second: Center-Button_5
+  - first:
+      213: -4448156681835278908
+    second: Center-Button_6
+  - first:
+      213: -7796052114385751470
+    second: Center-Button_7
+  - first:
+      213: -4524164162525590583
+    second: Center-Button_8
+  - first:
+      213: -7097115146433102271
+    second: Center-Button_9
+  - first:
+      213: 6420875880099763424
+    second: Center-Button_10
+  - first:
+      213: 2014951746134737046
+    second: Center-Button_11
+  - first:
+      213: -1378667301080893369
+    second: Center-Button_12
+  - first:
+      213: 9056541146438968355
+    second: Center-Button_13
+  - first:
+      213: 792951198170988730
+    second: Center-Button_14
+  - first:
+      213: 3027436921393286282
+    second: Center-Button_15
+  - first:
+      213: -7687130398050589843
+    second: Center-Button_16
+  - first:
+      213: -3915121305746995251
+    second: Center-Button_17
+  - first:
+      213: 8110623353340754796
+    second: Center-Button_18
+  - first:
+      213: -1907876081338811911
+    second: Center-Button_19
+  - first:
+      213: -6999754894883801226
+    second: Center-Button_20
+  - first:
+      213: 6373795135225211343
+    second: Center-Button_21
+  - first:
+      213: 7469566100410815218
+    second: Center-Button_22
+  - first:
+      213: 3747272546320266370
+    second: Center-Button_23
+  - first:
+      213: -8305542957266882450
+    second: Center-Button_24
+  - first:
+      213: 2465595370450089615
+    second: Center-Button_25
+  - first:
+      213: -2852439702426520973
+    second: Center-Button_26
+  - first:
+      213: -8636615938162256112
+    second: Center-Button_27
+  - first:
+      213: -5814258243452260087
+    second: Center-Button_28
+  - first:
+      213: 459608230414882361
+    second: Center-Button_29
+  - first:
+      213: -6291003163270643922
+    second: Center-Button_30
+  - first:
+      213: -7392577213861599125
+    second: Center-Button_31
+  - first:
+      213: 1996474352922780590
+    second: Center-Button_32
+  - first:
+      213: -1156980563622764924
+    second: Center-Button_33
+  - first:
+      213: 2944864845376801466
+    second: Center-Button_34
+  - first:
+      213: -1890384313005870449
+    second: Center-Button_35
+  - first:
+      213: -1235687786030957115
+    second: Center-Button_36
+  - first:
+      213: 3348357733476232425
+    second: Center-Button_37
+  - first:
+      213: 9022127514047758933
+    second: Center-Button_38
+  - first:
+      213: 752474187754297176
+    second: Center-Button_39
+  - first:
+      213: -8033648252419449732
+    second: Center-Button_40
+  - first:
+      213: 174201553348223336
+    second: Center-Button_41
+  - first:
+      213: 4714257861801410703
+    second: Center-Button_42
+  - first:
+      213: -8288368477277083915
+    second: Center-Button_43
+  - first:
+      213: -4821566834136977610
+    second: Center-Button_44
+  - first:
+      213: 4843701160073082476
+    second: Center-Button_45
+  - first:
+      213: -2225105559271197844
+    second: Center-Button_46
+  - first:
+      213: 2761971291957629909
+    second: Center-Button_47
+  - first:
+      213: -1875226761798688066
+    second: Center-Button_48
+  - first:
+      213: 197198075320519067
+    second: Center-Button_49
+  - first:
+      213: 8807839166490695673
+    second: Center-Button_50
+  - first:
+      213: 8166203886650483362
+    second: Center-Button_51
+  - first:
+      213: 5528402740711080686
+    second: Center-Button_52
+  - first:
+      213: -8659038923807466310
+    second: Center-Button_53
+  - first:
+      213: -2561499954146631519
+    second: Center-Button_54
+  - first:
+      213: -1071546126087379595
+    second: Center-Button_55
+  - first:
+      213: -6277775407139433179
+    second: Center-Button_56
+  - first:
+      213: -6575474740686020728
+    second: Center-Button_57
+  - first:
+      213: -3065772637105362837
+    second: Center-Button_58
+  - first:
+      213: -1610852089570127445
+    second: Center-Button_59
+  - first:
+      213: 1199980274729001248
+    second: Center-Button_60
+  - first:
+      213: -381227382896913306
+    second: Center-Button_61
+  - first:
+      213: 7321840876934527820
+    second: Center-Button_62
+  - first:
+      213: -2398187419681813491
+    second: Center-Button_63
+  - first:
+      213: -315764926815198482
+    second: Center-Button_64
+  - first:
+      213: -5560506600654330406
+    second: Center-Button_65
+  - first:
+      213: -8747421328149552258
+    second: Center-Button_66
+  - first:
+      213: -3374207240409361995
+    second: Center-Button_67
+  - first:
+      213: -5294396994961897765
+    second: Center-Button_68
+  - first:
+      213: -2602405805690298899
+    second: Center-Button_69
+  - first:
+      213: 6580114423121547276
+    second: Center-Button_70
+  - first:
+      213: 4791034825706533589
+    second: Center-Button_71
+  - first:
+      213: -4086619815827499874
+    second: Center-Button_72
+  - first:
+      213: 5867239758068511348
+    second: Center-Button_73
+  - first:
+      213: -7244039442132149818
+    second: Center-Button_74
+  - first:
+      213: -3741578287744357931
+    second: Center-Button_75
+  - first:
+      213: 2808825287896066607
+    second: Center-Button_76
+  - first:
+      213: -8543339407920473940
+    second: Center-Button_77
+  - first:
+      213: -3588885710588012165
+    second: Center-Button_78
+  - first:
+      213: 6904010431585917908
+    second: Center-Button_79
+  - first:
+      213: 4061064747057313885
+    second: Center-Button_80
+  - first:
+      213: -4023173418014262612
+    second: Center-Button_81
+  - first:
+      213: -404325571369910333
+    second: Center-Button_82
+  - first:
+      213: 7899878478568045788
+    second: Center-Button_83
+  - first:
+      213: -7331803551423142352
+    second: Center-Button_84
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 1
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 100
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Android
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: WebGL
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: iOS
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: Center-Button_0
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 0
+        width: 231
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 58dd0b83b393a68c0800000000000000
+      internalID: -4005325992075666043
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_1
+      rect:
+        serializedVersion: 2
+        x: 81
+        y: 974
+        width: 8
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 2accf6f6be42ae410800000000000000
+      internalID: 1507057618914364578
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_2
+      rect:
+        serializedVersion: 2
+        x: 81
+        y: 819
+        width: 8
+        height: 10
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: c5945ca315a9a2fa0800000000000000
+      internalID: -5824673494381278884
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_3
+      rect:
+        serializedVersion: 2
+        x: 81
+        y: 719
+        width: 8
+        height: 22
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 5e79b5187fa321430800000000000000
+      internalID: 3752126274254641125
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_4
+      rect:
+        serializedVersion: 2
+        x: 81
+        y: 707
+        width: 8
+        height: 10
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: bf1ec28529a25d5a0800000000000000
+      internalID: -6497240079379144197
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_5
+      rect:
+        serializedVersion: 2
+        x: 81
+        y: 631
+        width: 8
+        height: 15
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: bc214cd78272a9060800000000000000
+      internalID: 6960919228916699851
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_6
+      rect:
+        serializedVersion: 2
+        x: 81
+        y: 616
+        width: 8
+        height: 15
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 4cd8de1b019f442c0800000000000000
+      internalID: -4448156681835278908
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_7
+      rect:
+        serializedVersion: 2
+        x: 81
+        y: 390
+        width: 8
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 252ba9f38ebdec390800000000000000
+      internalID: -7796052114385751470
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_8
+      rect:
+        serializedVersion: 2
+        x: 81
+        y: 340
+        width: 8
+        height: 19
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 9cb0c1b0aa0f631c0800000000000000
+      internalID: -4524164162525590583
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_9
+      rect:
+        serializedVersion: 2
+        x: 81
+        y: 326
+        width: 8
+        height: 8
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 14e7fce506bf18d90800000000000000
+      internalID: -7097115146433102271
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_10
+      rect:
+        serializedVersion: 2
+        x: 81
+        y: 271
+        width: 8
+        height: 23
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 0e4583cf7988b1950800000000000000
+      internalID: 6420875880099763424
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_11
+      rect:
+        serializedVersion: 2
+        x: 81
+        y: 231
+        width: 8
+        height: 14
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 6900aebffeb86fb10800000000000000
+      internalID: 2014951746134737046
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_12
+      rect:
+        serializedVersion: 2
+        x: 81
+        y: 166
+        width: 8
+        height: 15
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 74870a7e46dfddce0800000000000000
+      internalID: -1378667301080893369
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_13
+      rect:
+        serializedVersion: 2
+        x: 81
+        y: 84
+        width: 8
+        height: 12
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 3242437603c4fad70800000000000000
+      internalID: 9056541146438968355
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_14
+      rect:
+        serializedVersion: 2
+        x: 81
+        y: 44
+        width: 8
+        height: 10
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: ab0c33bd9e0210b00800000000000000
+      internalID: 792951198170988730
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_15
+      rect:
+        serializedVersion: 2
+        x: 81
+        y: 0
+        width: 8
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: a8c8c8707dd930a20800000000000000
+      internalID: 3027436921393286282
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_16
+      rect:
+        serializedVersion: 2
+        x: 82
+        y: 903
+        width: 6
+        height: 8
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: d63661291a3d15590800000000000000
+      internalID: -7687130398050589843
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_17
+      rect:
+        serializedVersion: 2
+        x: 82
+        y: 862
+        width: 7
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: dc703666ae1baa9c0800000000000000
+      internalID: -3915121305746995251
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_18
+      rect:
+        serializedVersion: 2
+        x: 82
+        y: 854
+        width: 7
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: c6bfcdac7f8be8070800000000000000
+      internalID: 8110623353340754796
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_19
+      rect:
+        serializedVersion: 2
+        x: 82
+        y: 846
+        width: 7
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 9f9f558ffccd585e0800000000000000
+      internalID: -1907876081338811911
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_20
+      rect:
+        serializedVersion: 2
+        x: 82
+        y: 838
+        width: 7
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 67736a76200ebde90800000000000000
+      internalID: -6999754894883801226
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_21
+      rect:
+        serializedVersion: 2
+        x: 82
+        y: 814
+        width: 7
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: fc9263ad7e4447850800000000000000
+      internalID: 6373795135225211343
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_22
+      rect:
+        serializedVersion: 2
+        x: 82
+        y: 797
+        width: 7
+        height: 8
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 2f25949faca39a760800000000000000
+      internalID: 7469566100410815218
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_23
+      rect:
+        serializedVersion: 2
+        x: 82
+        y: 654
+        width: 6
+        height: 6
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 2843ef7e68cf00430800000000000000
+      internalID: 3747272546320266370
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_24
+      rect:
+        serializedVersion: 2
+        x: 82
+        y: 526
+        width: 7
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e603c5d5fa8ccbc80800000000000000
+      internalID: -8305542957266882450
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_25
+      rect:
+        serializedVersion: 2
+        x: 82
+        y: 428
+        width: 7
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: f8676871ded873220800000000000000
+      internalID: 2465595370450089615
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_26
+      rect:
+        serializedVersion: 2
+        x: 82
+        y: 332
+        width: 7
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 37275a914391a68d0800000000000000
+      internalID: -2852439702426520973
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_27
+      rect:
+        serializedVersion: 2
+        x: 82
+        y: 300
+        width: 7
+        height: 17
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 0179c502093942880800000000000000
+      internalID: -8636615938162256112
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_28
+      rect:
+        serializedVersion: 2
+        x: 82
+        y: 246
+        width: 7
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 90134aeceea9f4fa0800000000000000
+      internalID: -5814258243452260087
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_29
+      rect:
+        serializedVersion: 2
+        x: 82
+        y: 220
+        width: 7
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 93699bd104bd06600800000000000000
+      internalID: 459608230414882361
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_30
+      rect:
+        serializedVersion: 2
+        x: 82
+        y: 142
+        width: 7
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e2ff46444fdd1b8a0800000000000000
+      internalID: -6291003163270643922
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_31
+      rect:
+        serializedVersion: 2
+        x: 82
+        y: 100
+        width: 7
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: b68e129013a486990800000000000000
+      internalID: -7392577213861599125
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_32
+      rect:
+        serializedVersion: 2
+        x: 82
+        y: 94
+        width: 7
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: ea3e321a8d6e4bb10800000000000000
+      internalID: 1996474352922780590
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_33
+      rect:
+        serializedVersion: 2
+        x: 82
+        y: 70
+        width: 7
+        height: 6
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 48edb3dae4491ffe0800000000000000
+      internalID: -1156980563622764924
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_34
+      rect:
+        serializedVersion: 2
+        x: 82
+        y: 60
+        width: 7
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: aba483c69f24ed820800000000000000
+      internalID: 2944864845376801466
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_35
+      rect:
+        serializedVersion: 2
+        x: 82
+        y: 39
+        width: 7
+        height: 6
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: f827056ab7104c5e0800000000000000
+      internalID: -1890384313005870449
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_36
+      rect:
+        serializedVersion: 2
+        x: 82
+        y: 30
+        width: 7
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 5cdf55c6184f9dee0800000000000000
+      internalID: -1235687786030957115
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_37
+      rect:
+        serializedVersion: 2
+        x: 82
+        y: 11
+        width: 7
+        height: 10
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 9ec68c44e91c77e20800000000000000
+      internalID: 3348357733476232425
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_38
+      rect:
+        serializedVersion: 2
+        x: 82
+        y: 6
+        width: 7
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 55248193c29053d70800000000000000
+      internalID: 9022127514047758933
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_39
+      rect:
+        serializedVersion: 2
+        x: 83
+        y: 870
+        width: 6
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 857deb77943517a00800000000000000
+      internalID: 752474187754297176
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_40
+      rect:
+        serializedVersion: 2
+        x: 247
+        y: 0
+        width: 1289
+        height: 1024
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: c7cd9108a7fb28090800000000000000
+      internalID: -8033648252419449732
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_41
+      rect:
+        serializedVersion: 2
+        x: 255
+        y: 672
+        width: 7
+        height: 25
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 86164aac363ea6200800000000000000
+      internalID: 174201553348223336
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_42
+      rect:
+        serializedVersion: 2
+        x: 255
+        y: 295
+        width: 17
+        height: 40
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: f8004405c886c6140800000000000000
+      internalID: 4714257861801410703
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_43
+      rect:
+        serializedVersion: 2
+        x: 262
+        y: 701
+        width: 10
+        height: 20
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 5f6aa5898ccc9fc80800000000000000
+      internalID: -8288368477277083915
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_44
+      rect:
+        serializedVersion: 2
+        x: 263
+        y: 237
+        width: 1034
+        height: 564
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 63fe576928a561db0800000000000000
+      internalID: -4821566834136977610
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_45
+      rect:
+        serializedVersion: 2
+        x: 278
+        y: 269
+        width: 22
+        height: 19
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: c66bd44ca88483340800000000000000
+      internalID: 4843701160073082476
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_46
+      rect:
+        serializedVersion: 2
+        x: 301
+        y: 253
+        width: 46
+        height: 19
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: c63b4ef6846de11e0800000000000000
+      internalID: -2225105559271197844
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_47
+      rect:
+        serializedVersion: 2
+        x: 349
+        y: 251
+        width: 7
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 5d316f8a14e745620800000000000000
+      internalID: 2761971291957629909
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_48
+      rect:
+        serializedVersion: 2
+        x: 357
+        y: 251
+        width: 6
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: eb2eead023bd9f5e0800000000000000
+      internalID: -1875226761798688066
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_49
+      rect:
+        serializedVersion: 2
+        x: 365
+        y: 250
+        width: 13
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: b99ceddca969cb200800000000000000
+      internalID: 197198075320519067
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_50
+      rect:
+        serializedVersion: 2
+        x: 414
+        y: 248
+        width: 13
+        height: 8
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 9f753755e0bbb3a70800000000000000
+      internalID: 8807839166490695673
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_51
+      rect:
+        serializedVersion: 2
+        x: 475
+        y: 248
+        width: 7
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 2a267332b2f245170800000000000000
+      internalID: 8166203886650483362
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_52
+      rect:
+        serializedVersion: 2
+        x: 636
+        y: 251
+        width: 7
+        height: 6
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: ee2416f7005d8bc40800000000000000
+      internalID: 5528402740711080686
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_53
+      rect:
+        serializedVersion: 2
+        x: 963
+        y: 248
+        width: 12
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: abcdc22f9f9e4d780800000000000000
+      internalID: -8659038923807466310
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_54
+      rect:
+        serializedVersion: 2
+        x: 992
+        y: 248
+        width: 10
+        height: 15
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 1a029e4fc59b37cd0800000000000000
+      internalID: -2561499954146631519
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_55
+      rect:
+        serializedVersion: 2
+        x: 994
+        y: 1008
+        width: 7
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 575ad12c97a1121f0800000000000000
+      internalID: -1071546126087379595
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_56
+      rect:
+        serializedVersion: 2
+        x: 994
+        y: 960
+        width: 7
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 52555cd378cd0e8a0800000000000000
+      internalID: -6277775407139433179
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_57
+      rect:
+        serializedVersion: 2
+        x: 994
+        y: 952
+        width: 7
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 88f1bdbcf883fb4a0800000000000000
+      internalID: -6575474740686020728
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_58
+      rect:
+        serializedVersion: 2
+        x: 994
+        y: 896
+        width: 6
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: b68e83b97003475d0800000000000000
+      internalID: -3065772637105362837
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_59
+      rect:
+        serializedVersion: 2
+        x: 994
+        y: 200
+        width: 6
+        height: 6
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: ba11a772f8a15a9e0800000000000000
+      internalID: -1610852089570127445
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_60
+      rect:
+        serializedVersion: 2
+        x: 994
+        y: 104
+        width: 6
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 021a2bcb3bf27a010800000000000000
+      internalID: 1199980274729001248
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_61
+      rect:
+        serializedVersion: 2
+        x: 994
+        y: 91
+        width: 7
+        height: 14
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 66417cf07bb95baf0800000000000000
+      internalID: -381227382896913306
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_62
+      rect:
+        serializedVersion: 2
+        x: 994
+        y: 56
+        width: 6
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: c4bfd9b1c776c9560800000000000000
+      internalID: 7321840876934527820
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_63
+      rect:
+        serializedVersion: 2
+        x: 994
+        y: 23
+        width: 6
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: d0c0e097f3de7bed0800000000000000
+      internalID: -2398187419681813491
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_64
+      rect:
+        serializedVersion: 2
+        x: 995
+        y: 10
+        width: 6
+        height: 8
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: ee227a8d87d2e9bf0800000000000000
+      internalID: -315764926815198482
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_65
+      rect:
+        serializedVersion: 2
+        x: 1039
+        y: 247
+        width: 10
+        height: 10
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: ad5a8c025bc15d2b0800000000000000
+      internalID: -5560506600654330406
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_66
+      rect:
+        serializedVersion: 2
+        x: 1040
+        y: 271
+        width: 7
+        height: 6
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e7368fad5aaea9680800000000000000
+      internalID: -8747421328149552258
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_67
+      rect:
+        serializedVersion: 2
+        x: 1041
+        y: 39
+        width: 7
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 5b159d464686c21d0800000000000000
+      internalID: -3374207240409361995
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_68
+      rect:
+        serializedVersion: 2
+        x: 1042
+        y: 46
+        width: 7
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: bd68667ebf58686b0800000000000000
+      internalID: -5294396994961897765
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_69
+      rect:
+        serializedVersion: 2
+        x: 1064
+        y: 245
+        width: 9
+        height: 11
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: ded5a6635b562ebd0800000000000000
+      internalID: -2602405805690298899
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_70
+      rect:
+        serializedVersion: 2
+        x: 1085
+        y: 242
+        width: 13
+        height: 18
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: c0095937433415b50800000000000000
+      internalID: 6580114423121547276
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_71
+      rect:
+        serializedVersion: 2
+        x: 1113
+        y: 247
+        width: 9
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 5d273cc3acc2d7240800000000000000
+      internalID: 4791034825706533589
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_72
+      rect:
+        serializedVersion: 2
+        x: 1121
+        y: 247
+        width: 13
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e949789ede86947c0800000000000000
+      internalID: -4086619815827499874
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_73
+      rect:
+        serializedVersion: 2
+        x: 1131
+        y: 250
+        width: 15
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 472f8b7597f9c6150800000000000000
+      internalID: 5867239758068511348
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_74
+      rect:
+        serializedVersion: 2
+        x: 1133
+        y: 795
+        width: 6
+        height: 6
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 6c95bc80280087b90800000000000000
+      internalID: -7244039442132149818
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_75
+      rect:
+        serializedVersion: 2
+        x: 1150
+        y: 251
+        width: 15
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 5d9eeabfe5e331cc0800000000000000
+      internalID: -3741578287744357931
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_76
+      rect:
+        serializedVersion: 2
+        x: 1164
+        y: 253
+        width: 14
+        height: 8
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: f2aed21b7b3faf620800000000000000
+      internalID: 2808825287896066607
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_77
+      rect:
+        serializedVersion: 2
+        x: 1181
+        y: 254
+        width: 8
+        height: 8
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: ca8dd43b216ff6980800000000000000
+      internalID: -8543339407920473940
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_78
+      rect:
+        serializedVersion: 2
+        x: 1185
+        y: 255
+        width: 33
+        height: 13
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: b791de00677b13ec0800000000000000
+      internalID: -3588885710588012165
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_79
+      rect:
+        serializedVersion: 2
+        x: 1186
+        y: 794
+        width: 7
+        height: 8
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 4db154498e8ffcf50800000000000000
+      internalID: 6904010431585917908
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_80
+      rect:
+        serializedVersion: 2
+        x: 1224
+        y: 712
+        width: 72
+        height: 88
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: d58763afedccb5830800000000000000
+      internalID: 4061064747057313885
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_81
+      rect:
+        serializedVersion: 2
+        x: 1237
+        y: 272
+        width: 7
+        height: 7
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: caa377d8711da28c0800000000000000
+      internalID: -4023173418014262612
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_82
+      rect:
+        serializedVersion: 2
+        x: 1280
+        y: 315
+        width: 8
+        height: 14
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 3cfb3e8f80c836af0800000000000000
+      internalID: -404325571369910333
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_83
+      rect:
+        serializedVersion: 2
+        x: 1287
+        y: 347
+        width: 6
+        height: 15
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: cdc3dc3fe9102ad60800000000000000
+      internalID: 7899878478568045788
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Center-Button_84
+      rect:
+        serializedVersion: 2
+        x: 1291
+        y: 695
+        width: 8
+        height: 18
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 036e97af383304a90800000000000000
+      internalID: -7331803551423142352
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 5e97eb03825dee720800000000000000
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
+    nameFileIdTable:
+      Center-Button_0: -4005325992075666043
+      Center-Button_1: 1507057618914364578
+      Center-Button_10: 6420875880099763424
+      Center-Button_11: 2014951746134737046
+      Center-Button_12: -1378667301080893369
+      Center-Button_13: 9056541146438968355
+      Center-Button_14: 792951198170988730
+      Center-Button_15: 3027436921393286282
+      Center-Button_16: -7687130398050589843
+      Center-Button_17: -3915121305746995251
+      Center-Button_18: 8110623353340754796
+      Center-Button_19: -1907876081338811911
+      Center-Button_2: -5824673494381278884
+      Center-Button_20: -6999754894883801226
+      Center-Button_21: 6373795135225211343
+      Center-Button_22: 7469566100410815218
+      Center-Button_23: 3747272546320266370
+      Center-Button_24: -8305542957266882450
+      Center-Button_25: 2465595370450089615
+      Center-Button_26: -2852439702426520973
+      Center-Button_27: -8636615938162256112
+      Center-Button_28: -5814258243452260087
+      Center-Button_29: 459608230414882361
+      Center-Button_3: 3752126274254641125
+      Center-Button_30: -6291003163270643922
+      Center-Button_31: -7392577213861599125
+      Center-Button_32: 1996474352922780590
+      Center-Button_33: -1156980563622764924
+      Center-Button_34: 2944864845376801466
+      Center-Button_35: -1890384313005870449
+      Center-Button_36: -1235687786030957115
+      Center-Button_37: 3348357733476232425
+      Center-Button_38: 9022127514047758933
+      Center-Button_39: 752474187754297176
+      Center-Button_4: -6497240079379144197
+      Center-Button_40: -8033648252419449732
+      Center-Button_41: 174201553348223336
+      Center-Button_42: 4714257861801410703
+      Center-Button_43: -8288368477277083915
+      Center-Button_44: -4821566834136977610
+      Center-Button_45: 4843701160073082476
+      Center-Button_46: -2225105559271197844
+      Center-Button_47: 2761971291957629909
+      Center-Button_48: -1875226761798688066
+      Center-Button_49: 197198075320519067
+      Center-Button_5: 6960919228916699851
+      Center-Button_50: 8807839166490695673
+      Center-Button_51: 8166203886650483362
+      Center-Button_52: 5528402740711080686
+      Center-Button_53: -8659038923807466310
+      Center-Button_54: -2561499954146631519
+      Center-Button_55: -1071546126087379595
+      Center-Button_56: -6277775407139433179
+      Center-Button_57: -6575474740686020728
+      Center-Button_58: -3065772637105362837
+      Center-Button_59: -1610852089570127445
+      Center-Button_6: -4448156681835278908
+      Center-Button_60: 1199980274729001248
+      Center-Button_61: -381227382896913306
+      Center-Button_62: 7321840876934527820
+      Center-Button_63: -2398187419681813491
+      Center-Button_64: -315764926815198482
+      Center-Button_65: -5560506600654330406
+      Center-Button_66: -8747421328149552258
+      Center-Button_67: -3374207240409361995
+      Center-Button_68: -5294396994961897765
+      Center-Button_69: -2602405805690298899
+      Center-Button_7: -7796052114385751470
+      Center-Button_70: 6580114423121547276
+      Center-Button_71: 4791034825706533589
+      Center-Button_72: -4086619815827499874
+      Center-Button_73: 5867239758068511348
+      Center-Button_74: -7244039442132149818
+      Center-Button_75: -3741578287744357931
+      Center-Button_76: 2808825287896066607
+      Center-Button_77: -8543339407920473940
+      Center-Button_78: -3588885710588012165
+      Center-Button_79: 6904010431585917908
+      Center-Button_8: -4524164162525590583
+      Center-Button_80: 4061064747057313885
+      Center-Button_81: -4023173418014262612
+      Center-Button_82: -404325571369910333
+      Center-Button_83: 7899878478568045788
+      Center-Button_84: -7331803551423142352
+      Center-Button_9: -7097115146433102271
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

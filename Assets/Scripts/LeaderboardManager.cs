@@ -227,7 +227,7 @@ public class RankingUI : MonoBehaviour
         brt.anchoredPosition = Vector2.zero;
         brt.sizeDelta = new Vector2(0f, 80f);
 
-        Sprite back = Resources.Load<Sprite>("Sprites/back-button");
+        Sprite back = ButtonSpriteCatalog.SpriteFor("Back-Button");
         GameObject bgo = new GameObject("BtnBack");
         bgo.transform.SetParent(bar.transform, false);
         SetRect(bgo.AddComponent<RectTransform>(), new Vector2(0f, 0.5f), new Vector2(52f, 0f), new Vector2(64f, 64f));
@@ -251,14 +251,15 @@ public class RankingUI : MonoBehaviour
             SetRect(go.AddComponent<RectTransform>(), new Vector2(0.5f, 0.5f),
                     new Vector2(-520f, 190f - i * 78f), new Vector2(220f, 62f));
             Image face = go.AddComponent<Image>();
-            face.sprite = Rounded(); face.type = Image.Type.Sliced;
+            face.sprite = ButtonSpriteCatalog.SpriteFor("Button1");
+            if (face.sprite == null) { face.sprite = Rounded(); face.type = Image.Type.Sliced; }
             face.color = new Color(0.06f, 0.1f, 0.16f, 1f);
             Button b = go.AddComponent<Button>();
             b.targetGraphic = face;
             b.onClick.AddListener(() => { tab = idx; SyncTabs(); RebuildPanel(); });
-            TextMeshProUGUI t = MakeText(go.transform, TabNames[i], 16f, new Vector2(0.5f, 0.5f),
-                                         Vector2.zero, new Vector2(210f, 54f), Grey, TextAlignmentOptions.Center);
-            Stretch(t.rectTransform);
+            TextMeshProUGUI t = LocalizedButtonStyler.AddLabel(go.transform, TabNames[i], 16f,
+                new Vector2(220f, 62f), maxWidthMultiplier: 1f);
+            t.color = Grey;
             tabLabels.Add(t);
         }
 
@@ -319,7 +320,7 @@ public class RankingUI : MonoBehaviour
         info.transform.SetParent(header.transform, false);
         SetRect(info.AddComponent<RectTransform>(), new Vector2(1f, 0.5f), new Vector2(-250f, 0f), new Vector2(40f, 40f));
         Image iimg = info.AddComponent<Image>();
-        Sprite isp = Resources.Load<Sprite>("Sprites/i-button");
+        Sprite isp = ButtonSpriteCatalog.SpriteFor("I-Button");
         if (isp != null) { iimg.sprite = isp; iimg.preserveAspect = true; }
         else { iimg.sprite = Circle(); iimg.color = Cyan; }
         Button ibtn = info.AddComponent<Button>();
@@ -512,14 +513,13 @@ public class RankingUI : MonoBehaviour
         go.transform.SetParent(parent, false);
         SetRect(go.AddComponent<RectTransform>(), anchor, pos, size);
         Image img = go.AddComponent<Image>();
-        img.sprite = Rounded(); img.type = Image.Type.Sliced;
+        img.sprite = LocalizedButtonStyler.UniversalSprite();
+        if (img.sprite == null) { img.sprite = Rounded(); img.type = Image.Type.Sliced; }
         img.color = color;
         Button btn = go.AddComponent<Button>();
         btn.targetGraphic = img;
         if (onClick != null) btn.onClick.AddListener(onClick);
-        TextMeshProUGUI t = MakeText(go.transform, label, fontSize, new Vector2(0.5f, 0.5f), Vector2.zero,
-                                     size, Color.white, TextAlignmentOptions.Center);
-        Stretch(t.rectTransform);
+        LocalizedButtonStyler.AddLabel(go.transform, label, fontSize, size, maxWidthMultiplier: 1.3f);
         return btn;
     }
 

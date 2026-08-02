@@ -5,7 +5,7 @@ using UnityEngine.EventSystems;
 using TMPro;
 
 // Pause system, built entirely in code (no prefabs, no Inspector wiring): a pause
-// button in the top-right corner (sprite from Resources/Sprites/pause-button) that
+// button in the top-right corner (Pause-Button from ButtonSpriteCatalog) that
 // freezes the game (Time.timeScale = 0) and opens a centered rounded panel with
 // PAUSED + RESUME / RESTART / MAIN MENU. Works with mouse and touch alike — the
 // button is always visible on both mobile and desktop, alongside TouchControls.
@@ -75,12 +75,12 @@ public class PauseMenuUI : MonoBehaviour
         pRt.anchoredPosition = new Vector2(-180f, 15f); // pulled down to clear the scoreboard
         pRt.sizeDelta = new Vector2(70f, 70f);
         Image pImg = pauseButton.AddComponent<Image>();
-        pImg.sprite = Resources.Load<Sprite>("Sprites/pause-button");
+        pImg.sprite = ButtonSpriteCatalog.SpriteFor("Pause-Button");
         if (pImg.sprite == null)
         {
             // fallback so the button still exists if the sprite goes missing
             pImg.color = ButtonColor;
-            Debug.LogWarning("PauseMenuUI: Sprites/pause-button not found in a Resources folder.");
+            Debug.LogWarning("PauseMenuUI: Pause-Button not found in ButtonSpriteCatalog.");
         }
         Button pBtn = pauseButton.AddComponent<Button>();
         pBtn.targetGraphic = pImg;
@@ -174,19 +174,14 @@ public class PauseMenuUI : MonoBehaviour
         rt.anchoredPosition = pos;
 
         Image img = go.AddComponent<Image>();
+        img.sprite = LocalizedButtonStyler.UniversalSprite();
         img.color = ButtonColor;
 
         Button btn = go.AddComponent<Button>();
         btn.targetGraphic = img;
         btn.onClick.AddListener(onClick);
 
-        TextMeshProUGUI txt = MakeText(go.transform, label, 26f, Vector2.zero, Vector2.zero);
-        txt.outlineWidth = 0.2f;
-        txt.outlineColor = new Color32(0, 255, 255, 255); // cyan, MainMenuUI style
-        RectTransform trt = txt.rectTransform;
-        trt.anchorMin = Vector2.zero;
-        trt.anchorMax = Vector2.one;
-        trt.offsetMin = trt.offsetMax = Vector2.zero;
+        LocalizedButtonStyler.AddLabel(go.transform, label, 26f, new Vector2(300f, 60f));
     }
 
     // Rounded white square with a 9-slice border (same generator as TouchControls).

@@ -803,14 +803,13 @@ public class ShopUI : MonoBehaviour
         go.transform.SetParent(parent, false);
         SetRect(go.AddComponent<RectTransform>(), anchor, pos, size);
         Image img = go.AddComponent<Image>();
-        img.sprite = Rounded(); img.type = Image.Type.Sliced;
+        img.sprite = LocalizedButtonStyler.UniversalSprite();
+        if (img.sprite == null) { img.sprite = Rounded(); img.type = Image.Type.Sliced; }
         img.color = color;
         Button btn = go.AddComponent<Button>();
         btn.targetGraphic = img;
         if (onClick != null) btn.onClick.AddListener(onClick);
-        TextMeshProUGUI t = MakeText(go.transform, label, fontSize, new Vector2(0.5f, 0.5f), Vector2.zero,
-                                     size, Color.white, TextAlignmentOptions.Center);
-        Stretch(t.rectTransform);
+        LocalizedButtonStyler.AddLabel(go.transform, label, fontSize, size, maxWidthMultiplier: 1.3f);
         return btn;
     }
 
@@ -858,7 +857,8 @@ public class ShopUI : MonoBehaviour
     static Sprite LoadAnySprite(string path)
     {
         if (spriteCache.TryGetValue(path, out Sprite cached) && cached != null) return cached;
-        Sprite s = Resources.Load<Sprite>(path);
+        Sprite s = ButtonSpriteCatalog.SpriteForLegacyPath(path);
+        if (s == null) s = Resources.Load<Sprite>(path);
         if (s == null)
         {
             Texture2D tex = Resources.Load<Texture2D>(path);

@@ -215,7 +215,7 @@ public class SeasonPassUI : MonoBehaviour
         brt.anchoredPosition = Vector2.zero;
         brt.sizeDelta = new Vector2(0f, 80f);
 
-        Sprite back = Resources.Load<Sprite>("Sprites/back-button");
+        Sprite back = ButtonSpriteCatalog.SpriteFor("Back-Button");
         GameObject bgo = new GameObject("BtnBack");
         bgo.transform.SetParent(bar.transform, false);
         SetRect(bgo.AddComponent<RectTransform>(), new Vector2(0f, 0.5f), new Vector2(52f, 0f), new Vector2(64f, 64f));
@@ -473,14 +473,13 @@ public class SeasonPassUI : MonoBehaviour
         go.transform.SetParent(parent, false);
         SetRect(go.AddComponent<RectTransform>(), anchor, pos, size);
         Image img = go.AddComponent<Image>();
-        img.sprite = Rounded(); img.type = Image.Type.Sliced;
+        img.sprite = LocalizedButtonStyler.UniversalSprite();
+        if (img.sprite == null) { img.sprite = Rounded(); img.type = Image.Type.Sliced; }
         img.color = color;
         Button btn = go.AddComponent<Button>();
         btn.targetGraphic = img;
         if (onClick != null) btn.onClick.AddListener(onClick);
-        TextMeshProUGUI t = MakeText(go.transform, label, fontSize, new Vector2(0.5f, 0.5f), Vector2.zero,
-                                     size, Color.white, TextAlignmentOptions.Center);
-        Stretch(t.rectTransform);
+        LocalizedButtonStyler.AddLabel(go.transform, label, fontSize, size, maxWidthMultiplier: 1.3f);
         return btn;
     }
 
