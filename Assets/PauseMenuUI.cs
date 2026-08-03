@@ -174,14 +174,14 @@ public class PauseMenuUI : MonoBehaviour
         rt.anchoredPosition = pos;
 
         Image img = go.AddComponent<Image>();
-        img.sprite = LocalizedButtonStyler.UniversalSprite();
-        img.color = ButtonColor;
+        CrestUITheme.ApplyButton(img, ButtonColor);
 
         Button btn = go.AddComponent<Button>();
         btn.targetGraphic = img;
         btn.onClick.AddListener(onClick);
 
-        LocalizedButtonStyler.AddLabel(go.transform, label, 26f, new Vector2(300f, 60f));
+        LocalizedButtonStyler.AddLabel(go.transform, label, 26f, new Vector2(300f, 60f),
+            LocalizedButtonStyler.TextZone.NativeCenter);
     }
 
     // Rounded white square with a 9-slice border (same generator as TouchControls).

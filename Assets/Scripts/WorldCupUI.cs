@@ -184,10 +184,6 @@ public sealed class WorldCupUI : MonoBehaviour
         MakeButton(sheet, "BRACKET", new Vector2(0.5f, 1f), new Vector2(132f, -126f),
                    new Vector2(240f, 48f), dashboardTab == 1 ? Blue : PanelSoft,
                    () => { dashboardTab = 1; BuildDashboard(); });
-        MakeButton(sheet, "RESTART", new Vector2(1f, 1f), new Vector2(-82f, -125f),
-                   new Vector2(126f, 38f), new Color(0.22f, 0.28f, 0.36f, 0.92f),
-                   RequestRestart, 14f);
-
         GameObject contentGo = new GameObject("WorldCupDashboardContent");
         contentGo.transform.SetParent(sheet, false);
         RectTransform contentRt = contentGo.AddComponent<RectTransform>();
@@ -396,10 +392,21 @@ public sealed class WorldCupUI : MonoBehaviour
                      new Vector2(520f, 34f), season.PlayerIsChampion ? Gold : Color.white);
             return;
         }
+        GameObject rowGo = new GameObject("WorldCupActions");
+        rowGo.transform.SetParent(sheet, false);
+        RectTransform rowRt = rowGo.AddComponent<RectTransform>();
+        SetRect(rowRt, new Vector2(0.5f, 0f), new Vector2(0f, 42f), new Vector2(616f, 62f));
+        HorizontalLayoutGroup row = rowGo.AddComponent<HorizontalLayoutGroup>();
+        row.spacing = 16f;
+        row.childAlignment = TextAnchor.MiddleCenter;
+        row.childControlWidth = true; row.childControlHeight = true;
+        row.childForceExpandWidth = true; row.childForceExpandHeight = true;
+
+        Button restart = MakeUnifiedActionButton(rowGo.transform, "RESTART", RequestRestart);
+        if (!season.CanRestart) restart.gameObject.AddComponent<CanvasGroup>().alpha = 0.58f;
         if (season.NextOpponent >= 0)
-            MakeButton(sheet, "NEXT MATCH  vs. " + season.NextOpponentName.ToUpperInvariant(),
-                       new Vector2(0.5f, 0f), new Vector2(0f, 42f),
-                       new Vector2(500f, 62f), Green, OpenPreMatch, 17f);
+            MakeUnifiedActionButton(rowGo.transform,
+                "NEXT MATCH  vs. " + season.NextOpponentName.ToUpperInvariant(), OpenPreMatch);
     }
 
     void OpenPreMatch()
@@ -516,6 +523,8 @@ public sealed class WorldCupUI : MonoBehaviour
                    new Color(0.14f, 0.2f, 0.3f, 1f), () => back(), 32f);
         MakeText(bar.transform, title, 34f, new Vector2(0.5f, 0.5f),
                  Vector2.zero, new Vector2(520f, 50f), Color.white);
+        NavigationManager navigation = GetComponent<NavigationManager>();
+        if (navigation != null) navigation.AddCurrencyDisplay(bar.transform);
     }
 
     void Close() => root.SetActive(false);
@@ -588,6 +597,26 @@ public sealed class WorldCupUI : MonoBehaviour
         if (action != null) button.onClick.AddListener(() => action());
         MakeText(image.transform, label, fontSize, new Vector2(0.5f, 0.5f),
                  Vector2.zero, size - new Vector2(12f, 8f), Color.white);
+        return button;
+    }
+
+    Button MakeUnifiedActionButton(Transform parent, string label, Action action)
+    {
+        GameObject go = new GameObject("Btn_" + label);
+        go.transform.SetParent(parent, false);
+        go.AddComponent<RectTransform>();
+        LayoutElement layout = go.AddComponent<LayoutElement>();
+        layout.minWidth = layout.preferredWidth = 300f;
+        layout.minHeight = layout.preferredHeight = 62f;
+        layout.flexibleWidth = 1f;
+
+        Image image = go.AddComponent<Image>();
+        CrestUITheme.ApplyButton(image, Green);
+        Button button = go.AddComponent<Button>();
+        button.targetGraphic = image;
+        if (action != null) button.onClick.AddListener(() => action());
+        LocalizedButtonStyler.AddLabel(go.transform, label, 17f, new Vector2(300f, 62f),
+            LocalizedButtonStyler.TextZone.NativeCenter, 1f);
         return button;
     }
 

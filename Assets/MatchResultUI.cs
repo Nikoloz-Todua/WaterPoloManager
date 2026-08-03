@@ -170,14 +170,14 @@ public class MatchResultUI : MonoBehaviour
         rt.anchoredPosition = pos;
 
         Image img = go.AddComponent<Image>();
-        img.sprite = LocalizedButtonStyler.UniversalSprite();
-        img.color = ButtonColor;
+        CrestUITheme.ApplyButton(img, ButtonColor);
 
         Button btn = go.AddComponent<Button>();
         btn.targetGraphic = img;
         btn.onClick.AddListener(onClick);
 
-        LocalizedButtonStyler.AddLabel(go.transform, label, 28f, new Vector2(300f, 70f));
+        LocalizedButtonStyler.AddLabel(go.transform, label, 28f, new Vector2(300f, 70f),
+            LocalizedButtonStyler.TextZone.NativeCenter);
     }
 
     IEnumerator FadeIn()

@@ -482,11 +482,19 @@ public class TouchControls : MonoBehaviour
 
     static Sprite LoadButtonSprite(string file)
     {
-        Sprite s = ButtonSpriteCatalog.SpriteForLegacyPath("Sprites/" + file);
-        if (s == null) s = Resources.Load<Sprite>("Sprites/" + file);
-        if (s == null) s = Resources.Load<Sprite>("Sprites/" + file.ToLowerInvariant()); // case-safe fallback
+        string path = "Sprites/" + file;
+        string buttonKey = ButtonSpriteCatalog.KeyForLegacyPath(path);
+        Sprite s = !string.IsNullOrEmpty(buttonKey)
+            ? ButtonSpriteCatalog.SpriteFor(buttonKey)
+            : Resources.Load<Sprite>(path);
+        // "block" has no replacement in the supplied catalog, so it intentionally keeps its
+        // existing Resources fallback until a Block-Button asset is provided.
+        if (s == null && string.IsNullOrEmpty(buttonKey))
+            s = Resources.Load<Sprite>("Sprites/" + file.ToLowerInvariant());
         if (s == null)
-            Debug.LogWarning("TouchControls: button sprite 'Sprites/" + file + "' not found in a Resources folder.");
+            Debug.LogWarning(!string.IsNullOrEmpty(buttonKey)
+                ? "TouchControls: button '" + buttonKey + "' is missing from ButtonSpriteCatalog."
+                : "TouchControls: button sprite 'Sprites/" + file + "' not found in Resources.");
         return s;
     }
 

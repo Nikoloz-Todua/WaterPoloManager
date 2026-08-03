@@ -44,6 +44,7 @@ public class ClubCustomizationUI : MonoBehaviour
     };
 
     Transform root;
+    RectTransform editorStack;
     NavigationManager nav;
     int selTemplate, selPrimary, selSecondary = DefaultSwimwearPaletteIndex, selTertiary = 3;
     int selCountry = -1, selCap = DefaultCapPaletteIndex, selSwimwear = DefaultSwimwearPaletteIndex;
@@ -80,14 +81,32 @@ public class ClubCustomizationUI : MonoBehaviour
         Stretch(bg.rectTransform);
         BuildTopBar();
         BuildPreviewPanel();
+        BuildEditorStack();
         BuildTemplateBrowser();
+        BuildCountrySelector();
         BuildCrestColorRows();
         BuildPlayerColorSelectors();
-        BuildCountrySelector();
         SyncFromProfile();
     }
 
     void OnEnable() { SyncFromProfile(); }
+
+    void BuildEditorStack()
+    {
+        GameObject go = new GameObject("CustomizationStack");
+        go.transform.SetParent(root, false);
+        editorStack = go.AddComponent<RectTransform>();
+        SetRect(editorStack, new Vector2(0.5f, 0.5f), new Vector2(170f, -10f),
+                new Vector2(840f, 548f));
+        VerticalLayoutGroup layout = go.AddComponent<VerticalLayoutGroup>();
+        layout.padding = new RectOffset(0, 0, 0, 0);
+        layout.spacing = 9f;
+        layout.childAlignment = TextAnchor.UpperCenter;
+        layout.childControlWidth = true;
+        layout.childControlHeight = true;
+        layout.childForceExpandWidth = true;
+        layout.childForceExpandHeight = false;
+    }
 
     void BuildTopBar()
     {
@@ -114,6 +133,7 @@ public class ClubCustomizationUI : MonoBehaviour
 
         MakeText(bar.transform, "MY CLUB CREST", 34f, new Vector2(0.5f, 0.5f), Vector2.zero,
                  new Vector2(420f, 50f), Color.white, TextAlignmentOptions.Center);
+        if (nav != null) nav.AddCurrencyDisplay(bar.transform);
     }
 
     void BuildPreviewPanel()
@@ -140,15 +160,38 @@ public class ClubCustomizationUI : MonoBehaviour
 
     void BuildTemplateBrowser()
     {
-        MakeText(root, "CREST TEMPLATE", 18f, new Vector2(0.5f, 0.5f), new Vector2(55f, 242f),
-                 new Vector2(300f, 26f), Gold, TextAlignmentOptions.Center);
-        MakeButton(root, "‹", 34f, new Vector2(0.5f, 0.5f), new Vector2(-135f, 202f),
-                   new Vector2(58f, 48f), Arrow, () => CycleTemplate(-1));
-        templateLabel = MakeText(root, "TEMPLATE 01 / 20", 20f, new Vector2(0.5f, 0.5f),
-                                 new Vector2(55f, 202f), new Vector2(280f, 42f),
-                                 Color.white, TextAlignmentOptions.Center);
-        MakeButton(root, "›", 34f, new Vector2(0.5f, 0.5f), new Vector2(245f, 202f),
-                   new Vector2(58f, 48f), Arrow, () => CycleTemplate(1));
+        Image row = MakeLayoutCard("TemplateRow", 64f, new Color(0.23f, 0.35f, 0.48f, 1f));
+        HorizontalLayoutGroup layout = row.gameObject.AddComponent<HorizontalLayoutGroup>();
+        layout.padding = new RectOffset(150, 150, 6, 6);
+        layout.spacing = 14f;
+        layout.childAlignment = TextAnchor.MiddleCenter;
+        layout.childControlWidth = true; layout.childControlHeight = true;
+        layout.childForceExpandWidth = false; layout.childForceExpandHeight = true;
+
+        Button previous = MakeCompactToggleButton(row.transform, "‹", 34f, Vector2.one * 0.5f,
+                                     Vector2.zero, new Vector2(58f, 48f), Arrow,
+                                     () => CycleTemplate(-1));
+        SetLayoutSize(previous.transform, 58f, 48f);
+
+        GameObject labels = NewLayoutContainer("TemplateLabels", row.transform, 270f, 52f, 1f);
+        VerticalLayoutGroup textLayout = labels.AddComponent<VerticalLayoutGroup>();
+        textLayout.spacing = -2f;
+        textLayout.childAlignment = TextAnchor.MiddleCenter;
+        textLayout.childControlWidth = true; textLayout.childControlHeight = true;
+        textLayout.childForceExpandWidth = true; textLayout.childForceExpandHeight = false;
+        TextMeshProUGUI title = MakeText(labels.transform, "CREST TEMPLATE", 15f,
+            Vector2.one * 0.5f, Vector2.zero, new Vector2(270f, 22f), Gold,
+            TextAlignmentOptions.Center);
+        SetLayoutSize(title.transform, 270f, 22f, 1f);
+        templateLabel = MakeText(labels.transform, "TEMPLATE 01 / 20", 20f,
+            Vector2.one * 0.5f, Vector2.zero, new Vector2(270f, 28f), Color.white,
+            TextAlignmentOptions.Center);
+        SetLayoutSize(templateLabel.transform, 270f, 28f, 1f);
+
+        Button next = MakeCompactToggleButton(row.transform, "›", 34f, Vector2.one * 0.5f,
+                                 Vector2.zero, new Vector2(58f, 48f), Arrow,
+                                 () => CycleTemplate(1));
+        SetLayoutSize(next.transform, 58f, 48f);
     }
 
     void BuildCrestColorRows()
@@ -171,102 +214,143 @@ public class ClubCustomizationUI : MonoBehaviour
     void BuildPaletteGroup(string label, float y, Color accent, List<SwatchVisual> frames,
                            System.Action<int> select)
     {
-        Image card = MakeCard(root, new Vector2(55f, y), new Vector2(500f, 102f),
-                              new Color(accent.r, accent.g, accent.b, 0.86f));
+        Image card = MakeLayoutCard(label + "_Palette", 96f,
+                                    new Color(accent.r, accent.g, accent.b, 0.86f));
         card.gameObject.name = label + "_Palette";
+
+        HorizontalLayoutGroup row = card.gameObject.AddComponent<HorizontalLayoutGroup>();
+        row.padding = new RectOffset(14, 14, 10, 10);
+        row.spacing = 10f;
+        row.childAlignment = TextAnchor.MiddleCenter;
+        row.childControlWidth = true; row.childControlHeight = true;
+        row.childForceExpandWidth = false; row.childForceExpandHeight = true;
 
         Image accentBar = NewImage("Accent", card.transform);
         accentBar.sprite = Rounded(); accentBar.type = Image.Type.Sliced;
         accentBar.color = accent; accentBar.raycastTarget = false;
-        SetRect(accentBar.rectTransform, new Vector2(0f, 0.5f),
-                new Vector2(7f, 0f), new Vector2(7f, 76f));
+        SetLayoutSize(accentBar.transform, 7f, 70f);
 
-        MakeText(card.transform, label, 14f, new Vector2(0f, 0.5f),
-                 new Vector2(61f, 10f), new Vector2(100f, 24f),
-                 Color.white, TextAlignmentOptions.Center);
-        MakeText(card.transform, "COLOR", 10f, new Vector2(0f, 0.5f),
-                 new Vector2(61f, -12f), new Vector2(100f, 18f),
-                 new Color(accent.r, accent.g, accent.b, 0.95f),
-                 TextAlignmentOptions.Center);
+        GameObject labelBlock = NewLayoutContainer(label + "Labels", card.transform, 104f, 70f);
+        VerticalLayoutGroup labels = labelBlock.AddComponent<VerticalLayoutGroup>();
+        labels.spacing = -3f; labels.childAlignment = TextAnchor.MiddleCenter;
+        labels.childControlWidth = true; labels.childControlHeight = true;
+        labels.childForceExpandWidth = true; labels.childForceExpandHeight = false;
+        TextMeshProUGUI main = MakeText(labelBlock.transform, label, 14f, Vector2.one * 0.5f,
+            Vector2.zero, new Vector2(104f, 26f), Color.white, TextAlignmentOptions.Center);
+        SetLayoutSize(main.transform, 104f, 26f, 1f);
+        TextMeshProUGUI sub = MakeText(labelBlock.transform, "COLOR", 10f, Vector2.one * 0.5f,
+            Vector2.zero, new Vector2(104f, 20f), new Color(accent.r, accent.g, accent.b, 0.95f),
+            TextAlignmentOptions.Center);
+        SetLayoutSize(sub.transform, 104f, 20f, 1f);
 
         Image divider = NewImage("Divider", card.transform);
         divider.color = new Color(1f, 1f, 1f, 0.10f); divider.raycastTarget = false;
-        SetRect(divider.rectTransform, new Vector2(0f, 0.5f),
-                new Vector2(116f, 0f), new Vector2(2f, 70f));
+        SetLayoutSize(divider.transform, 2f, 70f);
+
+        GameObject gridGo = NewLayoutContainer(label + "Swatches", card.transform, 360f, 76f, 1f);
+        GridLayoutGroup grid = gridGo.AddComponent<GridLayoutGroup>();
+        grid.padding = new RectOffset(4, 4, 0, 0);
+        grid.cellSize = new Vector2(40f, 34f);
+        grid.spacing = new Vector2(8f, 8f);
+        grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+        grid.constraintCount = 7;
+        grid.startAxis = GridLayoutGroup.Axis.Horizontal;
+        grid.childAlignment = TextAnchor.MiddleCenter;
 
         frames.Clear();
         for (int i = 0; i < Palette.Length; i++)
         {
             int index = i;
-            int column = i % 7;
-            int row = i / 7;
-            float x = 145f + column * 47f;
-            float swatchY = row == 0 ? 24f : -24f;
-            frames.Add(MakeSwatch(card.transform, new Vector2(x, swatchY), Palette[i],
+            frames.Add(MakeSwatch(gridGo.transform, Vector2.zero, Palette[i],
                                   () => select(index)));
         }
     }
 
     void BuildPlayerColorSelectors()
     {
-        BuildPlayerColorSelector("PLAYER CAP", -188f, true, out capColorPreview, out capColorName);
-        BuildPlayerColorSelector("PLAYER SWIMWEAR", -265f, false,
+        Image row = MakeLayoutCard("PlayerColors", 72f, new Color(0.24f, 0.38f, 0.52f, 1f));
+        HorizontalLayoutGroup layout = row.gameObject.AddComponent<HorizontalLayoutGroup>();
+        layout.padding = new RectOffset(10, 10, 8, 8);
+        layout.spacing = 12f;
+        layout.childAlignment = TextAnchor.MiddleCenter;
+        layout.childControlWidth = true; layout.childControlHeight = true;
+        layout.childForceExpandWidth = true; layout.childForceExpandHeight = true;
+        BuildPlayerColorSelector(row.transform, "PLAYER CAP", true,
+                                 out capColorPreview, out capColorName);
+        BuildPlayerColorSelector(row.transform, "PLAYER SWIMWEAR", false,
                                  out swimwearColorPreview, out swimwearColorName);
     }
 
-    void BuildPlayerColorSelector(string label, float y, bool cap,
+    void BuildPlayerColorSelector(Transform parent, string label, bool cap,
                                   out Image previewImage, out TextMeshProUGUI colorName)
     {
-        MakeText(root, label, 14f, new Vector2(0.5f, 0.5f), new Vector2(-35f, y),
-                 new Vector2(220f, 22f), Gold, TextAlignmentOptions.Center);
-        MakeButton(root, "‹", 25f, new Vector2(0.5f, 0.5f), new Vector2(-150f, y - 35f),
-                   new Vector2(48f, 38f), Arrow, () => CyclePlayerColor(cap, -1));
-        MakeButton(root, "›", 25f, new Vector2(0.5f, 0.5f), new Vector2(80f, y - 35f),
-                   new Vector2(48f, 38f), Arrow, () => CyclePlayerColor(cap, 1));
+        Image group = NewImage(cap ? "CapColorGroup" : "SwimwearColorGroup", parent);
+        group.sprite = Rounded(); group.type = Image.Type.Sliced;
+        group.color = new Color(0.04f, 0.08f, 0.14f, 0.72f);
+        SetLayoutSize(group.transform, 360f, 56f, 1f);
+        HorizontalLayoutGroup layout = group.gameObject.AddComponent<HorizontalLayoutGroup>();
+        layout.padding = new RectOffset(8, 8, 8, 8);
+        layout.spacing = 7f;
+        layout.childAlignment = TextAnchor.MiddleCenter;
+        layout.childControlWidth = true; layout.childControlHeight = true;
+        layout.childForceExpandWidth = false; layout.childForceExpandHeight = true;
 
-        previewImage = NewImage(cap ? "CapColorPreview" : "SwimwearColorPreview", root);
+        TextMeshProUGUI title = MakeText(group.transform, label, 12f, Vector2.one * 0.5f,
+            Vector2.zero, new Vector2(118f, 34f), Gold, TextAlignmentOptions.Center);
+        SetLayoutSize(title.transform, 118f, 34f);
+        Button previous = MakeCompactToggleButton(group.transform, "‹", 23f, Vector2.one * 0.5f, Vector2.zero,
+            new Vector2(40f, 36f), Arrow, () => CyclePlayerColor(cap, -1));
+        SetLayoutSize(previous.transform, 40f, 36f);
+
+        previewImage = NewImage(cap ? "CapColorPreview" : "SwimwearColorPreview", group.transform);
         previewImage.sprite = Rounded(); previewImage.type = Image.Type.Sliced;
         previewImage.raycastTarget = false;
-        SetRect(previewImage.rectTransform, new Vector2(0.5f, 0.5f),
-                new Vector2(-35f, y - 35f), new Vector2(170f, 38f));
+        SetLayoutSize(previewImage.transform, 110f, 36f, 1f);
         colorName = MakeText(previewImage.transform, "", 14f, new Vector2(0.5f, 0.5f),
-                             Vector2.zero, new Vector2(160f, 34f), Color.white,
+                             Vector2.zero, new Vector2(100f, 32f), Color.white,
                              TextAlignmentOptions.Center);
         Stretch(colorName.rectTransform);
+        Button next = MakeCompactToggleButton(group.transform, "›", 23f, Vector2.one * 0.5f, Vector2.zero,
+            new Vector2(40f, 36f), Arrow, () => CyclePlayerColor(cap, 1));
+        SetLayoutSize(next.transform, 40f, 36f);
     }
 
     void BuildCountrySelector()
     {
-        const float centerX = 420f;
-        MakeText(root, "COUNTRY", 18f, new Vector2(0.5f, 0.5f), new Vector2(centerX, 242f),
-                 new Vector2(310f, 26f), Gold, TextAlignmentOptions.Center);
-
-        Image selector = MakeCard(root, new Vector2(centerX, 184f), new Vector2(270f, 70f),
-                                  new Color(0.12f, 0.66f, 1f, 1f));
+        Image selector = MakeLayoutCard("CountryInlineSelector", 70f,
+                                        new Color(0.12f, 0.66f, 1f, 1f));
         selector.gameObject.name = "CountryInlineSelector";
-        Button selectorButton = selector.gameObject.AddComponent<Button>();
-        selectorButton.targetGraphic = selector;
-        selectorButton.onClick.AddListener(OpenCountryOverlay);
+        HorizontalLayoutGroup row = selector.gameObject.AddComponent<HorizontalLayoutGroup>();
+        row.padding = new RectOffset(18, 18, 8, 8);
+        row.spacing = 12f;
+        row.childAlignment = TextAnchor.MiddleCenter;
+        row.childControlWidth = true; row.childControlHeight = true;
+        row.childForceExpandWidth = false; row.childForceExpandHeight = true;
 
-        MakeButton(selector.transform, "<", 26f, new Vector2(0f, 0.5f), new Vector2(26f, 0f),
-                   new Vector2(42f, 48f), Arrow, () => CycleCountry(-1));
-        MakeButton(selector.transform, ">", 26f, new Vector2(1f, 0.5f), new Vector2(-26f, 0f),
-                   new Vector2(42f, 48f), Arrow, () => CycleCountry(1));
+        TextMeshProUGUI title = MakeText(selector.transform, "COUNTRY", 16f, Vector2.one * 0.5f,
+            Vector2.zero, new Vector2(120f, 40f), Gold, TextAlignmentOptions.Center);
+        SetLayoutSize(title.transform, 120f, 40f);
+        Button previous = MakeCompactToggleButton(selector.transform, "‹", 26f, Vector2.one * 0.5f, Vector2.zero,
+            new Vector2(46f, 48f), Arrow, () => CycleCountry(-1));
+        SetLayoutSize(previous.transform, 46f, 48f);
 
         currentCountryFlag = NewImage("CurrentFlag", selector.transform);
         currentCountryFlag.preserveAspect = true;
         currentCountryFlag.raycastTarget = false;
-        SetRect(currentCountryFlag.rectTransform, new Vector2(0.5f, 0.5f),
-                new Vector2(-65f, 0f), new Vector2(42f, 30f));
+        SetLayoutSize(currentCountryFlag.transform, 56f, 38f);
         countryNameLabel = MakeText(selector.transform, "SELECT COUNTRY", 18f,
-            new Vector2(0.5f, 0.5f), new Vector2(18f, 0f), new Vector2(120f, 40f),
+            Vector2.one * 0.5f, Vector2.zero, new Vector2(260f, 40f),
             Color.white, TextAlignmentOptions.Center);
+        SetLayoutSize(countryNameLabel.transform, 260f, 40f, 1f);
         countryNameLabel.enableAutoSizing = true;
         countryNameLabel.fontSizeMin = 12f;
         countryNameLabel.fontSizeMax = 18f;
-
-        MakeButton(root, "v", 25f, new Vector2(0.5f, 0.5f), new Vector2(586f, 184f),
-                   new Vector2(50f, 56f), new Color(0.05f, 0.32f, 0.68f, 1f), OpenCountryOverlay);
+        Button next = MakeCompactToggleButton(selector.transform, "›", 26f, Vector2.one * 0.5f, Vector2.zero,
+            new Vector2(46f, 48f), Arrow, () => CycleCountry(1));
+        SetLayoutSize(next.transform, 46f, 48f);
+        Button open = MakeCompactToggleButton(selector.transform, "▾", 22f, Vector2.one * 0.5f, Vector2.zero,
+            new Vector2(52f, 48f), new Color(0.05f, 0.32f, 0.68f, 1f), OpenCountryOverlay);
+        SetLayoutSize(open.transform, 52f, 48f);
         BuildCountryOverlay();
     }
 
@@ -292,8 +376,36 @@ public class ClubCustomizationUI : MonoBehaviour
         MakeText(modal.transform, "Choose a flag — your profile updates immediately", 15f,
                  new Vector2(0.5f, 1f), new Vector2(0f, -69f), new Vector2(620f, 24f),
                  Grey, TextAlignmentOptions.Center);
-        MakeButton(modal.transform, "X", 18f, new Vector2(1f, 1f), new Vector2(-34f, -34f),
-                   new Vector2(46f, 46f), new Color(0.55f, 0.12f, 0.18f, 1f), CloseCountryOverlay);
+        GameObject closeGo = new GameObject("BtnClose");
+        closeGo.transform.SetParent(modal.transform, false);
+        SetRect(closeGo.AddComponent<RectTransform>(), new Vector2(1f, 1f),
+                new Vector2(-38f, -38f), new Vector2(56f, 56f));
+        Image closeImage = closeGo.AddComponent<Image>();
+        closeImage.sprite = Circle();
+        closeImage.preserveAspect = true;
+        closeImage.color = new Color(0.92f, 0.18f, 0.23f, 1f);
+        Shadow closeShadow = closeGo.AddComponent<Shadow>();
+        closeShadow.effectColor = new Color(0f, 0f, 0f, 0.48f);
+        closeShadow.effectDistance = new Vector2(0f, -3f);
+        Image closeInner = NewImage("Inner", closeGo.transform);
+        closeInner.sprite = Circle(); closeInner.preserveAspect = true;
+        closeInner.color = new Color(0.30f, 0.035f, 0.055f, 0.94f);
+        closeInner.raycastTarget = false;
+        SetRect(closeInner.rectTransform, Vector2.one * 0.5f, Vector2.zero, new Vector2(48f, 48f));
+        Image slashA = NewImage("CloseSlashA", closeGo.transform);
+        slashA.sprite = Rounded(); slashA.type = Image.Type.Sliced;
+        slashA.color = Color.white; slashA.raycastTarget = false;
+        SetRect(slashA.rectTransform, Vector2.one * 0.5f, Vector2.zero, new Vector2(5f, 25f));
+        slashA.rectTransform.localRotation = Quaternion.Euler(0f, 0f, 45f);
+        Image slashB = NewImage("CloseSlashB", closeGo.transform);
+        slashB.sprite = Rounded(); slashB.type = Image.Type.Sliced;
+        slashB.color = Color.white; slashB.raycastTarget = false;
+        SetRect(slashB.rectTransform, Vector2.one * 0.5f, Vector2.zero, new Vector2(5f, 25f));
+        slashB.rectTransform.localRotation = Quaternion.Euler(0f, 0f, -45f);
+        Button closeButton = closeGo.AddComponent<Button>();
+        closeButton.targetGraphic = closeImage;
+        closeButton.onClick.AddListener(CloseCountryOverlay);
+        if (nav != null) nav.AddFloatingCurrencyHeader(countryOverlay.transform);
 
         GameObject viewportGo = new GameObject("CountryViewport");
         viewportGo.transform.SetParent(modal.transform, false);
@@ -619,6 +731,36 @@ public class ClubCustomizationUI : MonoBehaviour
         return Palette[index];
     }
 
+    Image MakeLayoutCard(string name, float height, Color border)
+    {
+        Image card = MakeCard(editorStack, Vector2.zero, new Vector2(840f, height), border);
+        card.gameObject.name = name;
+        Transform fill = card.transform.Find("Fill");
+        if (fill != null) fill.gameObject.AddComponent<LayoutElement>().ignoreLayout = true;
+        SetLayoutSize(card.transform, 840f, height, 1f);
+        return card;
+    }
+
+    static GameObject NewLayoutContainer(string name, Transform parent, float width, float height,
+                                         float flexibleWidth = 0f)
+    {
+        GameObject go = new GameObject(name);
+        go.transform.SetParent(parent, false);
+        go.AddComponent<RectTransform>();
+        SetLayoutSize(go.transform, width, height, flexibleWidth);
+        return go;
+    }
+
+    static void SetLayoutSize(Transform target, float width, float height, float flexibleWidth = 0f)
+    {
+        LayoutElement layout = target.GetComponent<LayoutElement>();
+        if (layout == null) layout = target.gameObject.AddComponent<LayoutElement>();
+        layout.minWidth = layout.preferredWidth = width;
+        layout.minHeight = layout.preferredHeight = height;
+        layout.flexibleWidth = flexibleWidth;
+        layout.flexibleHeight = 0f;
+    }
+
     Image MakeTile(Vector2 position, Vector2 size, UnityEngine.Events.UnityAction onClick)
     {
         Image frame = NewImage("Tile", root);
@@ -766,13 +908,46 @@ public class ClubCustomizationUI : MonoBehaviour
         go.transform.SetParent(parent, false);
         SetRect(go.AddComponent<RectTransform>(), anchor, position, size);
         Image image = go.AddComponent<Image>();
-        image.sprite = ButtonSpriteCatalog.SpriteFor("Button1");
-        if (image.sprite == null) { image.sprite = Rounded(); image.type = Image.Type.Sliced; }
-        image.color = color;
+        CrestUITheme.ApplyButton(image, color);
         Button button = go.AddComponent<Button>();
         button.targetGraphic = image;
         if (onClick != null) button.onClick.AddListener(onClick);
-        LocalizedButtonStyler.AddLabel(go.transform, label, fontSize, size, maxWidthMultiplier: 1.3f);
+        LocalizedButtonStyler.AddLabel(go.transform, label, fontSize, size,
+            LocalizedButtonStyler.TextZone.NativeCenter, 1.3f);
+        return button;
+    }
+
+    // Arrow/dropdown controls deliberately use a compact native circle so square toggles remain
+    // crisp and symmetrical at every resolution.
+    Button MakeCompactToggleButton(Transform parent, string label, float fontSize, Vector2 anchor,
+                                   Vector2 position, Vector2 size, Color color,
+                                   UnityEngine.Events.UnityAction onClick)
+    {
+        GameObject go = new GameObject("Toggle_" + label);
+        go.transform.SetParent(parent, false);
+        SetRect(go.AddComponent<RectTransform>(), anchor, position, size);
+
+        Image image = go.AddComponent<Image>();
+        image.sprite = Circle();
+        image.type = Image.Type.Simple;
+        image.preserveAspect = true;
+        image.color = color;
+        Outline outline = go.AddComponent<Outline>();
+        outline.effectColor = new Color(0.45f, 0.82f, 1f, 0.65f);
+        outline.effectDistance = new Vector2(1.5f, -1.5f);
+
+        Button button = go.AddComponent<Button>();
+        button.targetGraphic = image;
+        ColorBlock colors = button.colors;
+        colors.normalColor = Color.white;
+        colors.highlightedColor = new Color(1.12f, 1.12f, 1.12f, 1f);
+        colors.pressedColor = new Color(0.76f, 0.86f, 0.95f, 1f);
+        button.colors = colors;
+        if (onClick != null) button.onClick.AddListener(onClick);
+
+        TextMeshProUGUI text = MakeText(go.transform, label, fontSize, Vector2.one * 0.5f,
+            new Vector2(0f, 1f), size, Color.white, TextAlignmentOptions.Center);
+        Stretch(text.rectTransform);
         return button;
     }
 

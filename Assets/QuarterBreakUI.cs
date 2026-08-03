@@ -270,16 +270,14 @@ public class QuarterBreakUI : MonoBehaviour
         rt.anchoredPosition = pos;
 
         Image img = go.AddComponent<Image>();
-        img.sprite = LocalizedButtonStyler.UniversalSprite();
-        if (img.sprite == null) img.sprite = MakeRoundedRectSprite(280, 66, 20);
-        img.type = Image.Type.Simple;
-        img.color = ButtonColor;
+        CrestUITheme.ApplyButton(img, ButtonColor);
 
         Button btn = go.AddComponent<Button>();
         btn.targetGraphic = img;
         btn.onClick.AddListener(onClick);
 
-        LocalizedButtonStyler.AddLabel(go.transform, label, 28f, new Vector2(280f, 66f));
+        LocalizedButtonStyler.AddLabel(go.transform, label, 28f, new Vector2(280f, 66f),
+            LocalizedButtonStyler.TextZone.NativeCenter);
     }
 
     IEnumerator FadeIn()

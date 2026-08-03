@@ -49,7 +49,6 @@ public class ShopUI : MonoBehaviour
 
     Transform root;
     NavigationManager nav;
-    TextMeshProUGUI goldLabel, gemLabel;
     ScrollRect shelf;
     RectTransform shelfViewport, shelfContent;
     readonly List<RectTransform> sectionRects = new List<RectTransform>();
@@ -90,9 +89,6 @@ public class ShopUI : MonoBehaviour
 
     public void RefreshCurrency()
     {
-        RosterManager rm = RosterManager.Instance;
-        if (goldLabel != null) goldLabel.text = rm.Coins.ToString();
-        if (gemLabel != null) gemLabel.text = rm.Diamonds.ToString();
         if (nav != null) nav.RefreshCurrency();
     }
 
@@ -147,14 +143,7 @@ public class ShopUI : MonoBehaviour
                    new Color(0.45f, 0.2f, 0.55f, 1f), () => SelectTab(8));
 
         // Currencies (right→left): gold [+], gold, gem [+], gems. [+] jumps to the buy sections.
-        MakePlus(bar.transform, new Vector2(-30f, 0f), () => SelectTab(5));
-        goldLabel = MakeText(bar.transform, "0", 18f, new Vector2(1f, 0.5f), new Vector2(-88f, 0f),
-                             new Vector2(66f, 30f), Color.white, TextAlignmentOptions.Right);
-        MakeIcon(bar.transform, "Sprites/gold-coin", new Vector2(-140f, 0f), 32f);
-        MakePlus(bar.transform, new Vector2(-186f, 0f), () => SelectTab(6));
-        gemLabel = MakeText(bar.transform, "0", 18f, new Vector2(1f, 0.5f), new Vector2(-240f, 0f),
-                            new Vector2(56f, 30f), Color.white, TextAlignmentOptions.Right);
-        MakeIcon(bar.transform, "Sprites/diamond-coin", new Vector2(-288f, 0f), 32f);
+        if (nav != null) nav.AddCurrencyDisplay(bar.transform);
     }
 
     void MakePlus(Transform bar, Vector2 pos, UnityEngine.Events.UnityAction onClick)
@@ -247,8 +236,7 @@ public class ShopUI : MonoBehaviour
     {
         RectTransform sec = sectionRects[i];
         Image panel = NewImage("Panel", sec);
-        panel.sprite = Rounded(); panel.type = Image.Type.Sliced;
-        panel.color = Panel;
+        CrestUITheme.ApplyFrame(panel, CrestUITheme.Frame, Panel, 2f);
         panel.raycastTarget = false;
         RectTransform prt = panel.rectTransform;
         prt.anchorMin = Vector2.zero; prt.anchorMax = Vector2.one;
@@ -692,7 +680,8 @@ public class ShopUI : MonoBehaviour
 
     // ------------------------------------------------------------------ watch-ad buttons
 
-    // Compact watch-ad button: text label + small inline play-triangle (no big camera block).
+    // The dedicated green ad art is kept at its native aspect ratio. It contains its own video
+    // icon, so it must not be nine-sliced or decorated with a second play triangle.
     // Tracks its own AdWatchCap counter under `id`; at 3 uses it greys out until UTC midnight.
     Button MakeWatchButton(Transform parent, string id, string label, Vector2 anchor, Vector2 pos,
                            Vector2 size, Action onReward)
@@ -703,22 +692,35 @@ public class ShopUI : MonoBehaviour
         go.transform.SetParent(parent, false);
         SetRect(go.AddComponent<RectTransform>(), anchor, pos, size);
         Image img = go.AddComponent<Image>();
-        img.sprite = Rounded(); img.type = Image.Type.Sliced;
-        img.color = capped ? GreyBtn : Blue;
+        Sprite adSprite = ButtonSpriteCatalog.SpriteFor("Ad-Button");
+        bool usesAdArtwork = adSprite != null;
+        img.sprite = usesAdArtwork ? adSprite : Rounded();
+        img.type = usesAdArtwork ? Image.Type.Simple : Image.Type.Sliced;
+        img.preserveAspect = usesAdArtwork;
+        img.color = usesAdArtwork ? Color.white : (capped ? GreyBtn : Blue);
         Button btn = go.AddComponent<Button>();
         btn.targetGraphic = img;
+        ColorBlock buttonColors = btn.colors;
+        buttonColors.disabledColor = Color.white;
+        btn.colors = buttonColors;
         btn.interactable = !capped;
 
+        float labelWidth = usesAdArtwork ? Mathf.Min(size.x - 18f, size.y * 2.55f) : size.x - 30f;
         TextMeshProUGUI txt = MakeText(go.transform, capped ? AdWatchCap.ResetLabel() : label, 15f,
-                                       new Vector2(0.5f, 0.5f), new Vector2(-8f, 0f),
-                                       new Vector2(size.x - 30f, size.y), Color.white,
+                                       new Vector2(0.5f, 0.5f),
+                                       usesAdArtwork ? new Vector2(0f, -size.y * 0.08f) : new Vector2(-8f, 0f),
+                                       new Vector2(labelWidth, size.y * 0.72f), Color.white,
                                        TextAlignmentOptions.Center);
+        txt.enableAutoSizing = true;
+        txt.fontSizeMin = 9f;
+        txt.fontSizeMax = 15f;
+        txt.textWrappingMode = TextWrappingModes.NoWrap;
         Image tri = NewImage("Play", go.transform);
         tri.sprite = PlayTriangle();
         tri.color = Color.white;
         tri.raycastTarget = false;
         SetRect(tri.rectTransform, new Vector2(1f, 0.5f), new Vector2(-16f, 0f), new Vector2(13f, 15f));
-        tri.gameObject.SetActive(!capped);
+        tri.gameObject.SetActive(!usesAdArtwork && !capped);
 
         if (!capped) btn.onClick.AddListener(() =>
         {
@@ -731,8 +733,16 @@ public class ShopUI : MonoBehaviour
                 if (btn != null) // section may get rebuilt by onReward — update in place first
                 {
                     if (AdWatchCap.Used(id) >= AdWatchCap.DailyCap)
-                    { img.color = GreyBtn; txt.text = AdWatchCap.ResetLabel(); }
-                    else { btn.interactable = true; txt.text = label; tri.gameObject.SetActive(true); }
+                    {
+                        if (!usesAdArtwork) img.color = GreyBtn;
+                        txt.text = AdWatchCap.ResetLabel();
+                    }
+                    else
+                    {
+                        btn.interactable = true;
+                        txt.text = label;
+                        tri.gameObject.SetActive(!usesAdArtwork);
+                    }
                 }
                 onReward?.Invoke();
             }));
@@ -803,13 +813,12 @@ public class ShopUI : MonoBehaviour
         go.transform.SetParent(parent, false);
         SetRect(go.AddComponent<RectTransform>(), anchor, pos, size);
         Image img = go.AddComponent<Image>();
-        img.sprite = LocalizedButtonStyler.UniversalSprite();
-        if (img.sprite == null) { img.sprite = Rounded(); img.type = Image.Type.Sliced; }
-        img.color = color;
+        CrestUITheme.ApplyButton(img, color);
         Button btn = go.AddComponent<Button>();
         btn.targetGraphic = img;
         if (onClick != null) btn.onClick.AddListener(onClick);
-        LocalizedButtonStyler.AddLabel(go.transform, label, fontSize, size, maxWidthMultiplier: 1.3f);
+        LocalizedButtonStyler.AddLabel(go.transform, label, fontSize, size,
+            LocalizedButtonStyler.TextZone.NativeCenter, 1.3f);
         return btn;
     }
 
@@ -857,16 +866,20 @@ public class ShopUI : MonoBehaviour
     static Sprite LoadAnySprite(string path)
     {
         if (spriteCache.TryGetValue(path, out Sprite cached) && cached != null) return cached;
-        Sprite s = ButtonSpriteCatalog.SpriteForLegacyPath(path);
-        if (s == null) s = Resources.Load<Sprite>(path);
-        if (s == null)
+        string buttonKey = ButtonSpriteCatalog.KeyForLegacyPath(path);
+        Sprite s = !string.IsNullOrEmpty(buttonKey)
+            ? ButtonSpriteCatalog.SpriteFor(buttonKey)
+            : Resources.Load<Sprite>(path);
+        if (s == null && string.IsNullOrEmpty(buttonKey))
         {
             Texture2D tex = Resources.Load<Texture2D>(path);
             if (tex != null)
                 s = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f), 100f);
         }
         if (s != null) spriteCache[path] = s;
-        else Debug.LogWarning("ShopUI: sprite not found at Resources/" + path);
+        else Debug.LogWarning(!string.IsNullOrEmpty(buttonKey)
+            ? "ShopUI: button '" + buttonKey + "' is missing from ButtonSpriteCatalog; using fallback art."
+            : "ShopUI: sprite not found at Resources/" + path);
         return s;
     }
 

@@ -15,10 +15,10 @@ using TMPro;
 // formation, and a 300px right panel (4 position tabs + a scrollable BENCH list).
 public class TeamScreenUI : MonoBehaviour
 {
-    static readonly Color Navy     = new Color(0.05f, 0.1f, 0.25f, 0.92f);
-    static readonly Color DarkBar  = new Color(0.04f, 0.06f, 0.13f, 0.86f);
-    static readonly Color PanelDk  = new Color(0.03f, 0.05f, 0.12f, 0.82f);
-    static readonly Color PoolBlue = new Color(0.07f, 0.20f, 0.36f, 0.95f);
+    static readonly Color Navy     = new Color(0.05f, 0.1f, 0.25f, 0.88f);
+    static readonly Color DarkBar  = new Color(0.04f, 0.06f, 0.13f, 0.76f);
+    static readonly Color PanelDk  = new Color(0.03f, 0.05f, 0.12f, 0.46f);
+    static readonly Color PoolBlue = new Color(0.07f, 0.20f, 0.36f, 0.48f);
     static readonly Color Gold     = new Color(1f, 0.82f, 0.2f);
     static readonly Color Cyan     = new Color(0f, 0.85f, 1f);
     static readonly Color Grey     = new Color(0.55f, 0.55f, 0.58f);
@@ -58,11 +58,13 @@ public class TeamScreenUI : MonoBehaviour
 
     private Transform root;
     private NavigationManager nav;
-    private TextMeshProUGUI ovrText, goldText, diamondText;
+    private TextMeshProUGUI ovrText;
     private RectTransform formationContainer; // holds the 7 formation cards
     private RectTransform listContent;        // scroll content: BENCH rows
     private GameObject comingSoonPanel;
-    private readonly Image[] tabFaces = new Image[4]; // position tab Images; selected = gold tint, else faded
+    private readonly Image[] tabFaces = new Image[4];
+    private readonly TextMeshProUGUI[] tabText = new TextMeshProUGUI[4];
+    private readonly Image[] tabSelectionBars = new Image[4];
 
     private int selectedSlot = -1; // formation slot chosen for a swap, -1 = none
     private int activeTab = 0;     // 0 wings, 1 center, 2 defense, 3 goalkeeper
@@ -90,7 +92,8 @@ public class TeamScreenUI : MonoBehaviour
         Image bg = NewImage("Background", root);
         bg.sprite = LoadSprite("Sprites/team-page-backround"); // note: asset filename is misspelled
         bg.raycastTarget = true;                               // blocks clicks bleeding to the hub
-        if (bg.sprite == null) bg.color = new Color(0.03f, 0.12f, 0.24f); // pool-blue fallback
+        bg.color = bg.sprite != null ? new Color(1f, 1f, 1f, 0.74f)
+                                     : new Color(0.03f, 0.12f, 0.24f, 0.62f);
         Stretch(bg.rectTransform);
     }
 
@@ -112,20 +115,11 @@ public class TeamScreenUI : MonoBehaviour
                  Color.white, TextAlignmentOptions.Center);
 
         // Right-of-currencies: TEAM STRENGTH label + OVR number.
-        MakeText(t, "TEAM STRENGTH", 13f, new Vector2(1f, 0.5f), new Vector2(-300f, 13f),
+        MakeText(t, "TEAM STRENGTH", 13f, new Vector2(1f, 0.5f), new Vector2(-470f, 13f),
                  new Vector2(170f, 18f), new Color(1f, 1f, 1f, 0.85f), TextAlignmentOptions.Right);
-        ovrText = MakeText(t, "OVR 0", 20f, new Vector2(1f, 0.5f), new Vector2(-300f, -11f),
+        ovrText = MakeText(t, "OVR 0", 20f, new Vector2(1f, 0.5f), new Vector2(-470f, -11f),
                            new Vector2(170f, 26f), Gold, TextAlignmentOptions.Right);
-
-        // Far right: diamond icon + count | gold icon + count.
-        MakeIcon(t, "Sprites/diamond-coin", new Vector2(1f, 0.5f), new Vector2(-178f, 0f), 26f);
-        diamondText = MakeText(t, "0", 16f, new Vector2(1f, 0.5f), new Vector2(-132f, 0f),
-                               new Vector2(56f, 28f), Cyan, TextAlignmentOptions.Right);
-        MakeText(t, "|", 18f, new Vector2(1f, 0.5f), new Vector2(-100f, 0f), new Vector2(12f, 28f),
-                 new Color(1f, 1f, 1f, 0.4f), TextAlignmentOptions.Center);
-        MakeIcon(t, "Sprites/gold-coin", new Vector2(1f, 0.5f), new Vector2(-78f, 0f), 26f);
-        goldText = MakeText(t, "0", 16f, new Vector2(1f, 0.5f), new Vector2(-34f, 0f),
-                            new Vector2(60f, 28f), Gold, TextAlignmentOptions.Right);
+        if (nav != null) nav.AddCurrencyDisplay(t);
     }
 
     // ----------------------------------------------------------------- left tactics panel
@@ -156,14 +150,14 @@ public class TeamScreenUI : MonoBehaviour
         }
 
         // Three stacked sprite buttons, lowered to leave empty space above for future content.
-        // FORMATIONS is bigger (220x80); the other two stay 200x70. All → COMING SOON.
-        MakeSpriteLabelButton(p, "Button1", "FORMATIONS", new Vector2(0f, 20f), new Vector2(220f, 80f), ShowComingSoon);
-        MakeSpriteLabelButton(p, "Button1", "PLAYERS", new Vector2(0f, -55f), new Vector2(200f, 70f), ShowComingSoon);
-        MakeSpriteLabelButton(p, "Button1", "SUBSTITUTIONS", new Vector2(0f, -130f), new Vector2(200f, 70f), ShowComingSoon);
+        // Compact structural tabs keep the pool and player layout visually dominant.
+        MakeStructuralButton(p, "FORMATIONS", new Vector2(0f, 26f), new Vector2(172f, 50f), ShowComingSoon);
+        MakeStructuralButton(p, "PLAYERS", new Vector2(0f, -34f), new Vector2(156f, 44f), ShowComingSoon);
+        MakeStructuralButton(p, "SUBSTITUTIONS", new Vector2(0f, -90f), new Vector2(180f, 44f), ShowComingSoon);
     }
 
-    void MakeSpriteLabelButton(Transform parent, string spritePath, string label, Vector2 pos,
-                               Vector2 size, UnityEngine.Events.UnityAction onClick)
+    void MakeStructuralButton(Transform parent, string label, Vector2 pos, Vector2 size,
+                              UnityEngine.Events.UnityAction onClick)
     {
         GameObject go = new GameObject("Btn_" + label);
         go.transform.SetParent(parent, false);
@@ -171,15 +165,14 @@ public class TeamScreenUI : MonoBehaviour
         SetRect(rt, new Vector2(0.5f, 0.5f), pos, size);
 
         Image img = go.AddComponent<Image>();
-        img.sprite = ButtonSpriteCatalog.SpriteFor("Button1");
-        img.preserveAspect = true;
-        if (img.sprite == null) { img.sprite = Rounded(); img.type = Image.Type.Sliced; img.color = Navy; }
+        CrestUITheme.ApplyButton(img, Cyan);
 
         Button btn = go.AddComponent<Button>();
         btn.targetGraphic = img;
         if (onClick != null) btn.onClick.AddListener(onClick);
 
-        LocalizedButtonStyler.AddLabel(go.transform, label, Mathf.Min(20f, size.y * 0.30f), size);
+        LocalizedButtonStyler.AddLabel(go.transform, label, Mathf.Min(20f, size.y * 0.30f), size,
+            LocalizedButtonStyler.TextZone.NativeCenter);
         AddHover(go);
     }
 
@@ -289,9 +282,25 @@ public class TeamScreenUI : MonoBehaviour
                                    new Vector2(-300f, 0f), new Vector2(0f, -80f), PanelDk);
         Transform p = panel.transform;
 
-        // Four position tabs in a fixed-size row anchored to the panel's top-right.
+        // A real layout row keeps every filter inside the narrow right panel at every scale.
+        GameObject tabsGo = new GameObject("PositionTabs");
+        tabsGo.transform.SetParent(p, false);
+        RectTransform tabsRt = tabsGo.AddComponent<RectTransform>();
+        tabsRt.anchorMin = new Vector2(0f, 1f);
+        tabsRt.anchorMax = new Vector2(1f, 1f);
+        tabsRt.pivot = new Vector2(0.5f, 1f);
+        tabsRt.anchoredPosition = new Vector2(0f, -8f);
+        tabsRt.sizeDelta = new Vector2(-12f, 45f);
+        HorizontalLayoutGroup tabs = tabsGo.AddComponent<HorizontalLayoutGroup>();
+        tabs.padding = new RectOffset(2, 2, 0, 0);
+        tabs.spacing = 4f;
+        tabs.childAlignment = TextAnchor.MiddleCenter;
+        tabs.childControlWidth = true;
+        tabs.childControlHeight = true;
+        tabs.childForceExpandWidth = true;
+        tabs.childForceExpandHeight = true;
         for (int i = 0; i < 4; i++)
-            MakeTabButton(p, i);
+            MakeTabButton(tabsGo.transform, i);
 
         // Scrollable BENCH list filling the rest of the panel.
         listContent = BuildScroll(p);
@@ -299,30 +308,35 @@ public class TeamScreenUI : MonoBehaviour
 
     void MakeTabButton(Transform parent, int index)
     {
-        // Fixed 70x45 tabs (80x50 would overflow: 4*80+3*8=344 > 300px panel), in a horizontal
-        // row anchored to the panel's top-right with an 8px gap. NO localScale on these — ever.
-        const float w = 70f, h = 45f, gap = 8f, rightPad = 8f, topPad = 8f;
-
         GameObject go = new GameObject("Tab_" + TabLabel[index]);
-        go.transform.SetParent(parent, false); // child of the right panel, not the root canvas
-        RectTransform rt = go.AddComponent<RectTransform>();
-        rt.anchorMin = rt.anchorMax = new Vector2(1f, 1f);
-        rt.pivot = new Vector2(1f, 1f);
-        int columnFromRight = (TabLabel.Length - 1) - index; // index 0 = leftmost, 3 = rightmost
-        rt.anchoredPosition = new Vector2(-(rightPad + columnFromRight * (w + gap)), -topPad);
-        rt.sizeDelta = new Vector2(w, h);
+        go.transform.SetParent(parent, false);
+        go.AddComponent<RectTransform>();
+        LayoutElement layout = go.AddComponent<LayoutElement>();
+        layout.minWidth = 60f;
+        layout.preferredWidth = 70f;
+        layout.flexibleWidth = 1f;
+        layout.minHeight = layout.preferredHeight = 45f;
 
         // The Image component IS the button — no background panel, no outline behind it.
         Image face = go.AddComponent<Image>();
         face.sprite = LoadSprite(TabSprite[index]);
         face.preserveAspect = true;
-        if (face.sprite == null) // labelled fallback if a tab sprite is missing
+        if (face.sprite == null)
         {
             face.sprite = Rounded(); face.type = Image.Type.Sliced;
-            MakeText(go.transform, TabLabel[index], 11f, new Vector2(0.5f, 0.5f), Vector2.zero,
-                     Vector2.zero, Color.white, TextAlignmentOptions.Center);
+            face.color = Navy;
         }
+        else face.color = Color.white;
         tabFaces[index] = face;
+
+        tabText[index] = LocalizedButtonStyler.AddLabel(go.transform, TabLabel[index], 11f,
+            new Vector2(60f, 45f), maxWidthMultiplier: 1f);
+        Image selection = NewImage("Selection", go.transform);
+        selection.sprite = Rounded(); selection.type = Image.Type.Sliced;
+        selection.raycastTarget = false;
+        SetRect(selection.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 2f),
+                new Vector2(40f, 3f));
+        tabSelectionBars[index] = selection;
 
         int captured = index;
         Button btn = go.AddComponent<Button>();
@@ -343,9 +357,12 @@ public class TeamScreenUI : MonoBehaviour
         {
             Image face = tabFaces[i];
             if (face == null) continue;
-            // Color tint only — no scale, no border, no background panel.
-            face.color = (i == activeTab) ? new Color(1f, 0.85f, 0.2f, 1f)  // selected: gold tint
-                                          : new Color(1f, 1f, 1f, 0.6f);     // unselected: faded white
+            // Keep each authored sprite palette untouched. Selection lives in a separate underline
+            // and label treatment, never in an Image tint.
+            face.color = Color.white;
+            if (tabText[i] != null) tabText[i].color = i == activeTab ? Gold : Color.white;
+            if (tabSelectionBars[i] != null)
+                tabSelectionBars[i].color = i == activeTab ? Gold : new Color(1f, 1f, 1f, 0f);
         }
     }
 
@@ -356,8 +373,6 @@ public class TeamScreenUI : MonoBehaviour
     {
         RosterManager rm = RosterManager.Instance;
         ovrText.text = "OVR " + rm.TeamOverall();
-        goldText.text = rm.Coins.ToString();
-        diamondText.text = rm.Diamonds.ToString();
 
         RefreshFormation();
         RefreshList();
@@ -572,7 +587,7 @@ public class TeamScreenUI : MonoBehaviour
     Image PanelStretch(Transform parent, Vector2 aMin, Vector2 aMax, Vector2 oMin, Vector2 oMax, Color color)
     {
         Image img = NewImage("Panel", parent);
-        img.sprite = Rounded(); img.type = Image.Type.Sliced; img.color = color;
+        CrestUITheme.ApplyFrame(img, new Color(0.20f, 0.35f, 0.48f, 1f), color, 2f);
         RectTransform rt = img.rectTransform;
         rt.anchorMin = aMin; rt.anchorMax = aMax; rt.offsetMin = oMin; rt.offsetMax = oMax;
         return img;
@@ -627,15 +642,14 @@ public class TeamScreenUI : MonoBehaviour
         SetRect(rt, anchor, pos, size);
 
         Image frame = go.AddComponent<Image>();
-        frame.sprite = ButtonSpriteCatalog.SpriteFor("Button1");
-        if (frame.sprite == null) { frame.sprite = Rounded(); frame.type = Image.Type.Sliced; }
-        frame.color = Color.Lerp(Color.white, border, 0.24f);
+        CrestUITheme.ApplyButton(frame, border);
 
         Button btn = go.AddComponent<Button>();
         btn.targetGraphic = frame;
         if (onClick != null) btn.onClick.AddListener(onClick);
 
-        LocalizedButtonStyler.AddLabel(go.transform, label, fontSize, size);
+        LocalizedButtonStyler.AddLabel(go.transform, label, fontSize, size,
+            LocalizedButtonStyler.TextZone.NativeCenter);
 
         AddHover(go);
         return btn;
@@ -733,11 +747,15 @@ public class TeamScreenUI : MonoBehaviour
 
     static Sprite LoadSprite(string path)
     {
-        Sprite s = ButtonSpriteCatalog.SpriteForLegacyPath(path);
-        if (s == null) s = Resources.Load<Sprite>(path);
+        string buttonKey = ButtonSpriteCatalog.KeyForLegacyPath(path);
+        Sprite s = !string.IsNullOrEmpty(buttonKey)
+            ? ButtonSpriteCatalog.SpriteFor(buttonKey)
+            : Resources.Load<Sprite>(path);
         if (s == null)
-            Debug.LogWarning("TeamScreenUI: sprite not found at Resources/" + path +
-                             " — check the file exists there and its Texture Type is 'Sprite (2D and UI)'.");
+            Debug.LogWarning(!string.IsNullOrEmpty(buttonKey)
+                ? "TeamScreenUI: button '" + buttonKey + "' is missing from ButtonSpriteCatalog; using the procedural fallback."
+                : "TeamScreenUI: sprite not found at Resources/" + path +
+                  " — check the file exists there and its Texture Type is 'Sprite (2D and UI)'.");
         return s;
     }
 

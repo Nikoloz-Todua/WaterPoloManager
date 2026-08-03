@@ -205,6 +205,7 @@ public class RankingUI : MonoBehaviour
     NavigationManager nav;
     int tab;
     readonly List<TextMeshProUGUI> tabLabels = new List<TextMeshProUGUI>();
+    readonly List<Image> tabFrames = new List<Image>();
     RectTransform panelArea;
     GameObject popup;
 
@@ -240,9 +241,11 @@ public class RankingUI : MonoBehaviour
 
         MakeText(bar.transform, "RANKING", 34f, new Vector2(0.5f, 0.5f), Vector2.zero,
                  new Vector2(300f, 50f), Color.white, TextAlignmentOptions.Center);
+        if (nav != null) nav.AddCurrencyDisplay(bar.transform);
 
         // Left tab column.
         tabLabels.Clear();
+        tabFrames.Clear();
         for (int i = 0; i < TabNames.Length; i++)
         {
             int idx = i;
@@ -251,16 +254,15 @@ public class RankingUI : MonoBehaviour
             SetRect(go.AddComponent<RectTransform>(), new Vector2(0.5f, 0.5f),
                     new Vector2(-520f, 190f - i * 78f), new Vector2(220f, 62f));
             Image face = go.AddComponent<Image>();
-            face.sprite = ButtonSpriteCatalog.SpriteFor("Button1");
-            if (face.sprite == null) { face.sprite = Rounded(); face.type = Image.Type.Sliced; }
-            face.color = new Color(0.06f, 0.1f, 0.16f, 1f);
+            CrestUITheme.ApplyButton(face, new Color(0.20f, 0.35f, 0.48f, 1f));
             Button b = go.AddComponent<Button>();
             b.targetGraphic = face;
             b.onClick.AddListener(() => { tab = idx; SyncTabs(); RebuildPanel(); });
             TextMeshProUGUI t = LocalizedButtonStyler.AddLabel(go.transform, TabNames[i], 16f,
-                new Vector2(220f, 62f), maxWidthMultiplier: 1f);
+                new Vector2(220f, 62f), LocalizedButtonStyler.TextZone.NativeCenter, 1f);
             t.color = Grey;
             tabLabels.Add(t);
+            tabFrames.Add(face);
         }
 
         GameObject area = new GameObject("PanelArea");
@@ -277,7 +279,11 @@ public class RankingUI : MonoBehaviour
     void SyncTabs()
     {
         for (int i = 0; i < tabLabels.Count; i++)
+        {
             tabLabels[i].color = i == tab ? Gold : Grey;
+            if (i < tabFrames.Count && tabFrames[i] != null)
+                tabFrames[i].color = i == tab ? Gold : new Color(0.20f, 0.35f, 0.48f, 1f);
+        }
     }
 
     void RebuildPanel()
@@ -390,8 +396,10 @@ public class RankingUI : MonoBehaviour
     void BuildRankRow(RectTransform parent, LeaderboardManager.Row row, int rank, bool pinned, float yTop)
     {
         Image face = NewImage("Row" + rank, parent);
-        face.sprite = Rounded(); face.type = Image.Type.Sliced;
-        face.color = row.isPlayer ? new Color(0.45f, 0.38f, 0.12f, 1f) : new Color(0.07f, 0.11f, 0.17f, 0.95f);
+        CrestUITheme.ApplyFrame(face,
+            row.isPlayer ? Gold : new Color(0.16f, 0.27f, 0.38f, 1f),
+            row.isPlayer ? new Color(0.14f, 0.13f, 0.08f, 0.98f) : CardFill, 2f);
+        face.raycastTarget = false;
         RectTransform rrt = face.rectTransform;
         if (pinned) { Stretch(rrt); }
         else
@@ -513,13 +521,12 @@ public class RankingUI : MonoBehaviour
         go.transform.SetParent(parent, false);
         SetRect(go.AddComponent<RectTransform>(), anchor, pos, size);
         Image img = go.AddComponent<Image>();
-        img.sprite = LocalizedButtonStyler.UniversalSprite();
-        if (img.sprite == null) { img.sprite = Rounded(); img.type = Image.Type.Sliced; }
-        img.color = color;
+        CrestUITheme.ApplyButton(img, color);
         Button btn = go.AddComponent<Button>();
         btn.targetGraphic = img;
         if (onClick != null) btn.onClick.AddListener(onClick);
-        LocalizedButtonStyler.AddLabel(go.transform, label, fontSize, size, maxWidthMultiplier: 1.3f);
+        LocalizedButtonStyler.AddLabel(go.transform, label, fontSize, size,
+            LocalizedButtonStyler.TextZone.NativeCenter, 1.3f);
         return btn;
     }
 

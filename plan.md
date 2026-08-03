@@ -2403,8 +2403,8 @@ This corrects the 2026-07-26c interpretation after an actual visual report from 
   the deleted `Assets/Resources/Sprites` button copies.
 - All 26 supplied button assets are registered. Hub/settings/message/gifts/back/info/pause, main hub
   buttons, touch actions, Team position filters, and generic code-built button helpers now resolve
-  through the new catalog. The catalog keeps the old Resources lookup only as a missing-catalog
-  fallback; removed Resources art is not a runtime dependency.
+  through the new catalog. Recognized button keys never retry the deleted Resources paths; missing
+  entries leave the screen alive and use the caller's procedural fallback where applicable.
 - `Button1` is now the universal background for generic labelled actions across NavigationManager,
   Team, Shop, Missions, Ranking, Season Pass, Pause, quarter-break, and result UI. The Team tactic
   buttons now draw FORMATIONS / PLAYERS / SUBSTITUTIONS as live TMP instead of baked image text.
@@ -2435,3 +2435,107 @@ This corrects the 2026-07-26c interpretation after an actual visual report from 
   required because the two already-running Unity processes are parked on `Temp/__Backupscenes/0.backup`
   and are not importing the project. On the next normal editor refresh, the revision-0 bootstrap
   catalog rebuilds automatically (or run **Tools → Water Polo → Rebuild Button Sprite Catalog**).
+
+### Hub blank-screen hotfix
+
+- The runtime log showed the fatal exception was TMP material initialization in
+  `LocalizedButtonStyler.AddLabel`, not the warning site at `TeamScreenUI.BuildRightPanel`.
+  Assigning `outlineWidth` to a newly added `TextMeshProUGUI` attempted to clone a null material and
+  aborted `NavigationManager.BuildOverlays`; the outline effect now uses a material-independent UI
+  `Shadow`. The same unsafe pattern was removed from the sprint-duel countdown.
+- `NavigationManager`, `TeamScreenUI`, `ShopUI`, and `TouchControls` now distinguish catalog-backed
+  button keys from ordinary Resources art. Catalog buttons never fall through to legacy paths; a
+  failed lookup logs a targeted warning and allows the rest of the UI initialization loop to finish.
+- The generated catalog currently contains **26/26 non-null sprite references**.
+- Runtime and editor assemblies both compile with **0 warnings, 0 errors**; `git diff --check` reports
+  no whitespace errors, and the code scan reports **0 legacy button `Resources.Load` calls**.
+- A follow-up TMP failure in `GetPreferredValues` was caused by measuring labels while their overlay
+  was inactive and TMP had not initialized its font/material reference. Labels now receive the
+  default font/material explicitly, use a safe Unicode-aware width estimate during construction,
+  and defer exact TMP measurement until `LateUpdate`; any package-level measurement failure is
+  contained and auto-fit remains active instead of aborting the Hub build.
+- The button catalog resets its static runtime handle on every Play Mode start (including projects
+  with domain reload disabled), performs fresh entry lookup instead of retaining a stale index, and
+  the editor builder now repairs any incomplete/null catalog even when its revision number matches.
+  An enter-Play callback validates it synchronously so the delayed editor bootstrap cannot race a
+  quick Play click.
+
+---
+
+## SESSION LOG — 2026-08-03b (button visual alignment, missing labels, My Club layout repair)
+
+### Shared button presentation
+
+- `LocalizedButtonStyler` now gives generic `Button1` labels a 14px bottom inset, lifting text away
+  from the sprite's lower 3D bevel and into the visual centre. Icon-led lower plates were raised too.
+- Runtime-cropped `Button1` sprites now carry a proportional nine-slice border. Every shared button
+  helper applies the authored art at pure white instead of tinting its blue gradient/gloss/bevel;
+  procedural colors and shine remain fallback-only when the catalog art is unavailable.
+- `LocalizedButtonText` detects `LayoutElement` and writes measured min/preferred dimensions into the
+  layout contract rather than fighting a parent layout group through `RectTransform.sizeDelta`.
+
+### Restored labels and specialty art
+
+- Hub Friends and Clubs now always create localized TMP labels. Team position filters now always
+  create localized WINGS / CENTER / DEFENSE / GK labels rather than doing so only on missing-art
+  fallbacks. Their authored red/blue/green/yellow palettes remain white-tinted and selection uses a
+  separate gold underline/text treatment.
+- The Season Pass button uses its source-art aspect ratio in a 220×126 rect. Its label has a custom
+  text zone inside the yellow field to the right of the character, clear of both character art and
+  the bottom frame.
+
+### Layout and action consistency
+
+- My Club's editor side is now one `VerticalLayoutGroup`: template row, dedicated country row,
+  three non-overlapping palette rows and one player-color row, with 9px spacing. The country and
+  selector/palette internals use `HorizontalLayoutGroup`/`GridLayoutGroup` plus explicit
+  `LayoutElement` minimums, so Country can no longer float over Secondary Color.
+- Team position filters use a width-sharing horizontal layout. Club-championship and World Cup
+  RESTART / NEXT MATCH actions use equal 300×64 (World Cup 300×62) layout elements and the same
+  untinted universal art; disabled restart state is communicated by group alpha rather than a
+  destructive sprite tint.
+
+### Verification
+
+- `dotnet build Assembly-CSharp.csproj --no-restore` → **0 warnings, 0 errors**.
+- `dotnet build Assembly-CSharp-Editor.csproj --no-restore` → **0 warnings, 0 errors**.
+- `git diff --check` reports no whitespace errors (only informational LF→CRLF notices).
+- Static audit finds no direct `Button1` sprite assignment outside the shared styler. The already
+  running Unity editor is still parked on `Temp/__Backupscenes/0.backup`, so focused Play Mode visual
+  verification remains required after the recovery editor is resolved/refocused.
+
+---
+
+## SESSION LOG - 2026-08-03c (nine-slice import, compact toggles, ad art, Georgian TMP)
+
+### Sprite geometry and button routing
+
+- `Button1.png` now has an importer-level full-rect nine-slice border (373.08 left, 427.92 bottom,
+  372.08 right, 402.92 top). The catalog builder revision is 2 and recalculates/repairs this border
+  from the measured alpha bounds, so a reimport cannot silently restore a zero-border Simple sprite.
+- Runtime alpha-cropped `Button1` instances translate the imported border into cropped-sprite space.
+  The shared styler uses `Image.Type.Sliced` with a pure-white image color; the localized Play swap
+  also switches between aspect-preserved authored Play art and sliced translated `Button1` art.
+- My Club template, player-color, country, and dropdown arrows no longer route through `Button1`.
+  They use a compact native circular control with a fixed-aspect image and layout-element sizing.
+- All rewarded-ad controls created by `ShopUI.MakeWatchButton` now use the green `Ad-Button` asset,
+  pure-white tint, `Image.Type.Simple`, and Preserve Aspect. The legacy play triangle appears only
+  if the catalog art is unavailable.
+
+### Georgian typography
+
+- Added project-local `Assets/Fonts/Sylfaen.ttf` and `GeorgianFontAssetBuilder`. On editor refresh it
+  generates `Assets/Resources/Fonts/GeorgianFallback SDF.asset`, pre-baking ASCII plus U+10A0-10FF
+  and U+2D00-2D2F into a 2048 atlas. It also exposes Tools > Water Polo > Rebuild Georgian TMP Font.
+- `UILocalization` installs that asset in both TMP's global fallback list and the default font's
+  fallback list. Georgian localized labels select it directly; switching back selects the default
+  font/material, so hot language changes do not retain a mismatched material.
+
+### Verification
+
+- Runtime and editor assemblies compile with **0 warnings, 0 errors**, including the new editor font
+  generator (validated by explicitly including it in the generated editor project for the build).
+- `git diff --check` reports no whitespace errors (only informational LF-to-CRLF notices).
+- Static audits confirm all crest arrows use the compact helper and Shop ad buttons resolve
+  `Ad-Button` with Simple/Preserve Aspect. The open recovery Unity process has not refreshed assets;
+  the editor initializer will generate the SDF asset automatically on the next normal refresh.

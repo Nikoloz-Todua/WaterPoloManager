@@ -228,8 +228,9 @@ public class SeasonPassUI : MonoBehaviour
 
         MakeText(bar.transform, "SEASON PASS", 32f, new Vector2(0.5f, 0.5f), new Vector2(-60f, 0f),
                  new Vector2(340f, 50f), Color.white, TextAlignmentOptions.Center);
-        countdownLabel = MakeText(bar.transform, "", 18f, new Vector2(1f, 0.5f), new Vector2(-160f, 0f),
-                                  new Vector2(280f, 30f), Cyan, TextAlignmentOptions.Right);
+        countdownLabel = MakeText(bar.transform, "", 16f, new Vector2(0.5f, 0.5f), new Vector2(245f, 0f),
+                                  new Vector2(250f, 30f), Cyan, TextAlignmentOptions.Center);
+        if (nav != null) nav.AddCurrencyDisplay(bar.transform);
 
         // Static shells; live content is rebuilt on every open.
         GameObject left = new GameObject("LeftColumn");
@@ -473,13 +474,12 @@ public class SeasonPassUI : MonoBehaviour
         go.transform.SetParent(parent, false);
         SetRect(go.AddComponent<RectTransform>(), anchor, pos, size);
         Image img = go.AddComponent<Image>();
-        img.sprite = LocalizedButtonStyler.UniversalSprite();
-        if (img.sprite == null) { img.sprite = Rounded(); img.type = Image.Type.Sliced; }
-        img.color = color;
+        CrestUITheme.ApplyButton(img, color);
         Button btn = go.AddComponent<Button>();
         btn.targetGraphic = img;
         if (onClick != null) btn.onClick.AddListener(onClick);
-        LocalizedButtonStyler.AddLabel(go.transform, label, fontSize, size, maxWidthMultiplier: 1.3f);
+        LocalizedButtonStyler.AddLabel(go.transform, label, fontSize, size,
+            LocalizedButtonStyler.TextZone.NativeCenter, 1.3f);
         return btn;
     }
 

@@ -398,8 +398,9 @@ public class SprintDuel : MonoBehaviour
 
         // big centred countdown number
         countdownText = MakeText("Countdown", "5", 240f, new Vector2(0f, 70f), FontStyles.Bold);
-        countdownText.outlineWidth = 0.25f;
-        countdownText.outlineColor = new Color32(0, 90, 160, 255);
+        Shadow countdownShadow = countdownText.gameObject.AddComponent<Shadow>();
+        countdownShadow.effectColor = new Color32(0, 45, 90, 230);
+        countdownShadow.effectDistance = new Vector2(0f, -4f);
 
         // hint under the countdown
         hintText = MakeText("Hint", "TAP SPACE / TAP SPRINT FOR SPEED", 46f, new Vector2(0f, -150f), FontStyles.Bold);

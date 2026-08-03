@@ -57,6 +57,8 @@ public class NavigationManager : MonoBehaviour
     private CanvasGroup hubFade;
     private TextMeshProUGUI goldLabel, diamondLabel;     // hub top-bar currencies, fed by RosterManager
     private TextMeshProUGUI gmGoldLabel, gmDiamondLabel; // game-mode top-bar currencies, fed by RosterManager
+    private readonly List<TextMeshProUGUI> overlayGoldLabels = new List<TextMeshProUGUI>();
+    private readonly List<TextMeshProUGUI> overlayDiamondLabels = new List<TextMeshProUGUI>();
 
     private GameObject rankingOverlay, shopOverlay, teamOverlay, gameModeOverlay;
     private WorldCupUI worldCupUI;
@@ -257,6 +259,17 @@ public class NavigationManager : MonoBehaviour
         if (diamondLabel != null) diamondLabel.text = FormatCurrency(rm.Diamonds);
         if (gmGoldLabel != null) gmGoldLabel.text = FormatCurrency(rm.Coins);
         if (gmDiamondLabel != null) gmDiamondLabel.text = FormatCurrency(rm.Diamonds);
+        RefreshTrackedCurrency(overlayGoldLabels, rm.Coins);
+        RefreshTrackedCurrency(overlayDiamondLabels, rm.Diamonds);
+    }
+
+    static void RefreshTrackedCurrency(List<TextMeshProUGUI> labels, int value)
+    {
+        for (int i = labels.Count - 1; i >= 0; i--)
+        {
+            if (labels[i] == null) { labels.RemoveAt(i); continue; }
+            labels[i].text = FormatCurrency(value);
+        }
     }
 
     // ------------------------------------------------------------- left column
@@ -294,12 +307,14 @@ public class NavigationManager : MonoBehaviour
         worldCupUI.Initialize(canvasRoot);
         MakeImageButton(canvasRoot, "BtnFriends", "Friends-Button", new Vector2(1f, 0.5f),
                         new Vector2(x, yOff + step), new Vector2(135f, 135f), () => ShowOverlay(friendsOverlay),
-                        trimArt: true);
+                        trimArt: true, localizedLabel: "FRIENDS",
+                        textZone: LocalizedButtonStyler.TextZone.LowerPlate);
         // Clubs gets a bigger box (150 vs 135): its trimmed art is intrinsically wide (~1.8:1),
         // so at equal box sizes it reads smaller than the near-square art around it.
         MakeImageButton(canvasRoot, "BtnClubs", "Clubs-Button", new Vector2(1f, 0.5f),
                         new Vector2(x, yOff), new Vector2(150f, 150f), () => ShowOverlay(clubsOverlay),
-                        trimArt: true);
+                        trimArt: true, localizedLabel: "CLUBS",
+                        textZone: LocalizedButtonStyler.TextZone.LowerPlate);
         CountryCatalog countryCatalog = CountryCatalog.Instance;
         MakeDirectImageButton(canvasRoot, "BtnWorldCup",
             countryCatalog != null ? countryCatalog.WorldCupTrophy : null,
@@ -311,19 +326,29 @@ public class NavigationManager : MonoBehaviour
 
     void BuildSeasonTimer()
     {
-        // Live countdown from SeasonPassManager's stored epoch (no longer decorative);
-        // tapping it opens the Season Pass screen.
-        Image panel = MakePanel(canvasRoot, new Vector2(1f, 1f), new Vector2(-118f, -126f),
-                                new Vector2(200f, 80f), DarkPanel);
-        panel.raycastTarget = true;
-        Button b = panel.gameObject.AddComponent<Button>();
+        GameObject go = new GameObject("BtnSeasonCountdown");
+        go.transform.SetParent(canvasRoot, false);
+        SetRect(go.AddComponent<RectTransform>(), new Vector2(1f, 1f),
+                new Vector2(-132f, -126f), new Vector2(228f, 82f));
+        Image panel = go.AddComponent<Image>();
+        CrestUITheme.ApplyButton(panel, Gold);
+        Button b = go.AddComponent<Button>();
         b.targetGraphic = panel;
         b.onClick.AddListener(() => ShowOverlay(seasonPassOverlay));
-        AddHover(panel.gameObject);
-        MakeText(panel.transform, "SEASON ENDS IN:", 13f, new Vector2(0.5f, 1f), new Vector2(0f, -20f),
-                 new Vector2(188f, 20f), new Color(1f, 1f, 1f, 0.85f), TextAlignmentOptions.Center);
-        MakeText(panel.transform, SeasonPassManager.Instance.CountdownLabel(), 30f, new Vector2(0.5f, 0f),
-                 new Vector2(0f, 16f), new Vector2(188f, 40f), Gold, TextAlignmentOptions.Center);
+        AddHover(go);
+
+        Image marker = NewImage(go.transform, "SeasonMarker");
+        marker.sprite = Circle(); marker.color = Gold; marker.raycastTarget = false;
+        SetRect(marker.rectTransform, new Vector2(0f, 0.5f), new Vector2(28f, 0f), new Vector2(40f, 40f));
+        MakeText(marker.transform, "S", 20f, Vector2.one * 0.5f, Vector2.zero,
+                 new Vector2(36f, 36f), new Color(0.035f, 0.065f, 0.12f, 1f), TextAlignmentOptions.Center);
+        MakeText(go.transform, "SEASON ENDS IN", 11f, new Vector2(0f, 0.5f), new Vector2(116f, 17f),
+                 new Vector2(126f, 18f), new Color(0.72f, 0.80f, 0.90f, 1f), TextAlignmentOptions.Left);
+        MakeText(go.transform, SeasonPassManager.Instance.CountdownLabel(), 25f,
+                 new Vector2(0f, 0.5f), new Vector2(116f, -12f), new Vector2(126f, 32f),
+                 Gold, TextAlignmentOptions.Left);
+        MakeText(go.transform, "›", 25f, new Vector2(1f, 0.5f), new Vector2(-16f, 0f),
+                 new Vector2(20f, 42f), Color.white, TextAlignmentOptions.Center);
     }
 
     // -------------------------------------------------------------- bottom bar
@@ -344,10 +369,10 @@ public class NavigationManager : MonoBehaviour
         // padlock + "UNLOCKED AT LEVEL 4" was a pre-Season-Pass placeholder for a player-level
         // system that never existed, so it's removed entirely (no lock, no disabled state).
         Button sp = MakeImageButton(barGo.transform, "BtnSeasonPass", "Season-Pass",
-                                    new Vector2(0f, 0.5f), new Vector2(195f, 0f), new Vector2(260f, 80f),
+                                    new Vector2(0f, 0.5f), new Vector2(132f, 0f), new Vector2(220f, 126f),
                                     () => ShowOverlay(seasonPassOverlay), localizedLabel: "SEASON PASS",
-                                    textZone: LocalizedButtonStyler.TextZone.LowerPlate);
-        sp.image.preserveAspect = false; // stretch/fill the 220x110 rect (Image Type stays Simple)
+                                    textZone: LocalizedButtonStyler.TextZone.SeasonPass);
+        sp.image.preserveAspect = true;
 
         // Missions (centre-left): opens the Missions screen; the red badge shows the live
         // claim-ready count (hidden at 0 — see RefreshMissionsBadge).
@@ -550,6 +575,7 @@ public class NavigationManager : MonoBehaviour
         start.interactable = !busy;
 
         MakeCloseButton(sheet.transform, () => { Destroy(rewardPopup); rewardPopup = null; });
+        AddFloatingCurrencyHeader(ov.transform);
     }
 
     // Tap on a Ready slot: open the pack, grant cards (duplicates → coins), show the reveal.
@@ -607,6 +633,7 @@ public class NavigationManager : MonoBehaviour
 
         GameObject self = ov;
         MakeCloseButton(sheet.transform, () => HideOverlay(self));
+        AddFloatingCurrencyHeader(ov.transform);
 
         ov.SetActive(false);
         return ov;
@@ -621,7 +648,7 @@ public class NavigationManager : MonoBehaviour
         RectTransform ort = ov.AddComponent<RectTransform>();
         Stretch(ort);
         Image backdrop = ov.AddComponent<Image>();
-        backdrop.color = OverlayDark;
+        backdrop.color = new Color(0.01f, 0.025f, 0.06f, 0.30f);
         backdrop.raycastTarget = true;
         ov.AddComponent<CanvasGroup>();
 
@@ -859,6 +886,7 @@ public class NavigationManager : MonoBehaviour
         MakeActionButton(sheet.transform, "OK", new Vector2(0.5f, 0f), new Vector2(0f, 46f),
                          new Vector2(180f, 56f), Green, () => HideOverlay(self));
         MakeCloseButton(sheet.transform, () => HideOverlay(self));
+        AddFloatingCurrencyHeader(ov.transform);
 
         ov.SetActive(false);
         return ov;
@@ -910,24 +938,31 @@ public class NavigationManager : MonoBehaviour
 
         GameObject go = new GameObject("BtnFree100");
         go.transform.SetParent(parent, false);
-        SetRect(go.AddComponent<RectTransform>(), new Vector2(0f, 0.5f), pos, new Vector2(146f, 40f));
+        SetRect(go.AddComponent<RectTransform>(), new Vector2(0f, 0.5f), pos, new Vector2(150f, 56f));
         Image img = go.AddComponent<Image>();
-        img.sprite = GetRoundedSprite();
-        img.type = Image.Type.Sliced;
-        img.color = capped ? new Color(0.3f, 0.34f, 0.4f, 1f) : Green;
+        Sprite adSprite = ButtonSpriteCatalog.SpriteFor("Ad-Button");
+        bool usesAdArtwork = adSprite != null;
+        if (usesAdArtwork)
+        {
+            img.sprite = adSprite;
+            img.type = Image.Type.Simple;
+            img.preserveAspect = true;
+            img.color = Color.white;
+        }
+        else CrestUITheme.ApplyButton(img, Green);
         Button btn = go.AddComponent<Button>();
         btn.targetGraphic = img;
         btn.interactable = !capped;
 
         TextMeshProUGUI txt = MakeText(go.transform, capped ? AdWatchCap.ResetLabel() : "FREE +100",
-                                       capped ? 12f : 15f, new Vector2(0.5f, 0.5f), new Vector2(-8f, 0f),
-                                       new Vector2(116f, 40f), Color.white, TextAlignmentOptions.Center);
+                                       capped ? 11f : 14f, new Vector2(0.5f, 0.5f), new Vector2(0f, -4f),
+                                       new Vector2(132f, 38f), Color.white, TextAlignmentOptions.Center);
         Image tri = NewImage(go.transform, "Play");
         tri.sprite = TriangleSprite();
         tri.color = Color.white;
         tri.raycastTarget = false;
         SetRect(tri.rectTransform, new Vector2(1f, 0.5f), new Vector2(-15f, 0f), new Vector2(12f, 14f));
-        tri.gameObject.SetActive(!capped);
+        tri.gameObject.SetActive(!usesAdArtwork && !capped);
 
         if (!capped) btn.onClick.AddListener(() =>
         {
@@ -942,7 +977,6 @@ public class NavigationManager : MonoBehaviour
                 if (btn == null) return;
                 if (AdWatchCap.Used(capId) >= AdWatchCap.DailyCap)
                 {
-                    img.color = new Color(0.3f, 0.34f, 0.4f, 1f);
                     txt.fontSize = 12f;
                     txt.text = AdWatchCap.ResetLabel();
                 }
@@ -950,7 +984,7 @@ public class NavigationManager : MonoBehaviour
                 {
                     btn.interactable = true;
                     txt.text = "FREE +100";
-                    tri.gameObject.SetActive(true);
+                    tri.gameObject.SetActive(!usesAdArtwork);
                 }
             }));
         });
@@ -1767,11 +1801,11 @@ public class NavigationManager : MonoBehaviour
             int team = s.finalOrder != null && rank < s.finalOrder.Length ? s.finalOrder[rank] : -1;
             if (team < 0 || team >= s.teams.Length) continue;
             Image row = NewImage(content, "Final_" + (rank + 1));
-            row.sprite = GetRoundedSprite(); row.type = Image.Type.Sliced;
             bool player = team == s.PlayerIndex;
-            row.color = player ? new Color(0.58f, 0.43f, 0.08f, 0.96f)
-                      : rank == 0 ? new Color(0.26f, 0.22f, 0.08f, 0.94f)
-                      : new Color(0.045f, 0.09f, 0.16f, 0.94f);
+            Color rowAccent = player || rank == 0 ? Gold : new Color(0.16f, 0.28f, 0.40f, 1f);
+            CrestUITheme.ApplyFrame(row, rowAccent,
+                player ? new Color(0.14f, 0.12f, 0.055f, 0.94f)
+                       : new Color(0.035f, 0.075f, 0.13f, 0.90f), 2f);
             SetRect(row.rectTransform, new Vector2(0.5f, 1f),
                     new Vector2(0f, -(yStart + rowH * 0.5f + rank * rowPitch)),
                     new Vector2(1040f, rowH));
@@ -1822,10 +1856,9 @@ public class NavigationManager : MonoBehaviour
         LeagueSeason.GetRewardForRank(comp, rank, out int gold, out int diamonds);
 
         Image card = NewImage(content, "EarnedReward");
-        card.sprite = GetRoundedSprite();
-        card.type = Image.Type.Sliced;
-        card.color = rank == 1 ? new Color(0.32f, 0.25f, 0.07f, 0.98f)
-                               : new Color(0.055f, 0.17f, 0.18f, 0.98f);
+        CrestUITheme.ApplyFrame(card, rank == 1 ? Gold : Cyan,
+            rank == 1 ? new Color(0.14f, 0.12f, 0.05f, 0.96f)
+                      : new Color(0.035f, 0.12f, 0.14f, 0.94f), 3f);
         SetRect(card.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -(yTop + h * 0.5f)), new Vector2(900f, h));
 
         string promotion = rank == 1 && comp < 3
@@ -2215,24 +2248,48 @@ public class NavigationManager : MonoBehaviour
         if (!s.IsComplete)
         {
             bool canRestart = s.PlayerMatchWins > 0;
+            GameObject actionRow = new GameObject("CompetitionActions");
+            actionRow.transform.SetParent(bar.transform, false);
+            RectTransform actionRt = actionRow.AddComponent<RectTransform>();
+            actionRt.anchorMin = new Vector2(0f, 0f);
+            actionRt.anchorMax = new Vector2(1f, 1f);
+            actionRt.offsetMin = new Vector2(18f, 14f);
+            actionRt.offsetMax = new Vector2(-126f, -14f);
+            HorizontalLayoutGroup actions = actionRow.AddComponent<HorizontalLayoutGroup>();
+            actions.spacing = 16f;
+            actions.childAlignment = TextAnchor.MiddleCenter;
+            actions.childControlWidth = true;
+            actions.childControlHeight = true;
+            actions.childForceExpandWidth = true;
+            actions.childForceExpandHeight = true;
+
             Button restart = MakeActionButton(
-                bar.transform,
+                actionRow.transform,
                 canRestart ? "RESTART RUN" : "RESTART (WIN 1)",
-                new Vector2(0f, 0.5f),
-                new Vector2(130f, 0f),
-                new Vector2(230f, 52f),
+                new Vector2(0.5f, 0.5f), Vector2.zero,
+                new Vector2(300f, 64f),
                 canRestart ? new Color(0.80f, 0.22f, 0.20f, 1f)
                            : new Color(0.25f, 0.30f, 0.38f, 1f),
                 canRestart ? () => OpenRestartChampionshipConfirmation(comp) : null);
+            LayoutElement restartLayout = restart.gameObject.AddComponent<LayoutElement>();
+            restartLayout.minWidth = restartLayout.preferredWidth = 300f;
+            restartLayout.minHeight = restartLayout.preferredHeight = 64f;
+            restartLayout.flexibleWidth = 1f;
             restart.interactable = canRestart;
+            if (!canRestart) restart.gameObject.AddComponent<CanvasGroup>().alpha = 0.58f;
 
+            Button primary;
             if (s.PlayerHasBye)
-                MakeActionButton(bar.transform, "SIMULATE BYE ROUND", new Vector2(0.5f, 0.5f), new Vector2(-40f, 0f),
-                                 new Vector2(560f, 64f), Green, () => { s.SimulateByeRound(); RebuildStandings(); });
+                primary = MakeActionButton(actionRow.transform, "SIMULATE BYE ROUND",
+                    new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(300f, 64f), Green,
+                    () => { s.SimulateByeRound(); RebuildStandings(); });
             else
-                MakeActionButton(bar.transform, "NEXT MATCH    vs. " + s.NextOpponentName,
-                                 new Vector2(0.5f, 0.5f), new Vector2(-40f, 0f), new Vector2(560f, 64f),
-                                 Green, OpenPreMatch);
+                primary = MakeActionButton(actionRow.transform, "NEXT MATCH    vs. " + s.NextOpponentName,
+                    new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(300f, 64f), Green, OpenPreMatch);
+            LayoutElement primaryLayout = primary.gameObject.AddComponent<LayoutElement>();
+            primaryLayout.minWidth = primaryLayout.preferredWidth = 300f;
+            primaryLayout.minHeight = primaryLayout.preferredHeight = 64f;
+            primaryLayout.flexibleWidth = 1f;
         }
         else
         {
@@ -2377,18 +2434,14 @@ public class NavigationManager : MonoBehaviour
     void BuildPreMatchSideCard(Transform sheet, Vector2 center, Vector2 size, Color accentColor,
                                string label)
     {
-        Image card = MakePanel(sheet, new Vector2(0.5f, 0.5f), center, size,
-                               new Color(0.035f, 0.075f, 0.14f, 0.96f));
-        card.gameObject.name = label == "MY CLUB" ? "PlayerFixtureCard" : "OpponentFixtureCard";
-        card.raycastTarget = false;
-
-        Image accent = NewImage(card.transform, "Accent");
-        accent.sprite = GetRoundedSprite(); accent.type = Image.Type.Sliced;
-        accent.color = accentColor; accent.raycastTarget = false;
-        SetRect(accent.rectTransform, new Vector2(0.5f, 1f),
-                new Vector2(0f, -5f), new Vector2(size.x - 24f, 7f));
-        MakeText(card.transform, label, 13f, new Vector2(0.5f, 1f),
-                 new Vector2(0f, -25f), new Vector2(220f, 22f),
+        Image tab = NewImage(sheet, label == "MY CLUB" ? "PlayerFixtureTab" : "OpponentFixtureTab");
+        CrestUITheme.ApplyFrame(tab, accentColor,
+            new Color(0.025f, 0.055f, 0.10f, 0.74f), 2f);
+        tab.raycastTarget = false;
+        SetRect(tab.rectTransform, new Vector2(0.5f, 0.5f),
+                new Vector2(center.x, center.y + size.y * 0.5f - 17f), new Vector2(184f, 34f));
+        MakeText(tab.transform, label, 13f, new Vector2(0.5f, 0.5f),
+                 Vector2.zero, new Vector2(170f, 24f),
                  new Color(accentColor.r, accentColor.g, accentColor.b, 1f),
                  TextAlignmentOptions.Center);
     }
@@ -2491,17 +2544,41 @@ public class NavigationManager : MonoBehaviour
         return bar;
     }
 
-    void AddCurrencyDisplay(Transform bar)
+    public void AddCurrencyDisplay(Transform bar)
     {
+        if (bar == null || bar.Find("OverlayCurrencyHeader") != null) return;
+        GameObject header = new GameObject("OverlayCurrencyHeader");
+        header.transform.SetParent(bar, false);
+        RectTransform headerRt = header.AddComponent<RectTransform>();
+        headerRt.anchorMin = Vector2.zero;
+        headerRt.anchorMax = Vector2.one;
+        headerRt.offsetMin = headerRt.offsetMax = Vector2.zero;
+
         RosterManager rm = RosterManager.Instance;
         int coins = rm != null ? rm.Coins : 0;
         int diamonds = rm != null ? rm.Diamonds : 0;
-        TextMeshProUGUI coinText = MakeCurrencyChip(bar, "GoldChip", "Sprites/gold-coin", Gold,
+        TextMeshProUGUI coinText = MakeCurrencyChip(header.transform, "GoldChip", "Sprites/gold-coin", Gold,
                                                      new Vector2(CurrencyGoldX, 0f), () => OpenShopTab(5));
-        TextMeshProUGUI diamondText = MakeCurrencyChip(bar, "DiamondChip", "Sprites/diamond-coin", Cyan,
+        TextMeshProUGUI diamondText = MakeCurrencyChip(header.transform, "DiamondChip", "Sprites/diamond-coin", Cyan,
                                                         new Vector2(CurrencyDiamondX, 0f), () => OpenShopTab(6));
         coinText.text = FormatCurrency(coins);
         diamondText.text = FormatCurrency(diamonds);
+        overlayGoldLabels.Add(coinText);
+        overlayDiamondLabels.Add(diamondText);
+    }
+
+    public void AddFloatingCurrencyHeader(Transform parent)
+    {
+        if (parent == null || parent.Find("FloatingResourceBar") != null) return;
+        GameObject bar = new GameObject("FloatingResourceBar");
+        bar.transform.SetParent(parent, false);
+        RectTransform rt = bar.AddComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0f, 1f);
+        rt.anchorMax = new Vector2(1f, 1f);
+        rt.pivot = new Vector2(0.5f, 1f);
+        rt.anchoredPosition = Vector2.zero;
+        rt.sizeDelta = new Vector2(0f, 80f);
+        AddCurrencyDisplay(bar.transform);
     }
 
     // A compact mobile-game currency component. The count lives inside a high-contrast pill rather
@@ -2630,38 +2707,14 @@ public class NavigationManager : MonoBehaviour
         SetRect(rt, anchor, pos, size);
 
         Image img = go.AddComponent<Image>();
-        img.sprite = GetRoundedSprite();
-        img.type = Image.Type.Sliced;
-        img.color = new Color(0f, 0f, 0f, 0.52f);
+        CrestUITheme.ApplyButton(img, color);
 
         Button btn = go.AddComponent<Button>();
         btn.targetGraphic = img;
         if (onClick != null) btn.onClick.AddListener(onClick);
 
-        Image face = NewImage(go.transform, "Face");
-        face.sprite = LocalizedButtonStyler.UniversalSprite();
-        if (face.sprite == null)
-        {
-            face.sprite = GetRoundedSprite();
-            face.type = Image.Type.Sliced;
-        }
-        face.color = color;
-        face.raycastTarget = false;
-        RectTransform faceRt = face.rectTransform;
-        faceRt.anchorMin = Vector2.zero;
-        faceRt.anchorMax = Vector2.one;
-        faceRt.offsetMin = new Vector2(2f, 6f);
-        faceRt.offsetMax = new Vector2(-2f, -2f);
-
-        Image shine = NewImage(face.transform, "TopShine");
-        shine.sprite = GetRoundedSprite();
-        shine.type = Image.Type.Sliced;
-        shine.color = new Color(1f, 1f, 1f, 0.22f);
-        shine.raycastTarget = false;
-        SetRect(shine.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -4f),
-                new Vector2(size.x - 24f, 5f));
-
-        LocalizedButtonStyler.AddLabel(go.transform, label, Mathf.Min(26f, size.y * 0.38f), size);
+        LocalizedButtonStyler.AddLabel(go.transform, label, Mathf.Min(26f, size.y * 0.38f), size,
+            LocalizedButtonStyler.TextZone.NativeCenter);
         AddHover(go);
         return btn;
     }
@@ -3025,11 +3078,16 @@ public class NavigationManager : MonoBehaviour
         SetRect(rt, anchor, pos, size);
 
         Image img = go.AddComponent<Image>();
-        img.sprite = ButtonSpriteCatalog.SpriteForLegacyPath(spritePath, true);
-        if (img.sprite == null) img.sprite = trimArt ? LoadTrimmedSprite(spritePath) : LoadSprite(spritePath);
+        string buttonKey = ButtonSpriteCatalog.KeyForLegacyPath(spritePath);
+        img.sprite = !string.IsNullOrEmpty(buttonKey)
+            ? ButtonSpriteCatalog.SpriteFor(buttonKey, true)
+            : (trimArt ? LoadTrimmedSprite(spritePath) : LoadSprite(spritePath));
         img.preserveAspect = true;
         if (img.sprite == null) // visible rounded fallback so a missing sprite still shows a button
         {
+            if (!string.IsNullOrEmpty(buttonKey))
+                Debug.LogWarning("NavigationManager: button '" + buttonKey +
+                                 "' is missing from ButtonSpriteCatalog; using the procedural fallback.");
             img.sprite = GetRoundedSprite();
             img.type = Image.Type.Sliced;
             img.color = DarkPanel;
@@ -3040,10 +3098,10 @@ public class NavigationManager : MonoBehaviour
         if (onClick != null) btn.onClick.AddListener(onClick);
         if (!string.IsNullOrEmpty(localizedLabel))
         {
-            TextMeshProUGUI label = LocalizedButtonStyler.AddLabel(go.transform, localizedLabel,
-                Mathf.Clamp(size.y * 0.20f, 13f, 25f), size, textZone, 1f);
-            if (ButtonSpriteCatalog.KeyForLegacyPath(spritePath) == "Play-Button")
-                go.AddComponent<LocalizedPlayButtonBackground>().Configure(img, label);
+            bool isPlayButton = ButtonSpriteCatalog.KeyForLegacyPath(spritePath) == "Play-Button";
+            LocalizedButtonStyler.AddLabel(go.transform, localizedLabel,
+                Mathf.Clamp(size.y * 0.20f, 13f, 25f), size, textZone, 1f,
+                lockVisualStructure: isPlayButton);
         }
         AddHover(go);
         return btn;
@@ -3382,30 +3440,15 @@ public class NavigationManager : MonoBehaviour
     }
 
     static Sprite PoolScreenSprite() => TextureSprite("Sprites/pool-screen");
-    static Sprite BackButtonSprite() => ButtonSpriteCatalog.SpriteFor("Back-Button") ?? TextureSprite("Sprites/back-button");
+    static Sprite BackButtonSprite() => ButtonSpriteCatalog.SpriteFor("Back-Button");
     static Sprite CompetitionBgSprite() => TextureSprite("Sprites/competition-page-background");
 
-    // lock-sign art, cropped to just the red padlock button. The source PNG has wide transparent
-    // margins, so a full-frame sprite would render tiny; the content box (measured as fractions of the
-    // texture, so it survives a re-import at a different size) is cut out here via Sprite.Create.
+    // Button artwork comes from direct catalog references. A missing entry returns null and lets the
+    // caller keep rendering its procedural UI instead of retrying a deleted Resources/Sprites path.
     static Sprite LockSignSprite()
     {
         if (lockSignSprite != null) return lockSignSprite;
         lockSignSprite = ButtonSpriteCatalog.SpriteFor("Lock-Button");
-        if (lockSignSprite != null) return lockSignSprite;
-        Texture2D tex = Resources.Load<Texture2D>("Sprites/lock-sign");
-        if (tex == null)
-        {
-            Debug.LogWarning("NavigationManager: Resources/Sprites/lock-sign not found — using procedural lock.");
-            return null;
-        }
-        // Content box as texture fractions (x0,x1 from left; yTop,yBot from top) with a little padding.
-        const float x0 = 0.298f, x1 = 0.702f, yTop = 0.187f, yBot = 0.775f;
-        float rx = x0 * tex.width;
-        float ry = (1f - yBot) * tex.height;          // Unity texture space has y=0 at the bottom
-        float rw = (x1 - x0) * tex.width;
-        float rh = (yBot - yTop) * tex.height;
-        lockSignSprite = Sprite.Create(tex, new Rect(rx, ry, rw, rh), new Vector2(0.5f, 0.5f), 100f);
         return lockSignSprite;
     }
 

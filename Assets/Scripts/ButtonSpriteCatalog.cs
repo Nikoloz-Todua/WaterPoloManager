@@ -21,9 +21,7 @@ public sealed class ButtonSpriteCatalog : ScriptableObject
     [SerializeField] List<Entry> buttons = new List<Entry>();
 
     static ButtonSpriteCatalog instance;
-    readonly Dictionary<string, Entry> byKey = new Dictionary<string, Entry>(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string, Sprite> cropped = new Dictionary<string, Sprite>(StringComparer.OrdinalIgnoreCase);
-    bool indexed;
 
     public int BuildRevision => buildRevision;
     public IReadOnlyList<Entry> Buttons => buttons;
@@ -35,6 +33,15 @@ public sealed class ButtonSpriteCatalog : ScriptableObject
             if (instance == null) instance = Resources.Load<ButtonSpriteCatalog>("ButtonSpriteCatalog");
             return instance;
         }
+    }
+
+    // Enter Play Mode can be configured without a domain reload. Reset the static handle anyway so
+    // a catalog rebuilt by the editor is reloaded instead of reusing an earlier empty asset instance.
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    static void ResetRuntimeState()
+    {
+        if (instance != null) instance.cropped.Clear();
+        instance = null;
     }
 
     public static Sprite SpriteFor(string key, bool cropTransparentMargin = true)
@@ -51,8 +58,16 @@ public sealed class ButtonSpriteCatalog : ScriptableObject
 
     public Sprite Get(string key, bool cropTransparentMargin = true)
     {
-        EnsureIndex();
-        if (string.IsNullOrEmpty(key) || !byKey.TryGetValue(key, out Entry entry) || entry.sprite == null)
+        if (string.IsNullOrEmpty(key)) return null;
+        Entry entry = null;
+        foreach (Entry candidate in buttons)
+        {
+            if (candidate == null || !string.Equals(candidate.key, key, StringComparison.OrdinalIgnoreCase))
+                continue;
+            entry = candidate;
+            break;
+        }
+        if (entry == null || entry.sprite == null)
             return null;
         if (!cropTransparentMargin) return entry.sprite;
         if (cropped.TryGetValue(entry.key, out Sprite cached) && cached != null) return cached;
@@ -75,15 +90,6 @@ public sealed class ButtonSpriteCatalog : ScriptableObject
         return result;
     }
 
-    void EnsureIndex()
-    {
-        if (indexed) return;
-        indexed = true;
-        byKey.Clear();
-        foreach (Entry entry in buttons)
-            if (entry != null && !string.IsNullOrEmpty(entry.key)) byKey[entry.key] = entry;
-    }
-
     public static string KeyForLegacyPath(string path)
     {
         if (string.IsNullOrEmpty(path)) return null;
@@ -92,7 +98,6 @@ public sealed class ButtonSpriteCatalog : ScriptableObject
         if (slash >= 0) name = name.Substring(slash + 1);
         switch (name.ToLowerInvariant())
         {
-            case "button1": return "Button1";
             case "play-button": return "Play-Button";
             case "ranking-button": return "Ranking-Button";
             case "season-pass":
@@ -126,9 +131,6 @@ public sealed class ButtonSpriteCatalog : ScriptableObject
             case "wing-button": return "Wing-Button";
             case "team-button": return "Team-Button";
             case "missions-button": return "Missions-Button";
-            case "formations-button":
-            case "players-button":
-            case "substitutions-button": return "Button1";
             default: return null;
         }
     }

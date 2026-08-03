@@ -8,13 +8,13 @@ using UnityEngine;
 [InitializeOnLoad]
 public static class ButtonSpriteCatalogBuilder
 {
-    const int BuildRevision = 1;
+    const int BuildRevision = 3;
     const string CatalogPath = "Assets/Resources/ButtonSpriteCatalog.asset";
     const string ButtonFolder = "Assets/Sprites/Buttons";
 
     static readonly string[] Keys =
     {
-        "Ad-Button", "Back-Button", "Button1", "Center-Button", "Clubs-Button",
+        "Ad-Button", "Back-Button", "Center-Button", "Clubs-Button",
         "Defend-Button", "Defender-Button", "Friends-Button", "Gifts-Button", "I-Button",
         "Keeper-Button", "Lock-Button", "Message-Button", "Missions-Button", "Pass-Button",
         "Pause-Button", "Play-Button", "Ranking-Button", "Season-Pass", "Settings-Button",
@@ -25,6 +25,11 @@ public static class ButtonSpriteCatalogBuilder
     static bool rebuilding;
 
     static ButtonSpriteCatalogBuilder() => EditorApplication.delayCall += EnsureBuilt;
+
+    // The delayed bootstrap can otherwise race a very quick Play click after script reload. Validate
+    // synchronously at the Play Mode boundary so runtime code always sees the completed direct refs.
+    [InitializeOnEnterPlayMode]
+    static void EnsureBuiltBeforePlay(EnterPlayModeOptions options) => EnsureBuilt();
 
     [MenuItem("Tools/Water Polo/Rebuild Button Sprite Catalog")]
     public static void Rebuild()
@@ -50,11 +55,12 @@ public static class ButtonSpriteCatalogBuilder
             for (int i = 0; i < Keys.Length; i++)
             {
                 string assetPath = ButtonFolder + "/" + Keys[i] + ".png";
-                Sprite sprite = LoadSingleSprite(assetPath);
+                Rect visibleRect01 = MeasureVisibleRect01(assetPath);
+                Sprite sprite = LoadSingleSprite(assetPath, Keys[i], visibleRect01);
                 SerializedProperty entry = buttons.GetArrayElementAtIndex(i);
                 entry.FindPropertyRelative("key").stringValue = Keys[i];
                 entry.FindPropertyRelative("sprite").objectReferenceValue = sprite;
-                entry.FindPropertyRelative("visibleRect01").rectValue = MeasureVisibleRect01(assetPath);
+                entry.FindPropertyRelative("visibleRect01").rectValue = visibleRect01;
                 if (sprite == null) missing.Add(Keys[i]);
             }
 
@@ -74,21 +80,36 @@ public static class ButtonSpriteCatalogBuilder
     static void EnsureBuilt()
     {
         ButtonSpriteCatalog catalog = AssetDatabase.LoadAssetAtPath<ButtonSpriteCatalog>(CatalogPath);
-        if (catalog == null || catalog.BuildRevision != BuildRevision) Rebuild();
+        if (catalog == null || catalog.BuildRevision != BuildRevision || CatalogIsIncomplete(catalog))
+            Rebuild();
     }
 
-    static Sprite LoadSingleSprite(string path)
+    static bool CatalogIsIncomplete(ButtonSpriteCatalog catalog)
+    {
+        if (catalog.Buttons == null || catalog.Buttons.Count != Keys.Length) return true;
+        for (int i = 0; i < Keys.Length; i++)
+        {
+            ButtonSpriteCatalog.Entry entry = catalog.Buttons[i];
+            if (entry == null || entry.key != Keys[i] || entry.sprite == null) return true;
+        }
+        return false;
+    }
+
+    static Sprite LoadSingleSprite(string path, string key, Rect visibleRect01)
     {
         if (!File.Exists(path)) return null;
         TextureImporter importer = AssetImporter.GetAtPath(path) as TextureImporter;
-        if (importer != null && (importer.textureType != TextureImporterType.Sprite ||
-                                 importer.spriteImportMode != SpriteImportMode.Single))
+        if (importer != null)
         {
+            bool changed = importer.textureType != TextureImporterType.Sprite ||
+                           importer.spriteImportMode != SpriteImportMode.Single ||
+                           !importer.alphaIsTransparency || importer.mipmapEnabled;
             importer.textureType = TextureImporterType.Sprite;
             importer.spriteImportMode = SpriteImportMode.Single;
             importer.alphaIsTransparency = true;
             importer.mipmapEnabled = false;
-            importer.SaveAndReimport();
+
+            if (changed) importer.SaveAndReimport();
         }
         return AssetDatabase.LoadAssetAtPath<Sprite>(path);
     }

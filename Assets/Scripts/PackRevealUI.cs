@@ -46,6 +46,9 @@ public class PackRevealUI : MonoBehaviour
         btn.targetGraphic = dark;
         btn.onClick.AddListener(() => { Destroy(ov); onClose?.Invoke(); });
 
+        NavigationManager navigation = FindAnyObjectByType<NavigationManager>();
+        if (navigation != null) navigation.AddFloatingCurrencyHeader(ov.transform);
+
         ui.StartCoroutine(ui.RevealCards(cards));
     }
 
@@ -210,8 +213,7 @@ public static class PackInfoPopup
         okr.anchoredPosition = new Vector2(0f, 42f);
         okr.sizeDelta = new Vector2(180f, 52f);
         Image okImg = ok.AddComponent<Image>();
-        okImg.sprite = PackRevealUI.Rounded(); okImg.type = Image.Type.Sliced;
-        okImg.color = new Color(0.2f, 0.72f, 0.32f);
+        CrestUITheme.ApplyButton(okImg, new Color(0.2f, 0.72f, 0.32f));
         Button okBtn = ok.AddComponent<Button>();
         okBtn.targetGraphic = okImg;
         okBtn.onClick.AddListener(() => UnityEngine.Object.Destroy(ov));
@@ -220,6 +222,9 @@ public static class PackInfoPopup
         okTxt.rectTransform.anchorMin = Vector2.zero;
         okTxt.rectTransform.anchorMax = Vector2.one;
         okTxt.rectTransform.offsetMin = okTxt.rectTransform.offsetMax = Vector2.zero;
+
+        NavigationManager navigation = UnityEngine.Object.FindAnyObjectByType<NavigationManager>();
+        if (navigation != null) navigation.AddFloatingCurrencyHeader(ov.transform);
     }
 
     // The shared table: grey caption, one row per rarity (dot / name / %), and the
