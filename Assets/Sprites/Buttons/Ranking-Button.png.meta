@@ -1,31 +1,10 @@
 fileFormatVersion: 2
-guid: 06951133abc972b4ab43060419e57ab6
+guid: 14baf707d2018da4ba05fd483dcdc3fb
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: 7194658592616481152
-    second: Ranking-Button_0
-  - first:
-      213: 692211937782560145
-    second: Ranking-Button_1
-  - first:
-      213: 3431807839447315722
-    second: Ranking-Button_2
-  - first:
-      213: 2457471542123243708
-    second: Ranking-Button_3
-  - first:
-      213: -1406060031575838627
-    second: Ranking-Button_4
-  - first:
-      213: -5502094345834406992
-    second: Ranking-Button_5
-  - first:
-      213: 2064091856433168233
-    second: Ranking-Button_6
-  - first:
-      213: -5939312065989843439
-    second: Ranking-Button_7
+      213: 1842935338366283351
+    second: Ranking-Button 1_0
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -160,13 +139,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: Ranking-Button_0
+      name: Ranking-Button 1_0
       rect:
         serializedVersion: 2
-        x: 12
-        y: 0
-        width: 1501
-        height: 1024
+        x: 155
+        y: 88
+        width: 686
+        height: 810
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -175,162 +154,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: 0810e1dfedf88d360800000000000000
-      internalID: 7194658592616481152
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Ranking-Button_1
-      rect:
-        serializedVersion: 2
-        x: 1015
-        y: 975
-        width: 33
-        height: 49
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 19570d4071b3b9900800000000000000
-      internalID: 692211937782560145
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Ranking-Button_2
-      rect:
-        serializedVersion: 2
-        x: 83
-        y: 542
-        width: 6
-        height: 9
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: a0578a72c0b30af20800000000000000
-      internalID: 3431807839447315722
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Ranking-Button_3
-      rect:
-        serializedVersion: 2
-        x: 82
-        y: 520
-        width: 6
-        height: 6
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: cb823e9e851ba1220800000000000000
-      internalID: 2457471542123243708
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Ranking-Button_4
-      rect:
-        serializedVersion: 2
-        x: 83
-        y: 526
-        width: 6
-        height: 7
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: d503c05d9dbac7ce0800000000000000
-      internalID: -1406060031575838627
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Ranking-Button_5
-      rect:
-        serializedVersion: 2
-        x: 82
-        y: 326
-        width: 7
-        height: 7
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 0bbdad30852a4a3b0800000000000000
-      internalID: -5502094345834406992
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Ranking-Button_6
-      rect:
-        serializedVersion: 2
-        x: 82
-        y: 231
-        width: 6
-        height: 6
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 96fb97e7b9025ac10800000000000000
-      internalID: 2064091856433168233
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Ranking-Button_7
-      rect:
-        serializedVersion: 2
-        x: 1042
-        y: 223
-        width: 6
-        height: 9
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 116eb70d423539da0800000000000000
-      internalID: -5939312065989843439
+      spriteID: 75e265b0deb639910800000000000000
+      internalID: 1842935338366283351
       vertices: []
       indices: 
       edges: []
@@ -349,14 +174,7 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      Ranking-Button_0: 7194658592616481152
-      Ranking-Button_1: 692211937782560145
-      Ranking-Button_2: 3431807839447315722
-      Ranking-Button_3: 2457471542123243708
-      Ranking-Button_4: -1406060031575838627
-      Ranking-Button_5: -5502094345834406992
-      Ranking-Button_6: 2064091856433168233
-      Ranking-Button_7: -5939312065989843439
+      Ranking-Button 1_0: 1842935338366283351
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

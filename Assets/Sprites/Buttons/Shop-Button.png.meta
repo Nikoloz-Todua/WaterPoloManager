@@ -142,10 +142,10 @@ TextureImporter:
       name: Shop-Button_0
       rect:
         serializedVersion: 2
-        x: 11
-        y: 0
-        width: 1433
-        height: 1024
+        x: 47
+        y: 88
+        width: 924
+        height: 892
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}

@@ -1,10 +1,10 @@
 fileFormatVersion: 2
-guid: d09e86ca89834554388fd8902a732ec6
+guid: c6ef2b8cc13d52b428d2518068ed4285
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: 2591913049886162443
-    second: Team-Button_0
+      213: 4933270305010217196
+    second: Pool-Button_0
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -139,13 +139,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: Team-Button_0
+      name: Pool-Button_0
       rect:
         serializedVersion: 2
-        x: 11
-        y: 0
-        width: 1494
-        height: 1024
+        x: 26
+        y: 57
+        width: 979
+        height: 904
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -154,8 +154,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: b0ef923bf2358f320800000000000000
-      internalID: 2591913049886162443
+      spriteID: ce0fd1f643f767440800000000000000
+      internalID: 4933270305010217196
       vertices: []
       indices: 
       edges: []
@@ -174,7 +174,7 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      Team-Button_0: 2591913049886162443
+      Pool-Button_0: 4933270305010217196
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

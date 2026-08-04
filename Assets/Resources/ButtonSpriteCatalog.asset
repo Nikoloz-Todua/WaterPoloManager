@@ -42,10 +42,10 @@ MonoBehaviour:
     sprite: {fileID: 21300000, guid: 25a93aa5d3b8956438cfdc7cf4c0bff4, type: 3}
     visibleRect01:
       serializedVersion: 2
-      x: 0.13346355
-      y: 0.3095703
-      width: 0.7239583
-      height: 0.6298828
+      x: 0.19140625
+      y: 0.16113281
+      width: 0.6171875
+      height: 0.7011719
   - key: Defend-Button
     sprite: {fileID: 21300000, guid: fd07faf00f1eeff488d3c93e15e9f8f4, type: 3}
     visibleRect01:
@@ -66,10 +66,10 @@ MonoBehaviour:
     sprite: {fileID: 21300000, guid: 40896f43ead25744b9e41d415b77ebc0, type: 3}
     visibleRect01:
       serializedVersion: 2
-      x: 0.13997395
-      y: 0.21972656
-      width: 0.71809894
-      height: 0.70996094
+      x: 0.19661458
+      y: 0.171875
+      width: 0.60807294
+      height: 0.63964844
   - key: Gifts-Button
     sprite: {fileID: 21300000, guid: 93fb40f817b24174aadd5aab162bc7d1, type: 3}
     visibleRect01:
@@ -135,21 +135,21 @@ MonoBehaviour:
       width: 0.6342857
       height: 0.69684213
   - key: Play-Button
-    sprite: {fileID: 21300000, guid: 6af65d3675d5404499a370388e51db97, type: 3}
+    sprite: {fileID: 21300000, guid: 618b1e1ff3061b349ae864463ad73c6a, type: 3}
     visibleRect01:
       serializedVersion: 2
-      x: 0.021212121
-      y: 0.11111111
-      width: 0.95454544
-      height: 0.76455027
+      x: 0.11653646
+      y: 0.31347656
+      width: 0.76627606
+      height: 0.42089844
   - key: Ranking-Button
-    sprite: {fileID: 21300000, guid: 06951133abc972b4ab43060419e57ab6, type: 3}
+    sprite: {fileID: 21300000, guid: 14baf707d2018da4ba05fd483dcdc3fb, type: 3}
     visibleRect01:
       serializedVersion: 2
-      x: 0.140625
-      y: 0.23632812
-      width: 0.71484375
-      height: 0.69140625
+      x: 0.14648438
+      y: 0.13574219
+      width: 0.67871094
+      height: 0.7480469
   - key: Season-Pass
     sprite: {fileID: 21300000, guid: 0d0d6e3f696df9d409a3d7919ecae146, type: 3}
     visibleRect01:
@@ -178,10 +178,10 @@ MonoBehaviour:
     sprite: {fileID: 21300000, guid: c79703b0b09cadd4592358c59fc6b805, type: 3}
     visibleRect01:
       serializedVersion: 2
-      x: 0.1295573
-      y: 0.19140625
-      width: 0.7402344
-      height: 0.7607422
+      x: 0.044921875
+      y: 0.0859375
+      width: 0.9082031
+      height: 0.87597656
   - key: Sprint-Button
     sprite: {fileID: 21300000, guid: b07f39e14158d3f46957091fc56a54f2, type: 3}
     visibleRect01:
@@ -199,13 +199,13 @@ MonoBehaviour:
       width: 0.8876953
       height: 0.92578125
   - key: Team-Button
-    sprite: {fileID: 21300000, guid: d09e86ca89834554388fd8902a732ec6, type: 3}
+    sprite: {fileID: 21300000, guid: c6ef2b8cc13d52b428d2518068ed4285, type: 3}
     visibleRect01:
       serializedVersion: 2
-      x: 0.1295573
-      y: 0.19140625
-      width: 0.7402344
-      height: 0.7597656
+      x: 0.022460938
+      y: 0.07910156
+      width: 0.9580078
+      height: 0.8613281
   - key: Wing-Button
     sprite: {fileID: 21300000, guid: 481b74b560bc49041a6e6f87bb4dce22, type: 3}
     visibleRect01:

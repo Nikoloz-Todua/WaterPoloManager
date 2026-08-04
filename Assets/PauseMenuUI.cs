@@ -126,7 +126,7 @@ public class PauseMenuUI : MonoBehaviour
         Image cImg = confirmPanel.AddComponent<Image>();
         cImg.sprite = boxImg.sprite;
         cImg.type = Image.Type.Sliced;
-        cImg.color = new Color(PanelColor.r, PanelColor.g, PanelColor.b, 0.98f); // near-opaque: hides the buttons underneath
+        cImg.color = new Color(PanelColor.r, PanelColor.g, PanelColor.b, 0.98f);
 
         MakeText(confirmPanel.transform, "If you quit, this match\ncounts as a loss.", 26f,
                  new Vector2(0f, 80f), new Vector2(360f, 100f));

@@ -96,8 +96,8 @@ public class ClubCustomizationUI : MonoBehaviour
         GameObject go = new GameObject("CustomizationStack");
         go.transform.SetParent(root, false);
         editorStack = go.AddComponent<RectTransform>();
-        SetRect(editorStack, new Vector2(0.5f, 0.5f), new Vector2(170f, -10f),
-                new Vector2(840f, 548f));
+        SetRect(editorStack, new Vector2(0.5f, 0.5f), new Vector2(170f, -5f),
+                new Vector2(840f, 570f));
         VerticalLayoutGroup layout = go.AddComponent<VerticalLayoutGroup>();
         layout.padding = new RectOffset(0, 0, 0, 0);
         layout.spacing = 9f;
@@ -119,17 +119,9 @@ public class ClubCustomizationUI : MonoBehaviour
         brt.anchoredPosition = Vector2.zero;
         brt.sizeDelta = new Vector2(0f, 80f);
 
-        Sprite back = ButtonSpriteCatalog.SpriteFor("Back-Button");
-        GameObject backGo = new GameObject("BtnBack");
-        backGo.transform.SetParent(bar.transform, false);
-        SetRect(backGo.AddComponent<RectTransform>(), new Vector2(0f, 0.5f),
-                new Vector2(52f, 0f), new Vector2(64f, 64f));
-        Image backImage = backGo.AddComponent<Image>();
-        if (back != null) { backImage.sprite = back; backImage.preserveAspect = true; }
-        else { backImage.sprite = Rounded(); backImage.type = Image.Type.Sliced; backImage.color = Arrow; }
-        Button button = backGo.AddComponent<Button>();
-        button.targetGraphic = backImage;
-        button.onClick.AddListener(() => { if (nav != null) nav.CloseClubScreen(); });
+        UniversalUIStyle.MakeCloseButton(bar.transform, new Vector2(0f, 0.5f),
+            new Vector2(52f, 0f), new Vector2(60f, 60f),
+            () => { if (nav != null) nav.CloseClubScreen(); });
 
         MakeText(bar.transform, "MY CLUB CREST", 34f, new Vector2(0.5f, 0.5f), Vector2.zero,
                  new Vector2(420f, 50f), Color.white, TextAlignmentOptions.Center);
@@ -317,40 +309,79 @@ public class ClubCustomizationUI : MonoBehaviour
 
     void BuildCountrySelector()
     {
-        Image selector = MakeLayoutCard("CountryInlineSelector", 70f,
-                                        new Color(0.12f, 0.66f, 1f, 1f));
+        Image selector = MakeLayoutCard("CountryInlineSelector", 88f,
+                                        new Color(0.08f, 0.72f, 1f, 0.86f));
         selector.gameObject.name = "CountryInlineSelector";
+        Shadow selectorShadow = selector.gameObject.AddComponent<Shadow>();
+        selectorShadow.effectColor = new Color(0f, 0f, 0f, 0.42f);
+        selectorShadow.effectDistance = new Vector2(0f, -4f);
+        selectorShadow.useGraphicAlpha = true;
         HorizontalLayoutGroup row = selector.gameObject.AddComponent<HorizontalLayoutGroup>();
-        row.padding = new RectOffset(18, 18, 8, 8);
-        row.spacing = 12f;
+        row.padding = new RectOffset(16, 16, 12, 12);
+        row.spacing = 10f;
         row.childAlignment = TextAnchor.MiddleCenter;
         row.childControlWidth = true; row.childControlHeight = true;
         row.childForceExpandWidth = false; row.childForceExpandHeight = true;
 
-        TextMeshProUGUI title = MakeText(selector.transform, "COUNTRY", 16f, Vector2.one * 0.5f,
-            Vector2.zero, new Vector2(120f, 40f), Gold, TextAlignmentOptions.Center);
-        SetLayoutSize(title.transform, 120f, 40f);
-        Button previous = MakeCompactToggleButton(selector.transform, "‹", 26f, Vector2.one * 0.5f, Vector2.zero,
-            new Vector2(46f, 48f), Arrow, () => CycleCountry(-1));
-        SetLayoutSize(previous.transform, 46f, 48f);
+        GameObject labelBlock = NewLayoutContainer("CountryLabelBlock", selector.transform, 126f, 58f);
+        MakeText(labelBlock.transform, "CLUB COUNTRY", 15f, new Vector2(0.5f, 0.5f),
+                 new Vector2(0f, 9f), new Vector2(124f, 24f), Gold, TextAlignmentOptions.Center);
+        MakeText(labelBlock.transform, "REPRESENTATION", 9f, new Vector2(0.5f, 0.5f),
+                 new Vector2(0f, -13f), new Vector2(124f, 16f), Grey, TextAlignmentOptions.Center);
 
-        currentCountryFlag = NewImage("CurrentFlag", selector.transform);
+        Button previous = MakeCompactToggleButton(selector.transform, "‹", 25f,
+            Vector2.one * 0.5f, Vector2.zero, new Vector2(44f, 48f), Arrow, () => CycleCountry(-1));
+        SetLayoutSize(previous.transform, 44f, 48f);
+
+        Image selectionWell = NewImage("CountrySelectionWell", selector.transform);
+        selectionWell.sprite = Rounded(); selectionWell.type = Image.Type.Sliced;
+        selectionWell.color = new Color(0.025f, 0.065f, 0.12f, 0.72f);
+        SetLayoutSize(selectionWell.transform, 520f, 60f, 1f);
+        Outline wellOutline = selectionWell.gameObject.AddComponent<Outline>();
+        wellOutline.effectColor = new Color(0.08f, 0.72f, 1f, 0.46f);
+        wellOutline.effectDistance = new Vector2(1.5f, -1.5f);
+        Button open = selectionWell.gameObject.AddComponent<Button>();
+        open.targetGraphic = selectionWell;
+        open.onClick.AddListener(OpenCountryOverlay);
+
+        Image flagWell = NewImage("FlagWell", selectionWell.transform);
+        flagWell.sprite = Rounded(); flagWell.type = Image.Type.Sliced;
+        flagWell.color = new Color(0.08f, 0.72f, 1f, 0.42f);
+        flagWell.raycastTarget = false;
+        SetRect(flagWell.rectTransform, new Vector2(0f, 0.5f), new Vector2(40f, 0f),
+                new Vector2(66f, 46f));
+        currentCountryFlag = NewImage("CurrentFlag", flagWell.transform);
         currentCountryFlag.preserveAspect = true;
         currentCountryFlag.raycastTarget = false;
-        SetLayoutSize(currentCountryFlag.transform, 56f, 38f);
-        countryNameLabel = MakeText(selector.transform, "SELECT COUNTRY", 18f,
-            Vector2.one * 0.5f, Vector2.zero, new Vector2(260f, 40f),
+        SetRect(currentCountryFlag.rectTransform, Vector2.one * 0.5f, Vector2.zero,
+                new Vector2(54f, 34f));
+
+        countryNameLabel = MakeText(selectionWell.transform, "SELECT COUNTRY", 20f,
+            Vector2.one * 0.5f, new Vector2(18f, 0f), new Vector2(350f, 42f),
             Color.white, TextAlignmentOptions.Center);
-        SetLayoutSize(countryNameLabel.transform, 260f, 40f, 1f);
         countryNameLabel.enableAutoSizing = true;
-        countryNameLabel.fontSizeMin = 12f;
-        countryNameLabel.fontSizeMax = 18f;
-        Button next = MakeCompactToggleButton(selector.transform, "›", 26f, Vector2.one * 0.5f, Vector2.zero,
-            new Vector2(46f, 48f), Arrow, () => CycleCountry(1));
-        SetLayoutSize(next.transform, 46f, 48f);
-        Button open = MakeCompactToggleButton(selector.transform, "▾", 22f, Vector2.one * 0.5f, Vector2.zero,
-            new Vector2(52f, 48f), new Color(0.05f, 0.32f, 0.68f, 1f), OpenCountryOverlay);
-        SetLayoutSize(open.transform, 52f, 48f);
+        countryNameLabel.fontSizeMin = 13f;
+        countryNameLabel.fontSizeMax = 20f;
+        countryNameLabel.textWrappingMode = TextWrappingModes.NoWrap;
+        countryNameLabel.overflowMode = TextOverflowModes.Ellipsis;
+
+        // Vector chevron avoids the missing-glyph square produced by LiberationSans for U+25BE.
+        Image chevronA = NewImage("ChevronLeft", selectionWell.transform);
+        chevronA.sprite = Rounded(); chevronA.type = Image.Type.Sliced;
+        chevronA.color = new Color(0f, 0.85f, 1f); chevronA.raycastTarget = false;
+        SetRect(chevronA.rectTransform, new Vector2(1f, 0.5f), new Vector2(-35f, 2f),
+                new Vector2(4f, 15f));
+        chevronA.rectTransform.localRotation = Quaternion.Euler(0f, 0f, 45f);
+        Image chevronB = NewImage("ChevronRight", selectionWell.transform);
+        chevronB.sprite = Rounded(); chevronB.type = Image.Type.Sliced;
+        chevronB.color = new Color(0f, 0.85f, 1f); chevronB.raycastTarget = false;
+        SetRect(chevronB.rectTransform, new Vector2(1f, 0.5f), new Vector2(-27f, 2f),
+                new Vector2(4f, 15f));
+        chevronB.rectTransform.localRotation = Quaternion.Euler(0f, 0f, -45f);
+
+        Button next = MakeCompactToggleButton(selector.transform, "›", 25f,
+            Vector2.one * 0.5f, Vector2.zero, new Vector2(44f, 48f), Arrow, () => CycleCountry(1));
+        SetLayoutSize(next.transform, 44f, 48f);
         BuildCountryOverlay();
     }
 
@@ -376,35 +407,8 @@ public class ClubCustomizationUI : MonoBehaviour
         MakeText(modal.transform, "Choose a flag — your profile updates immediately", 15f,
                  new Vector2(0.5f, 1f), new Vector2(0f, -69f), new Vector2(620f, 24f),
                  Grey, TextAlignmentOptions.Center);
-        GameObject closeGo = new GameObject("BtnClose");
-        closeGo.transform.SetParent(modal.transform, false);
-        SetRect(closeGo.AddComponent<RectTransform>(), new Vector2(1f, 1f),
-                new Vector2(-38f, -38f), new Vector2(56f, 56f));
-        Image closeImage = closeGo.AddComponent<Image>();
-        closeImage.sprite = Circle();
-        closeImage.preserveAspect = true;
-        closeImage.color = new Color(0.92f, 0.18f, 0.23f, 1f);
-        Shadow closeShadow = closeGo.AddComponent<Shadow>();
-        closeShadow.effectColor = new Color(0f, 0f, 0f, 0.48f);
-        closeShadow.effectDistance = new Vector2(0f, -3f);
-        Image closeInner = NewImage("Inner", closeGo.transform);
-        closeInner.sprite = Circle(); closeInner.preserveAspect = true;
-        closeInner.color = new Color(0.30f, 0.035f, 0.055f, 0.94f);
-        closeInner.raycastTarget = false;
-        SetRect(closeInner.rectTransform, Vector2.one * 0.5f, Vector2.zero, new Vector2(48f, 48f));
-        Image slashA = NewImage("CloseSlashA", closeGo.transform);
-        slashA.sprite = Rounded(); slashA.type = Image.Type.Sliced;
-        slashA.color = Color.white; slashA.raycastTarget = false;
-        SetRect(slashA.rectTransform, Vector2.one * 0.5f, Vector2.zero, new Vector2(5f, 25f));
-        slashA.rectTransform.localRotation = Quaternion.Euler(0f, 0f, 45f);
-        Image slashB = NewImage("CloseSlashB", closeGo.transform);
-        slashB.sprite = Rounded(); slashB.type = Image.Type.Sliced;
-        slashB.color = Color.white; slashB.raycastTarget = false;
-        SetRect(slashB.rectTransform, Vector2.one * 0.5f, Vector2.zero, new Vector2(5f, 25f));
-        slashB.rectTransform.localRotation = Quaternion.Euler(0f, 0f, -45f);
-        Button closeButton = closeGo.AddComponent<Button>();
-        closeButton.targetGraphic = closeImage;
-        closeButton.onClick.AddListener(CloseCountryOverlay);
+        UniversalUIStyle.MakeCloseButton(modal.transform, Vector2.one,
+            new Vector2(-38f, -38f), new Vector2(56f, 56f), CloseCountryOverlay);
         if (nav != null) nav.AddFloatingCurrencyHeader(countryOverlay.transform);
 
         GameObject viewportGo = new GameObject("CountryViewport");

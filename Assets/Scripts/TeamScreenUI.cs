@@ -22,9 +22,8 @@ public class TeamScreenUI : MonoBehaviour
     static readonly Color Gold     = new Color(1f, 0.82f, 0.2f);
     static readonly Color Cyan     = new Color(0f, 0.85f, 1f);
     static readonly Color Grey     = new Color(0.55f, 0.55f, 0.58f);
-    static readonly Color SellRed  = new Color(0.82f, 0.28f, 0.28f);
 
-    static Sprite roundedSprite, silhouetteSprite, circleSprite, starSprite, backSprite, backButtonSprite;
+    static Sprite roundedSprite, silhouetteSprite, circleSprite, starSprite;
 
     // Normalised slot positions inside the pool (x: 0=left..1=right, y: 0=bottom..1=top). Index ==
     // starter slot == (int)position. Visual 2-3-1: CF top, LF/RF, LW/RW, CB, GK bottom near own goal.
@@ -106,7 +105,7 @@ public class TeamScreenUI : MonoBehaviour
         bar.gameObject.name = "TopBar";
         Transform t = bar.transform;
 
-        // Left: universal back-button sprite → close the team screen, return to hub.
+        // Left: universal circular close control → return to the hub.
         MakeBackButton(t, new Vector2(0f, 0.5f), new Vector2(46f, 0f), new Vector2(60f, 60f),
                        () => { if (nav != null) nav.CloseTeamScreen(); });
 
@@ -182,6 +181,14 @@ public class TeamScreenUI : MonoBehaviour
     {
         Image pool = PanelStretch(root, new Vector2(0f, 0f), new Vector2(1f, 1f),
                                   new Vector2(232f, 12f), new Vector2(-312f, -92f), PoolBlue);
+        Sprite poolBackground = UniversalUIStyle.LoadBackground("Pool-Background");
+        if (poolBackground != null)
+        {
+            pool.sprite = poolBackground;
+            pool.type = Image.Type.Simple;
+            pool.preserveAspect = false;
+            pool.color = Color.white;
+        }
         Transform p = pool.transform;
 
         MakeGoalNet(p, top: true);   // enemy goal (top)
@@ -535,8 +542,8 @@ public class TeamScreenUI : MonoBehaviour
                  new Vector2(480f, 60f), Gold, TextAlignmentOptions.Center);
         MakeText(sheet.transform, "This feature is on the way.", 16f, new Vector2(0.5f, 0f),
                  new Vector2(0f, 40f), new Vector2(480f, 24f), Color.white, TextAlignmentOptions.Center);
-        MakeButton(sheet.transform, "X", new Vector2(44f, 44f), new Vector2(1f, 1f), new Vector2(-28f, -28f),
-                   22f, HideComingSoon, SellRed);
+        UniversalUIStyle.MakeCloseButton(sheet.transform, Vector2.one,
+            new Vector2(-28f, -28f), new Vector2(44f, 44f), HideComingSoon);
 
         comingSoonPanel.SetActive(false);
     }
@@ -655,7 +662,7 @@ public class TeamScreenUI : MonoBehaviour
         return btn;
     }
 
-    // A rounded button whose face is a generated/loaded icon sprite (e.g. the back arrow).
+    // A rounded button whose face is a generated/loaded icon sprite.
     Button MakeIconButton(Transform parent, Sprite icon, Vector2 anchor, Vector2 pos, Vector2 size,
                           UnityEngine.Events.UnityAction onClick)
     {
@@ -668,7 +675,8 @@ public class TeamScreenUI : MonoBehaviour
         frame.sprite = Rounded(); frame.type = Image.Type.Sliced; frame.color = Cyan;
 
         Image fill = NewImage("Fill", go.transform);
-        fill.sprite = Rounded(); fill.type = Image.Type.Sliced; fill.color = new Color(0.05f, 0.1f, 0.25f, 1f);
+        fill.sprite = Rounded(); fill.type = Image.Type.Sliced;
+        fill.color = new Color(0.05f, 0.1f, 0.25f, 1f);
         fill.raycastTarget = false;
         RectTransform frt = fill.rectTransform;
         frt.anchorMin = Vector2.zero; frt.anchorMax = Vector2.one;
@@ -687,35 +695,10 @@ public class TeamScreenUI : MonoBehaviour
         return btn;
     }
 
-    // The universal back button: the shared back-button sprite at native aspect (no frame). Falls back
-    // to the procedural arrow if the sprite is missing.
+    // Kept as a layout-level wrapper; every dismiss/navigation affordance now uses the same close art.
     Button MakeBackButton(Transform parent, Vector2 anchor, Vector2 pos, Vector2 size,
                           UnityEngine.Events.UnityAction onClick)
-    {
-        GameObject go = new GameObject("BtnBack");
-        go.transform.SetParent(parent, false);
-        RectTransform rt = go.AddComponent<RectTransform>();
-        SetRect(rt, anchor, pos, size);
-
-        Image img = go.AddComponent<Image>();
-        img.sprite = BackButtonSprite();
-        img.preserveAspect = true;
-        if (img.sprite == null) img.sprite = BackArrow(); // procedural fallback
-
-        Button btn = go.AddComponent<Button>();
-        btn.targetGraphic = img;
-        if (onClick != null) btn.onClick.AddListener(onClick);
-        AddHover(go);
-        return btn;
-    }
-
-    // back-button art wrapped from its Texture2D so it loads regardless of the PNG's sprite import mode.
-    static Sprite BackButtonSprite()
-    {
-        if (backButtonSprite != null) return backButtonSprite;
-        backButtonSprite = ButtonSpriteCatalog.SpriteFor("Back-Button");
-        return backButtonSprite;
-    }
+        => UniversalUIStyle.MakeCloseButton(parent, anchor, pos, size, onClick);
 
     static void AddHover(GameObject go)
     {
@@ -827,32 +810,6 @@ public class TeamScreenUI : MonoBehaviour
         tex.SetPixels32(px); tex.Apply(); tex.wrapMode = TextureWrapMode.Clamp;
         starSprite = Sprite.Create(tex, new Rect(0, 0, s, s), new Vector2(0.5f, 0.5f), 100f);
         return starSprite;
-    }
-
-    // A white, tintable left-pointing arrow (triangle head + shaft) for the back button.
-    static Sprite BackArrow()
-    {
-        if (backSprite != null) return backSprite;
-        const int s = 64;
-        Texture2D tex = new Texture2D(s, s, TextureFormat.RGBA32, false);
-        Color32[] px = new Color32[s * s];
-        Vector2[] head =
-        {
-            new Vector2(0.22f * s, 0.50f * s),
-            new Vector2(0.56f * s, 0.24f * s),
-            new Vector2(0.56f * s, 0.76f * s),
-        };
-        for (int y = 0; y < s; y++)
-            for (int x = 0; x < s; x++)
-            {
-                Vector2 p = new Vector2(x + 0.5f, y + 0.5f);
-                bool inHead = PointInPoly(p, head);
-                bool inShaft = x >= 0.50f * s && x <= 0.82f * s && y >= 0.43f * s && y <= 0.57f * s;
-                px[y * s + x] = (inHead || inShaft) ? new Color32(255, 255, 255, 255) : new Color32(0, 0, 0, 0);
-            }
-        tex.SetPixels32(px); tex.Apply(); tex.wrapMode = TextureWrapMode.Clamp;
-        backSprite = Sprite.Create(tex, new Rect(0, 0, s, s), new Vector2(0.5f, 0.5f), 100f);
-        return backSprite;
     }
 
     static bool PointInPoly(Vector2 p, Vector2[] v)

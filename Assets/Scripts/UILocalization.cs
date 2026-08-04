@@ -320,8 +320,8 @@ public static class CrestUITheme
 
 public static class LocalizedButtonStyler
 {
-    // Center is the legacy authored-art plate. LowerPlate is for icon-led hub art. SeasonPass is a
-    // deliberately tight zone in the yellow field to the right of the character artwork.
+    // Icon-led hub art reserves a dedicated caption strip below the illustration. Keeping the
+    // localized label out of the icon area prevents collisions in English, Russian and Georgian.
     public enum TextZone { Center, NativeCenter, LowerPlate, PlayPlate, SeasonPass }
 
     const float VisualCenterBottomPadding = 14f;
@@ -359,26 +359,28 @@ public static class LocalizedButtonStyler
         }
         else if (zone == TextZone.SeasonPass)
         {
-            rt.anchorMin = new Vector2(0.40f, 0.21f);
-            rt.anchorMax = new Vector2(0.91f, 0.57f);
+            rt.anchorMin = new Vector2(0.38f, 0.10f);
+            rt.anchorMax = new Vector2(0.92f, 0.36f);
         }
         else if (zone == TextZone.LowerPlate)
         {
-            rt.anchorMin = new Vector2(0.10f, 0.19f);
-            rt.anchorMax = new Vector2(0.90f, 0.64f);
+            rt.anchorMin = new Vector2(0.10f, 0.08f);
+            rt.anchorMax = new Vector2(0.90f, 0.34f);
         }
         else if (zone == TextZone.PlayPlate)
         {
-            rt.anchorMin = new Vector2(0.08f, 0.20f);
-            rt.anchorMax = new Vector2(0.57f, 0.84f);
+            rt.anchorMin = new Vector2(0.08f, 0.12f);
+            rt.anchorMax = new Vector2(0.57f, 0.44f);
         }
         else
         {
             rt.anchorMin = new Vector2(0.10f, 0.18f);
             rt.anchorMax = new Vector2(0.90f, 0.84f);
         }
+        bool dedicatedCaptionPlate = zone == TextZone.LowerPlate || zone == TextZone.PlayPlate ||
+                                     zone == TextZone.SeasonPass;
         rt.offsetMin = zone == TextZone.NativeCenter ? new Vector2(10f, 4f)
-            : new Vector2(0f, zone == TextZone.SeasonPass ? 0f : VisualCenterBottomPadding);
+            : new Vector2(0f, dedicatedCaptionPlate ? 0f : VisualCenterBottomPadding);
         rt.offsetMax = zone == TextZone.NativeCenter ? new Vector2(-10f, -4f) : Vector2.zero;
 
         LocalizedButtonText localized = parent.gameObject.AddComponent<LocalizedButtonText>();

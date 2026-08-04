@@ -1,10 +1,10 @@
 fileFormatVersion: 2
-guid: 25a93aa5d3b8956438cfdc7cf4c0bff4
+guid: c4bd434f63dd91741af9ee2aea3840de
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: -3456775714681532524
-    second: Clubs-Button_0
+      213: -5825705412544858352
+    second: Pass-Background_0
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -46,7 +46,7 @@ TextureImporter:
   nPOTScale: 0
   lightmap: 0
   compressionQuality: 50
-  spriteMode: 1
+  spriteMode: 2
   spriteExtrude: 1
   spriteMeshType: 1
   alignment: 0
@@ -139,13 +139,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: Clubs-Button_0
+      name: Pass-Background_0
       rect:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 1505
-        height: 1024
+        width: 1846
+        height: 852
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -154,8 +154,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: 49fc5326dc01700d0800000000000000
-      internalID: -3456775714681532524
+      spriteID: 017713f0bcfe62fa0800000000000000
+      internalID: -5825705412544858352
       vertices: []
       indices: 
       edges: []
@@ -164,7 +164,7 @@ TextureImporter:
     customData: 
     physicsShape: []
     bones: []
-    spriteID: 5e97eb03825dee720800000000000000
+    spriteID: 
     internalID: 0
     vertices: []
     indices: 
@@ -174,7 +174,7 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      Clubs-Button_0: -3456775714681532524
+      Pass-Background_0: -5825705412544858352
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

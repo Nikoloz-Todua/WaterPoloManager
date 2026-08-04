@@ -215,7 +215,9 @@ public class RankingUI : MonoBehaviour
         nav = navigation;
 
         Image bg = NewImage("Background", root);
-        bg.color = new Color(0.03f, 0.07f, 0.13f, 1f);
+        bg.sprite = UniversalUIStyle.LoadBackground("Regular-Background");
+        bg.preserveAspect = false;
+        bg.color = bg.sprite != null ? Color.white : new Color(0.03f, 0.07f, 0.13f, 1f);
         bg.raycastTarget = true;
         Stretch(bg.rectTransform);
 
@@ -228,16 +230,9 @@ public class RankingUI : MonoBehaviour
         brt.anchoredPosition = Vector2.zero;
         brt.sizeDelta = new Vector2(0f, 80f);
 
-        Sprite back = ButtonSpriteCatalog.SpriteFor("Back-Button");
-        GameObject bgo = new GameObject("BtnBack");
-        bgo.transform.SetParent(bar.transform, false);
-        SetRect(bgo.AddComponent<RectTransform>(), new Vector2(0f, 0.5f), new Vector2(52f, 0f), new Vector2(64f, 64f));
-        Image bimg = bgo.AddComponent<Image>();
-        if (back != null) { bimg.sprite = back; bimg.preserveAspect = true; }
-        else { bimg.sprite = Rounded(); bimg.type = Image.Type.Sliced; bimg.color = new Color(0.16f, 0.2f, 0.28f, 1f); }
-        Button bbtn = bgo.AddComponent<Button>();
-        bbtn.targetGraphic = bimg;
-        bbtn.onClick.AddListener(() => { if (nav != null) nav.CloseRankingScreen(); });
+        UniversalUIStyle.MakeCloseButton(bar.transform, new Vector2(0f, 0.5f),
+            new Vector2(52f, 0f), new Vector2(60f, 60f),
+            () => { if (nav != null) nav.CloseRankingScreen(); });
 
         MakeText(bar.transform, "RANKING", 34f, new Vector2(0.5f, 0.5f), Vector2.zero,
                  new Vector2(300f, 50f), Color.white, TextAlignmentOptions.Center);

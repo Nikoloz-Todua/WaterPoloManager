@@ -424,11 +424,10 @@ public sealed class WorldCupUI : MonoBehaviour
         BuildCountrySide(card.transform, season.NextOpponentName, new Vector2(260f, 25f), Red);
         MakeText(card.transform, "VS", 44f, new Vector2(0.5f, 0.5f),
                  new Vector2(0f, 38f), new Vector2(100f, 60f), Color.white);
-        MakeButton(card.transform, "BACK", new Vector2(0.5f, 0f),
-                   new Vector2(-170f, 50f), new Vector2(250f, 60f),
-                   new Color(0.25f, 0.33f, 0.44f, 1f), () => Destroy(modal));
+        UniversalUIStyle.MakeCloseButton(card.transform, Vector2.one,
+            new Vector2(-32f, -32f), new Vector2(48f, 48f), () => Destroy(modal));
         MakeButton(card.transform, "PLAY MATCH", new Vector2(0.5f, 0f),
-                   new Vector2(170f, 50f), new Vector2(290f, 60f), Green,
+                   new Vector2(0f, 50f), new Vector2(290f, 60f), Green,
                    StartWorldCupMatch);
     }
 
@@ -518,9 +517,8 @@ public sealed class WorldCupUI : MonoBehaviour
         RectTransform rt = bar.rectTransform;
         rt.anchorMin = new Vector2(0f, 1f); rt.anchorMax = new Vector2(1f, 1f);
         rt.pivot = new Vector2(0.5f, 1f); rt.sizeDelta = new Vector2(0f, 80f);
-        MakeButton(bar.transform, "‹", new Vector2(0f, 0.5f),
-                   new Vector2(48f, 0f), new Vector2(60f, 54f),
-                   new Color(0.14f, 0.2f, 0.3f, 1f), () => back(), 32f);
+        UniversalUIStyle.MakeCloseButton(bar.transform, new Vector2(0f, 0.5f),
+            new Vector2(48f, 0f), new Vector2(56f, 56f), () => back());
         MakeText(bar.transform, title, 34f, new Vector2(0.5f, 0.5f),
                  Vector2.zero, new Vector2(520f, 50f), Color.white);
         NavigationManager navigation = GetComponent<NavigationManager>();

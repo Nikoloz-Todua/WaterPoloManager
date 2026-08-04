@@ -7,10 +7,10 @@ using UnityEngine.EventSystems;
 using TMPro;
 
 // The SHOP screen — built entirely in code (no prefabs), same runtime-build style as
-// NavigationManager / TeamScreenUI. Hosted by NavigationManager's shop overlay; the back arrow
+// NavigationManager / TeamScreenUI. Hosted by NavigationManager's shop overlay; the close control
 // calls nav.CloseShopScreen().
 //
-// Layout: 80px top bar (back | SHOP + gear | event badge | gold/gems with [+]) — ONE continuous
+// Layout: 80px top bar (close | SHOP + gear | event badge | gold/gems with [+]) — ONE continuous
 // horizontal ScrollRect ("shelf") holding all 9 sections side by side — bottom row of 9 text
 // tabs that jump-scroll to their section (highlight follows free drags in real time).
 //
@@ -66,18 +66,11 @@ public class ShopUI : MonoBehaviour
         nav = navigation;
 
         Image bg = NewImage("Background", root);
-        bg.color = new Color(0.03f, 0.07f, 0.13f, 1f);
+        bg.sprite = UniversalUIStyle.LoadBackground("Regular-Background");
+        bg.preserveAspect = false;
+        bg.color = bg.sprite != null ? Color.white : new Color(0.03f, 0.07f, 0.13f, 1f);
         bg.raycastTarget = true; // swallow clicks
         Stretch(bg.rectTransform);
-        Sprite art = LoadAnySprite("Sprites/competition-page-background");
-        if (art != null)
-        {
-            Image artImg = NewImage("BgArt", root);
-            artImg.sprite = art;
-            artImg.color = new Color(0.45f, 0.45f, 0.5f, 1f); // dimmed
-            artImg.raycastTarget = false;
-            Stretch(artImg.rectTransform);
-        }
 
         BuildTopBar();
         BuildShelf();
@@ -106,17 +99,10 @@ public class ShopUI : MonoBehaviour
         rt.anchoredPosition = Vector2.zero;
         rt.sizeDelta = new Vector2(0f, 80f);
 
-        // Back arrow → hub.
-        Sprite back = LoadAnySprite("Sprites/back-button");
-        GameObject bgo = new GameObject("BtnBack");
-        bgo.transform.SetParent(bar.transform, false);
-        SetRect(bgo.AddComponent<RectTransform>(), new Vector2(0f, 0.5f), new Vector2(52f, 0f), new Vector2(64f, 64f));
-        Image bimg = bgo.AddComponent<Image>();
-        if (back != null) { bimg.sprite = back; bimg.preserveAspect = true; }
-        else { bimg.sprite = Rounded(); bimg.type = Image.Type.Sliced; bimg.color = new Color(0.16f, 0.2f, 0.28f, 1f); }
-        Button bbtn = bgo.AddComponent<Button>();
-        bbtn.targetGraphic = bimg;
-        bbtn.onClick.AddListener(() => { if (nav != null) nav.CloseShopScreen(); });
+        // Universal close control → hub.
+        UniversalUIStyle.MakeCloseButton(bar.transform, new Vector2(0f, 0.5f),
+            new Vector2(52f, 0f), new Vector2(60f, 60f),
+            () => { if (nav != null) nav.CloseShopScreen(); });
 
         MakeText(bar.transform, "SHOP", 34f, new Vector2(0f, 0.5f), new Vector2(170f, 0f),
                  new Vector2(160f, 50f), Color.white, TextAlignmentOptions.Center);

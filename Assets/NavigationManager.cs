@@ -31,7 +31,7 @@ public class NavigationManager : MonoBehaviour
     private static readonly Color Green = new Color(0.2f, 0.72f, 0.32f);
     private static readonly Color Red = new Color(0.85f, 0.2f, 0.2f);
     private static readonly Color GreyAvatar = new Color(0.5f, 0.53f, 0.6f);
-    private static readonly Color GameModeBg = new Color(0.039f, 0.086f, 0.157f, 1f); // #0A1628 game-mode backdrop
+    private static readonly Color GameModeBg = new Color(0.039f, 0.086f, 0.157f, 1f); // #0A1628 fallback
     private static readonly Color CardGold = new Color(1f, 0.843f, 0f);               // #FFD700 unlocked-card frame
     private const float CurrencyGoldX = -94f;
     private const float CurrencyDiamondX = -270f;
@@ -44,7 +44,7 @@ public class NavigationManager : MonoBehaviour
     private static Sprite vignetteSprite; // radial edge-darkening overlay
 
     // Full-frame sprites wrapped straight from their Texture2D (works regardless of the PNG's sprite
-    // import mode). Keyed by Resources path so pool-screen / back-button / competition bg share one cache.
+    // import mode). Keyed by Resources path so pool-screen / competition backgrounds share one cache.
     private static readonly Dictionary<string, Sprite> textureSpriteCache = new Dictionary<string, Sprite>();
 
     // Game-mode cards, captured at build so the overlay can replay a staggered entry each time it opens.
@@ -614,7 +614,13 @@ public class NavigationManager : MonoBehaviour
         RectTransform ort = ov.AddComponent<RectTransform>();
         Stretch(ort);
         Image backdrop = ov.AddComponent<Image>();
-        backdrop.color = OverlayDark;
+        bool useRegularBackground = title == "FRIENDS" || title == "CLUBS";
+        Sprite regularBackground = useRegularBackground
+            ? UniversalUIStyle.LoadBackground("Regular-Background")
+            : null;
+        backdrop.sprite = regularBackground;
+        backdrop.preserveAspect = false;
+        backdrop.color = regularBackground != null ? Color.white : OverlayDark;
         backdrop.raycastTarget = true; // swallow clicks to the hub behind
         ov.AddComponent<CanvasGroup>();
 
@@ -640,7 +646,7 @@ public class NavigationManager : MonoBehaviour
     }
 
     // Dark full-screen overlay hosting TeamScreenUI on a full-canvas sheet. The team screen owns its
-    // own back arrow (→ CloseTeamScreen), so this overlay adds no [X] of its own.
+    // own close control (→ CloseTeamScreen), so this overlay adds no second [X].
     GameObject BuildTeamOverlay()
     {
         GameObject ov = new GameObject("Overlay_TEAM");
@@ -663,14 +669,14 @@ public class NavigationManager : MonoBehaviour
 
         TeamScreenUI team = sheetGo.AddComponent<TeamScreenUI>();
         team.Build(sheetGo.transform, this); // passes 'this' so its buys/sells refresh our top bar
-        // No overlay [X] here: TeamScreenUI draws its own back arrow in its top bar, which calls
+        // No overlay [X] here: TeamScreenUI draws its own close control in its top bar, which calls
         // CloseTeamScreen() below — a single, unambiguous close affordance.
 
         ov.SetActive(false);
         return ov;
     }
 
-    // Opens the TEAM overlay, remembering where its back arrow should land.
+    // Opens the TEAM overlay, remembering where its close control should return.
     void OpenTeamScreen(string returnTo)
     {
         teamReturnTo = returnTo;
@@ -678,7 +684,7 @@ public class NavigationManager : MonoBehaviour
     }
 
     // Dark full-screen overlay hosting ShopUI on a full-canvas sheet (same shell as the team
-    // overlay). ShopUI owns its own back arrow → CloseShopScreen.
+    // overlay). ShopUI owns its own close control → CloseShopScreen.
     GameObject BuildShopOverlay()
     {
         GameObject ov = new GameObject("Overlay_SHOP");
@@ -705,7 +711,7 @@ public class NavigationManager : MonoBehaviour
         return ov;
     }
 
-    // Called by ShopUI's back arrow.
+    // Called by ShopUI's close control.
     public void CloseShopScreen() => HideOverlay(shopOverlay);
 
     // Open the Shop already scrolled to a specific section (ShopUI tab index: 5 = COINS, 6 = GEMS).
@@ -721,7 +727,7 @@ public class NavigationManager : MonoBehaviour
     // directly; this lets hosted screens like the Shop route their gear to the same destination).
     public void OpenSettingsScreen() => ShowOverlay(settingsOverlay);
 
-    // Called by TeamScreenUI's back arrow. The overlay we came from normally stays active beneath the
+    // Called by TeamScreenUI's close control. The overlay we came from normally stays active beneath the
     // team sheet, so sliding it closed reveals the right screen on its own; the COMPETITION branch is
     // a safety net that re-shows the competition screen if it was somehow deactivated. No coroutine
     // there — starting a second slide would cancel the team overlay's closing animation.
@@ -1084,7 +1090,7 @@ public class NavigationManager : MonoBehaviour
         // Animated pool-screen backdrop (Ken-Burns drift + breathing vignette + drifting specks).
         BuildGameModeBackground(sheetGo.transform);
 
-        // ---- top bar (80px): back arrow | "GAME MODE" | diamond + gold currencies ----
+        // ---- top bar (80px): close | "GAME MODE" | diamond + gold currencies ----
         Image bar = MakePanel(sheetGo.transform, new Vector2(0.5f, 1f), Vector2.zero, new Vector2(0f, 80f), DarkBar);
         bar.gameObject.name = "GMTopBar";
         bar.raycastTarget = true;
@@ -1095,7 +1101,7 @@ public class NavigationManager : MonoBehaviour
         brt.anchoredPosition = Vector2.zero;
         brt.sizeDelta = new Vector2(0f, 80f);
 
-        // Back arrow → close (universal back-button sprite).
+        // Universal circular close control.
         MakeBackButton(bar.transform, () => HideOverlay(gameModeOverlay));
 
         // Title.
@@ -1130,11 +1136,11 @@ public class NavigationManager : MonoBehaviour
         // Competition backdrop — oversized (stretch + 90/70px margin) so the slow pan/zoom never
         // exposes an edge. The animation (Ken-Burns drift) plays over whatever image is here.
         Image backdrop = NewImage(sheet, "GMBackdrop");
-        backdrop.sprite = CompetitionBgSprite();
+        backdrop.sprite = UniversalUIStyle.LoadBackground("Regular-Background");
         backdrop.raycastTarget = false;
         backdrop.preserveAspect = false;                 // fill the oversized rect on any aspect
         backdrop.color = backdrop.sprite != null
-            ? new Color(0.82f, 0.85f, 0.92f, 1f)         // slight dim so the cards stay the focal point
+            ? Color.white
             : GameModeBg;                                // solid fallback if the art is missing
         RectTransform prt = backdrop.rectTransform;
         prt.anchorMin = Vector2.zero;
@@ -1618,7 +1624,8 @@ public class NavigationManager : MonoBehaviour
         Image img = go.AddComponent<Image>();
         img.sprite = GetRoundedSprite();
         img.type = Image.Type.Sliced;
-        img.color = selected ? new Color(0.13f, 0.24f, 0.36f, 0.98f) : new Color(0.05f, 0.09f, 0.15f, 0.9f);
+        img.color = selected ? new Color(0.13f, 0.24f, 0.36f, 0.98f)
+                             : new Color(0.05f, 0.09f, 0.15f, 0.90f);
 
         Button btn = go.AddComponent<Button>();
         btn.targetGraphic = img;
@@ -2653,7 +2660,7 @@ public class NavigationManager : MonoBehaviour
     static string FormatCurrency(int value) =>
         Mathf.Max(0, value).ToString("N0", CultureInfo.InvariantCulture);
 
-    // Solid dark base (swallows clicks) + competition-page-background dimmed by `brightness`.
+    // Solid fallback plus the shared regular menu background for every division/sub-view.
     void AddScreenBackground(Transform sheet, float brightness)
     {
         Image baseImg = NewImage(sheet, "BaseBG");
@@ -2662,40 +2669,17 @@ public class NavigationManager : MonoBehaviour
         Stretch(baseImg.rectTransform);
 
         Image bg = NewImage(sheet, "CompetitionBG");
-        bg.sprite = CompetitionBgSprite();
+        bg.sprite = UniversalUIStyle.LoadBackground("Regular-Background");
         bg.raycastTarget = false;
         bg.preserveAspect = false;
         bg.color = bg.sprite != null ? new Color(brightness, brightness, brightness, 1f) : GameModeBg;
         Stretch(bg.rectTransform);
     }
 
-    // The universal back button — the back-button sprite at native aspect, anchored top-left of a bar.
+    // The universal close control, anchored at the left of sub-view top bars.
     Button MakeBackButton(Transform parent, UnityEngine.Events.UnityAction onClick)
-    {
-        GameObject go = new GameObject("BtnBack");
-        go.transform.SetParent(parent, false);
-        RectTransform rt = go.AddComponent<RectTransform>();
-        SetRect(rt, new Vector2(0f, 0.5f), new Vector2(52f, 0f), new Vector2(64f, 64f));
-
-        Image img = go.AddComponent<Image>();
-        img.sprite = BackButtonSprite();
-        img.preserveAspect = true;
-        if (img.sprite == null) // rounded fallback with a "<" glyph if the sprite is missing
-        {
-            img.sprite = GetRoundedSprite();
-            img.type = Image.Type.Sliced;
-            img.color = new Color(0.16f, 0.2f, 0.28f, 1f);
-            TextMeshProUGUI t = MakeText(go.transform, "<", 34f, new Vector2(0.5f, 0.5f), Vector2.zero,
-                                         new Vector2(64f, 64f), Color.white, TextAlignmentOptions.Center);
-            Stretch(t.rectTransform);
-        }
-
-        Button btn = go.AddComponent<Button>();
-        btn.targetGraphic = img;
-        if (onClick != null) btn.onClick.AddListener(onClick);
-        AddHover(go);
-        return btn;
-    }
+        => UniversalUIStyle.MakeCloseButton(parent, new Vector2(0f, 0.5f),
+            new Vector2(52f, 0f), new Vector2(60f, 60f), onClick);
 
     // A prominent rounded, labelled action button (NEXT MATCH / PLAY / CLAIM REWARDS).
     Button MakeActionButton(Transform parent, string label, Vector2 anchor, Vector2 pos, Vector2 size,
@@ -3187,27 +3171,8 @@ public class NavigationManager : MonoBehaviour
 
     // Red rounded [X] close button, pinned to the parent's top-right corner.
     Button MakeCloseButton(Transform parent, UnityEngine.Events.UnityAction onClick)
-    {
-        GameObject go = new GameObject("BtnClose");
-        go.transform.SetParent(parent, false);
-        RectTransform rt = go.AddComponent<RectTransform>();
-        SetRect(rt, new Vector2(1f, 1f), new Vector2(-30f, -30f), new Vector2(44f, 44f));
-
-        Image img = go.AddComponent<Image>();
-        img.sprite = GetRoundedSprite();
-        img.type = Image.Type.Sliced;
-        img.color = new Color(0.7f, 0.2f, 0.2f, 1f);
-
-        Button btn = go.AddComponent<Button>();
-        btn.targetGraphic = img;
-        if (onClick != null) btn.onClick.AddListener(onClick);
-
-        TextMeshProUGUI t = MakeText(go.transform, "X", 24f, new Vector2(0.5f, 0.5f), Vector2.zero,
-                                     new Vector2(44f, 44f), Color.white, TextAlignmentOptions.Center);
-        Stretch(t.rectTransform);
-        AddHover(go);
-        return btn;
-    }
+        => UniversalUIStyle.MakeCloseButton(parent, Vector2.one,
+            new Vector2(-30f, -30f), new Vector2(44f, 44f), onClick);
 
     // Minimal show/hide tooltip for the top-bar icons. Desktop: visible while the mouse hovers
     // (mouse pointerIds are negative). Touch: visible after a 0.4s press-and-hold, hidden again
@@ -3440,7 +3405,6 @@ public class NavigationManager : MonoBehaviour
     }
 
     static Sprite PoolScreenSprite() => TextureSprite("Sprites/pool-screen");
-    static Sprite BackButtonSprite() => ButtonSpriteCatalog.SpriteFor("Back-Button");
     static Sprite CompetitionBgSprite() => TextureSprite("Sprites/competition-page-background");
 
     // Button artwork comes from direct catalog references. A missing entry returns null and lets the

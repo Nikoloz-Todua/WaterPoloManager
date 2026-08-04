@@ -5,12 +5,6 @@ TextureImporter:
   - first:
       213: -4552395507498299854
     second: Friends-Button_0
-  - first:
-      213: 2100955092875339964
-    second: Friends-Button_1
-  - first:
-      213: -432397404243177457
-    second: Friends-Button_2
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -148,9 +142,9 @@ TextureImporter:
       name: Friends-Button_0
       rect:
         serializedVersion: 2
-        x: 11
+        x: 0
         y: 0
-        width: 1494
+        width: 1505
         height: 1024
       alignment: 0
       pivot: {x: 0, y: 0}
@@ -162,50 +156,6 @@ TextureImporter:
       bones: []
       spriteID: 23eca72d764a2d0c0800000000000000
       internalID: -4552395507498299854
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Friends-Button_1
-      rect:
-        serializedVersion: 2
-        x: 490
-        y: 193
-        width: 7
-        height: 8
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: cb8e1ef8687182d10800000000000000
-      internalID: 2100955092875339964
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Friends-Button_2
-      rect:
-        serializedVersion: 2
-        x: 992
-        y: 186
-        width: 9
-        height: 10
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: f00d84e0ad0dff9f0800000000000000
-      internalID: -432397404243177457
       vertices: []
       indices: 
       edges: []
@@ -225,8 +175,6 @@ TextureImporter:
       entries: []
     nameFileIdTable:
       Friends-Button_0: -4552395507498299854
-      Friends-Button_1: 2100955092875339964
-      Friends-Button_2: -432397404243177457
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 
