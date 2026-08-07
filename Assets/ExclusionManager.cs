@@ -271,6 +271,8 @@ public class ExclusionManager : MonoBehaviour
         if (offender == null) return;
 
         ApplyStealLockout(offender);
+        if (RefereeController.Instance != null)
+            RefereeController.Instance.TriggerFoul();
 
         if (!foulTimes.TryGetValue(offender, out List<float> times))
         {
@@ -308,6 +310,8 @@ public class ExclusionManager : MonoBehaviour
     {
         if (offender == null) return;
         ApplyStealLockout(offender);
+        if (RefereeController.Instance != null)
+            RefereeController.Instance.TriggerFoul();
         Escalate(offender, team, victim);
     }
 
