@@ -268,7 +268,28 @@ public class Goalkeeper : MonoBehaviour
         // stops tracking the transform), so read through MatchContext — transform-aware for
         // held balls — or the keeper tracks a stale spot while an enemy carrier advances.
         Vector2 ballPos = ctx != null ? ctx.BallPosition : ball.position;
-        bool ballFar = Mathf.Abs(ballPos.x - startX) > trackingRange;
+        TeamSide team = KeeperTeam();
+
+        // A keeper may be the designated OOB fetcher when the restart is in its defensive zone.
+        // It swims in full 2D to the loose ball, then the normal legal-grab path below collects it.
+        if (ctx != null && team != null && ctx.OutOfBoundsRestartActive &&
+            ctx.OutOfBoundsRestartTeam == team && ctx.IsOutOfBoundsFetcher(transform))
+        {
+            ballPos = ctx.OutOfBoundsRestartPoint;
+            float fetchSpeed = trackSpeed * 1.15f;
+            pos = Vector2.MoveTowards(pos, ballPos, fetchSpeed * Time.fixedDeltaTime);
+            pos.x = Mathf.Clamp(pos.x, -ctx.PlayerLimitX, ctx.PlayerLimitX);
+            pos.y = Mathf.Clamp(pos.y, -KeeperRoamY, KeeperRoamY);
+            rb.MovePosition(pos);
+
+            if (Time.time >= missedSaveUntil && ctx.BallGrabbable && ctx.CanGrab(team) &&
+                ctx.IsAtOutOfBoundsBall(pos))
+                Grab(ctx, team);
+            return;
+        }
+
+        float activeTrackingRange = incoming ? Mathf.Max(trackingRange, 6f) : trackingRange;
+        bool ballFar = Mathf.Abs(ballPos.x - startX) > activeTrackingRange;
 
         // X: swim back onto the goal line. A player keeper that roamed out with the ball returns
         // SMOOTHLY here — the old per-frame hard clamp TELEPORTED it back the instant it released
@@ -304,8 +325,21 @@ public class Goalkeeper : MonoBehaviour
                 // clamp the tracking target to BOTH the serialized min/max AND the hard maxYOffset
                 float lo = Mathf.Max(minY, -maxYOffset);
                 float hi = Mathf.Min(maxY,  maxYOffset);
-                float targetY = Mathf.Clamp(ballPos.y, lo, hi);
-                pos.y = Mathf.MoveTowards(pos.y, targetY + yBob, trackSpeed * Time.fixedDeltaTime);
+                float targetY = ballPos.y;
+                float reactionSpeed = trackSpeed;
+                if (incoming && Mathf.Abs(ball.linearVelocity.x) > 0.05f)
+                {
+                    float timeToLine = (startX - ballPos.x) / ball.linearVelocity.x;
+                    if (timeToLine > 0f)
+                    {
+                        targetY = ballPos.y + ball.linearVelocity.y * timeToLine;
+                        float urgency = 1f - Mathf.Clamp01(timeToLine / 1.2f);
+                        reactionSpeed *= Mathf.Lerp(1.25f, 1.9f, urgency);
+                    }
+                }
+                targetY = Mathf.Clamp(targetY, lo, hi);
+                pos.y = Mathf.MoveTowards(pos.y, targetY + (incoming ? 0f : yBob),
+                                          reactionSpeed * Time.fixedDeltaTime);
             }
             else
             {
@@ -320,8 +354,6 @@ public class Goalkeeper : MonoBehaviour
 
         rb.MovePosition(pos);
 
-        TeamSide team = KeeperTeam();
-
         // SNATCH (Task 5): an enemy carrier point-blank on the keeper (within
         // keeperSnatchDistance) is stripped with 100% success — no probability roll.
         if (ctx != null && team != null && TrySnatchFromCarrier(ctx, team)) return;
@@ -331,6 +363,7 @@ public class Goalkeeper : MonoBehaviour
         // instantly re-grab a ball it just released or one it's banned from.
         if (ctx != null && team != null && Time.time >= missedSaveUntil &&
             ctx.BallGrabbable && ctx.CanGrab(team) &&
+            ctx.IsAtOutOfBoundsBall(rb.position) &&
             Vector2.Distance(rb.position, ballPos) <= keeperGrabDistance)
         {
             TrySaveOrCollect(ctx, team);
@@ -361,6 +394,7 @@ public class Goalkeeper : MonoBehaviour
         if (StaminaPercent01 < 0.2f) chance -= 0.1f;
         if (StaminaPercent01 <= 0f)  chance -= 0.15f; // additional at full exhaustion
 
+        chance = Mathf.Clamp(chance, 0.05f, 0.95f);
         if (Random.value <= chance)
         {
             Grab(ctx, team); // SAVE

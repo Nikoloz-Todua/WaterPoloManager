@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 // The single shared "truth" about the match that every AI reads.
@@ -20,6 +21,8 @@ public class MatchContext : MonoBehaviour
     [SerializeField] private float playerLimitX = 6.9f;
     [Tooltip("Counterattack window: winning the ball in your own half starts a fast-break for this long.")]
     [SerializeField] private float counterWindowSeconds = 4f;
+    [Tooltip("Maximum distance from an OOB restart ball before it can be picked up. Kept tiny so the swimmer reaches the ball before it snaps to the hand.")]
+    [SerializeField, Range(0.01f, 0.2f)] private float outOfBoundsPickupDistance = 0.05f;
 
     // who currently holds the ball: null = loose
     public TeamSide PossessingTeam { get; private set; }
@@ -47,6 +50,17 @@ public class MatchContext : MonoBehaviour
     // A team banned from grabbing the loose ball until the OTHER team touches it
     // (shot-clock turnover). null = no ban.
     public TeamSide GrabBannedTeam { get; private set; }
+
+    // A live out-of-bounds restart is a loose ball reserved for the awarded team. Play is not
+    // frozen: its selected fetcher swims to the placement while the offending team is kept away.
+    public bool OutOfBoundsRestartActive { get; private set; }
+    public TeamSide OutOfBoundsRestartTeam { get; private set; }
+    public TeamSide OutOfBoundsOffendingTeam { get; private set; }
+    public Vector2 OutOfBoundsRestartPoint { get; private set; }
+    public Transform OutOfBoundsFetcher { get; private set; }
+    public bool OutOfBoundsRestartReady { get; private set; }
+    private Collider2D[] outOfBoundsBallColliders;
+    private readonly List<Collider2D> outOfBoundsIgnoredColliders = new List<Collider2D>();
 
     // After a kickoff (duel win / goal restart) the carrying team's AI center makes one
     // pass back to its deepest teammate before normal play. Cleared on possession change.
@@ -116,7 +130,8 @@ public class MatchContext : MonoBehaviour
         PossessingTeam = team;
         if (team != null) BallTouchedSinceReset = true;      // first grab → camera leaves the overview shot
         if (team == null) lastReleaseTime = Time.time;       // ball was just released → start the cooldown
-        else if (team != GrabBannedTeam) GrabBannedTeam = null; // the OTHER team got it → lift the turnover ban
+        else if (OutOfBoundsRestartActive || team != GrabBannedTeam)
+            ClearGrabBan(); // the awarded/other team got it → lift the restart/turnover ban
 
         // a pending kickoff pass is void once possession leaves the kicking team
         if (KickoffPassPending && team != KickoffPassTeam) ClearKickoffPass();
@@ -139,11 +154,97 @@ public class MatchContext : MonoBehaviour
     public void FreezeAll() { PlayFrozen = true; }
     public void Unfreeze()  { PlayFrozen = false; }
 
-    public void SetGrabBan(TeamSide team) { GrabBannedTeam = team; }
-    public void ClearGrabBan() { GrabBannedTeam = null; }
+    public void SetGrabBan(TeamSide team)
+    {
+        EndOutOfBoundsRestart();
+        GrabBannedTeam = team;
+    }
+
+    public void ClearGrabBan()
+    {
+        EndOutOfBoundsRestart();
+        GrabBannedTeam = null;
+    }
 
     // A team may grab unless it is the one serving a turnover ban.
     public bool CanGrab(TeamSide team) => GrabBannedTeam == null || team != GrabBannedTeam;
+
+    public void BeginOutOfBoundsRestart(TeamSide awardedTeam, TeamSide offendingTeam,
+                                        Vector2 restartPoint, Transform preferredFetcher)
+    {
+        EndOutOfBoundsRestart();
+        OutOfBoundsRestartActive = awardedTeam != null;
+        OutOfBoundsRestartTeam = awardedTeam;
+        OutOfBoundsOffendingTeam = offendingTeam;
+        OutOfBoundsRestartPoint = restartPoint;
+        OutOfBoundsFetcher = preferredFetcher;
+        OutOfBoundsRestartReady = false;
+        GrabBannedTeam = offendingTeam;
+
+        if (!OutOfBoundsRestartActive || ball == null || offendingTeam == null) return;
+        outOfBoundsBallColliders = ball.GetComponentsInChildren<Collider2D>(true);
+        IgnoreTeamBallCollisions(offendingTeam);
+    }
+
+    // Used by field AI and goalkeeper AI so only one teammate spends stamina fetching the restart.
+    public bool IsOutOfBoundsFetcher(Transform swimmer)
+        => OutOfBoundsRestartActive && swimmer != null && swimmer == OutOfBoundsFetcher;
+
+    public bool IsAtOutOfBoundsBall(Vector2 swimmerPosition)
+        => !OutOfBoundsRestartActive ||
+           (OutOfBoundsRestartReady &&
+            Vector2.Distance(swimmerPosition, OutOfBoundsRestartPoint) <= outOfBoundsPickupDistance);
+
+    public void MarkOutOfBoundsRestartReady()
+    {
+        if (OutOfBoundsRestartActive) OutOfBoundsRestartReady = true;
+    }
+
+    void IgnoreTeamBallCollisions(TeamSide team)
+    {
+        if (team != null && team.members != null)
+            foreach (Transform member in team.members) IgnoreSwimmerBallCollisions(member);
+
+        foreach (Goalkeeper keeper in Object.FindObjectsByType<Goalkeeper>())
+            if (keeper != null && keeper.DefendingTeam == team)
+                IgnoreSwimmerBallCollisions(keeper.transform);
+    }
+
+    void IgnoreSwimmerBallCollisions(Transform swimmer)
+    {
+        if (swimmer == null || outOfBoundsBallColliders == null) return;
+        foreach (Collider2D swimmerCollider in swimmer.GetComponentsInChildren<Collider2D>())
+        {
+            if (swimmerCollider == null || swimmerCollider.attachedRigidbody == ball ||
+                outOfBoundsIgnoredColliders.Contains(swimmerCollider)) continue;
+            outOfBoundsIgnoredColliders.Add(swimmerCollider);
+            foreach (Collider2D ballCollider in outOfBoundsBallColliders)
+                if (ballCollider != null && ballCollider != swimmerCollider)
+                    Physics2D.IgnoreCollision(ballCollider, swimmerCollider, true);
+        }
+    }
+
+    void EndOutOfBoundsRestart()
+    {
+        if (outOfBoundsBallColliders != null)
+            foreach (Collider2D ballCollider in outOfBoundsBallColliders)
+                foreach (Collider2D swimmerCollider in outOfBoundsIgnoredColliders)
+                    if (ballCollider != null && swimmerCollider != null && ballCollider != swimmerCollider)
+                        Physics2D.IgnoreCollision(ballCollider, swimmerCollider, false);
+
+        outOfBoundsIgnoredColliders.Clear();
+        outOfBoundsBallColliders = null;
+        OutOfBoundsRestartActive = false;
+        OutOfBoundsRestartTeam = null;
+        OutOfBoundsOffendingTeam = null;
+        OutOfBoundsFetcher = null;
+        OutOfBoundsRestartReady = false;
+        GrabBannedTeam = null;
+    }
+
+    bool RestartIgnores(Collider2D swimmerCollider)
+        => OutOfBoundsRestartActive && swimmerCollider != null &&
+           outOfBoundsIgnoredColliders.Contains(swimmerCollider);
 
     public void SetKickoffPass(TeamSide team)
     {
@@ -303,7 +404,8 @@ public class MatchContext : MonoBehaviour
         }
 
         foreach (Collider2D c in own)
-            if (c != null && ballCol != null && c != ballCol) Physics2D.IgnoreCollision(ballCol, c, false);
+            if (c != null && ballCol != null && c != ballCol && !RestartIgnores(c))
+                Physics2D.IgnoreCollision(ballCol, c, false);
     }
 
     // ---- counterattack window (Part 2) ----
@@ -344,6 +446,7 @@ public class MatchContext : MonoBehaviour
     // steals, keeper saves and the goal-line loose rule all read this and wait for it to land.
     public bool BallGrabbable =>
         PossessingTeam == null &&
+        (!OutOfBoundsRestartActive || OutOfBoundsRestartReady) &&
         (Time.time - lastReleaseTime) >= Mathf.Min(releaseGrabDelay, MaxReleaseGrabDelay) &&
         (BallFlight.Instance == null || !BallFlight.Instance.HighBallActive);
 
@@ -404,6 +507,7 @@ public class MatchContext : MonoBehaviour
     {
         SwapGoals(playerTeam);
         SwapGoals(botTeam);
+        if (ExclusionManager.Instance != null) ExclusionManager.Instance.OnEndsSwapped();
     }
 
     static void SwapGoals(TeamSide t)

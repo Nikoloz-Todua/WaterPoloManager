@@ -149,12 +149,37 @@ public static class WaterPoloBrain
         // 2026-07-09g: CanCatchLooseBall replaces the flat GrabDistance check — a FLYING
         // ball needs the catcher close AND facing it; a settled ball keeps the old radius.
         if (ctx.BallGrabbable && ctx.CanGrab(a.Team) &&
+            ctx.IsAtOutOfBoundsBall(a.Body.position) &&
             CanCatchLooseBall(ctx, a.Body.position, a.LastDirection, a.GrabDistance) &&
-            !HumanTeammateCloserToBall(a, ctx) &&
+            (ctx.OutOfBoundsRestartActive || !HumanTeammateCloserToBall(a, ctx)) &&
             TryCollectLoose(a, ctx))
             return;
 
         TeamSide enemy = ctx.EnemyOf(a.Team);
+
+        // OOB restarts stay live and loose. The offending team drops into its defensive shape
+        // and is forbidden from contesting; only the awarded team's selected fetcher pursues.
+        // This keeps five field swimmers from sprinting after a ball a nearby keeper can collect.
+        if (ctx.OutOfBoundsRestartActive)
+        {
+            a.CurrentMark = null;
+            a.IsSettingScreen = false;
+            if (a.Team == ctx.OutOfBoundsOffendingTeam)
+            {
+                MoveTo(a, a.Team.DefendSpot(a.Tf, ctx.OutOfBoundsRestartPoint), a.SupportSpeed);
+                return;
+            }
+            if (a.Team == ctx.OutOfBoundsRestartTeam)
+            {
+                bool fetch = ctx.OutOfBoundsFetcher != null
+                    ? ctx.IsOutOfBoundsFetcher(a.Tf)
+                    : a.Team.ClosestMemberTo(ctx.OutOfBoundsRestartPoint) == a.Tf;
+                if (fetch) FetchOutOfBoundsBall(a, ctx);
+                else MoveTo(a, a.Team.AttackTarget(a.Tf, ctx.OutOfBoundsRestartPoint, enemy),
+                            a.SupportSpeed);
+                return;
+            }
+        }
 
         // POSITIONING possession (2026-07-09g, the anti-cluster core): the instant any pass or
         // shot released, PossessingTeam went null and every off-ball agent on BOTH teams flipped
@@ -807,6 +832,25 @@ public static class WaterPoloBrain
             a.LastDirection = dir;
         }
         a.Body.linearVelocity = dir * (a.ChaseSpeed * SprintMult); // sprint onto a loose / contested ball
+    }
+
+    // Arrive at the restart coordinate without flying through it. The final-step speed is capped
+    // to the remaining distance, allowing the shared 0.05u exact-pickup gate to be reached cleanly.
+    static void FetchOutOfBoundsBall(IAgentBody a, MatchContext ctx)
+    {
+        Vector2 delta = ctx.OutOfBoundsRestartPoint - a.Body.position;
+        float distance = delta.magnitude;
+        if (distance <= 0.001f)
+        {
+            a.Body.linearVelocity = Vector2.zero;
+            return;
+        }
+
+        Vector2 dir = delta / distance;
+        a.LastDirection = dir;
+        float maxSpeed = a.ChaseSpeed * SprintMult;
+        float exactArrivalSpeed = distance / Mathf.Max(Time.fixedDeltaTime, 0.0001f);
+        a.Body.linearVelocity = dir * Mathf.Min(maxSpeed, exactArrivalSpeed);
     }
 
     static void MoveTo(IAgentBody a, Vector2 target, float speed)

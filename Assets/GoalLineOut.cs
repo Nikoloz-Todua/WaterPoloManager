@@ -1,11 +1,11 @@
 using UnityEngine;
 
-// Goal-line out rule (plan B16.11), modeled on BallOutOfBounds. Possession goes to the
-// nearest player of the OTHER team (the team that didn't touch the ball last) in two cases:
-//   (a) a LOOSE, grounded ball crosses a goal line (|x| >= goalLineX) outside the goal
+// Goal-line out rule (plan B16.11), modeled on BallOutOfBounds. The loose restart is reserved
+// for the OTHER team (the team that didn't touch the ball last) in two cases:
+//   (a) a LOOSE, grounded ball fully crosses a goal line outside the goal
 //       mouth (|y| > goalMouthHalfHeight) → re-enters just inside the line.
-//   (b) a CARRIER presses the ball against the line (|x| >= carrierOutX) → corner restart:
-//       the ball + the receiving player are placed at that end's corner.
+//   (b) a CARRIER takes the complete ball beyond carrierOutX → corner restart:
+//       the ball is dropped just inside at the carrier's Y. The receiver swims to it.
 // The |y| check keeps the loose case clear of real goals. Never reacts during a freeze
 // (sprint duel / goal settle / penalty setup) or an active penalty.
 public class GoalLineOut : MonoBehaviour
@@ -17,13 +17,20 @@ public class GoalLineOut : MonoBehaviour
 
     [Header("Carrier-at-line turnover")]
     [SerializeField] private float carrierOutX = 6.7f;   // held ball at/over this |x| → corner turnover (any y)
-    [SerializeField] private float cornerInsetX = 6.2f;  // restart x = sign(ball.x) * this
-    [SerializeField] private float cornerY = 3.5f;       // restart y = sign(ball.y) * this
+    [SerializeField] private float restartMaxY = 3.5f;
+
+    private BallOutOfBounds restartService;
+
+    void Start()
+    {
+        restartService = GetComponent<BallOutOfBounds>();
+    }
 
     void FixedUpdate()
     {
         MatchContext ctx = MatchContext.Instance;
         if (ctx == null || ctx.Ball == null) return;
+        if (ctx.OutOfBoundsRestartActive) return;
 
         if (ctx.PlayFrozen) return; // sprint duel / goal settle / penalty setup
         if (PenaltyManager.Instance != null && PenaltyManager.Instance.Active) return;
@@ -31,15 +38,16 @@ public class GoalLineOut : MonoBehaviour
         // (b) HELD ball: a carrier pressing against the goal line → corner turnover (any y).
         if (ctx.PossessingTeam != null && ctx.Ball.transform.parent != null)
         {
-            if (Mathf.Abs(ctx.Ball.position.x) >= carrierOutX) CarrierOut(ctx);
+            Vector2 heldBallPosition = ctx.BallPosition;
+            if (Mathf.Abs(heldBallPosition.x) - BallRadiusX(ctx.Ball) >= carrierOutX)
+                CarrierOut(ctx);
             return; // held → only the carrier rule applies
         }
 
         // (a) LOOSE grounded ball behind the goal line, outside the mouth.
         Vector2 p = ctx.Ball.position;
         if (!OwnsLooseOut(ctx, p)) return;
-        if (WasKeeperDeflectionAtThisEnd(ctx, p)) KeeperCornerOut(ctx);
-        else LooseOut(ctx);
+        LooseOut(ctx);
     }
 
     // Shared boundary ownership test. BallOutOfBounds asks this before starting its broader
@@ -51,99 +59,49 @@ public class GoalLineOut : MonoBehaviour
         if (ctx == null || ctx.Ball == null || ctx.PlayFrozen) return false;
         if (PenaltyManager.Instance != null && PenaltyManager.Instance.Active) return false;
         if (!ctx.BallIsLoose || ctx.Ball.transform.parent != null || !ctx.Ball.simulated) return false;
-        if (Mathf.Abs(p.x) < goalLineX || Mathf.Abs(p.y) <= goalMouthHalfHeight) return false;
+        if (Mathf.Abs(p.x) - BallRadiusX(ctx.Ball) < goalLineX ||
+            Mathf.Abs(p.y) <= goalMouthHalfHeight) return false;
         BallFlight flight = BallFlight.Instance;
         return flight == null || !flight.HighBallActive;
     }
 
-    // Loose ball over the line → re-enter just inside the line, nearest of the other team.
+    // Loose ball over the line: preserve the Y coordinate where it crossed and leave it loose.
+    // The awarded team must swim to it; nobody is teleported and possession is not auto-handed.
     void LooseOut(MatchContext ctx)
     {
         if (ctx.Ball == null) return;
         Vector2 p = ctx.Ball.position;
-        TeamSide award = OtherTeam(ctx);
-        if (award == null) return;
-
-        Rigidbody2D ball = ctx.Ball;
         float sx = p.x >= 0f ? 1f : -1f;
+        float fullCrossingCenterX = sx * (goalLineX + BallRadiusX(ctx.Ball));
         float rx = Mathf.Max(0f, goalLineX - reentryInset);
-        ball.transform.SetParent(null);
-        ball.simulated = true;
-        ball.linearVelocity = Vector2.zero;
-        ball.position = new Vector2(sx * rx, p.y);
-        ctx.SetPossession(null);
-
-        Transform receiver = award.ClosestMemberTo(ball.position);
-        if (receiver != null) ctx.GiveBallTo(receiver, award);
-
-        Finish(ctx, award, false);
+        Vector2 restart = restartService != null
+            ? restartService.VerticalRestartPoint(p, fullCrossingCenterX, sx * rx, restartMaxY)
+            : new Vector2(sx * rx, Mathf.Clamp(p.y, -restartMaxY, restartMaxY));
+        PlaceRestart(ctx, restart,
+                     WasKeeperDeflectionAtThisEnd(ctx, p) ? "Corner" : "Goal-line out");
     }
 
-    // A defending keeper was the most recent physical toucher before the loose ball crossed
-    // this keeper's goal line: restart at the corner with the attacking team.
-    void KeeperCornerOut(MatchContext ctx)
-    {
-        if (ctx.Ball == null) return;
-        Vector2 p = ctx.Ball.position;
-        TeamSide award = OtherTeam(ctx);
-        if (award == null) return;
-
-        float sx = p.x >= 0f ? 1f : -1f;
-        float sy = p.y >= 0f ? 1f : -1f;
-        Vector2 corner = new Vector2(sx * cornerInsetX, sy * cornerY);
-        Transform receiver = award.ClosestMemberTo(p);
-
-        Rigidbody2D ball = ctx.Ball;
-        ball.transform.SetParent(null);
-        ball.simulated = true;
-        ball.linearVelocity = Vector2.zero;
-        ball.position = corner;
-        ctx.SetPossession(null);
-
-        if (receiver != null)
-        {
-            receiver.position = new Vector3(corner.x, corner.y, receiver.position.z);
-            Rigidbody2D rrb = receiver.GetComponent<Rigidbody2D>();
-            if (rrb != null) { rrb.position = corner; rrb.linearVelocity = Vector2.zero; }
-            ctx.GiveBallTo(receiver, award);
-        }
-
-        Finish(ctx, award, true);
-    }
-
-    // Carrier pressing the line → drop it, restart at that end's corner with the other team.
+    // Carrier pressing the line → drop it just inside at the crossing Y for the other team.
     void CarrierOut(MatchContext ctx)
     {
         if (ctx.Ball == null) return;
-        Vector2 p = ctx.Ball.position;
-        TeamSide award = OtherTeam(ctx);
-        if (award == null) return;
-
+        Vector2 p = ctx.BallPosition;
         ctx.ForceDropHeldBall(); // carrier drops the ball
 
         float sx = p.x >= 0f ? 1f : -1f;
-        float sy = p.y >= 0f ? 1f : -1f;
-        Vector2 corner = new Vector2(sx * cornerInsetX, sy * cornerY);
+        float rx = Mathf.Max(0f, goalLineX - reentryInset);
+        Vector2 restart = new Vector2(sx * rx, Mathf.Clamp(p.y, -restartMaxY, restartMaxY));
+        PlaceRestart(ctx, restart, "Corner");
+    }
 
-        Transform receiver = award.ClosestMemberTo(p); // nearest to where it went out
-
-        Rigidbody2D ball = ctx.Ball;
-        ball.transform.SetParent(null);
-        ball.simulated = true;
-        ball.linearVelocity = Vector2.zero;
-        ball.position = corner;
-        ctx.SetPossession(null);
-
-        if (receiver != null)
-        {
-            // place the receiver at the corner too, then hand them the ball
-            receiver.position = new Vector3(corner.x, corner.y, receiver.position.z);
-            Rigidbody2D rrb = receiver.GetComponent<Rigidbody2D>();
-            if (rrb != null) { rrb.position = corner; rrb.linearVelocity = Vector2.zero; }
-            ctx.GiveBallTo(receiver, award);
-        }
-
-        Finish(ctx, award, true);
+    static float BallRadiusX(Rigidbody2D ball)
+    {
+        if (ball == null) return 0f;
+        float radius = 0f;
+        foreach (Collider2D collider in ball.GetComponentsInChildren<Collider2D>(true))
+            if (collider != null && collider.enabled)
+                radius = Mathf.Max(radius, collider.bounds.extents.x);
+        return radius;
     }
 
     // The keeper flag is meaningful only at the physical end that keeper currently defends.
@@ -157,18 +115,29 @@ public class GoalLineOut : MonoBehaviour
         return Mathf.Sign(keeperTeam.defendGoal.position.x) == outSign;
     }
 
-    // The team that did NOT touch the ball last (deflection-aware via MatchContext.NoteTouch).
-    TeamSide OtherTeam(MatchContext ctx)
+    void PlaceRestart(MatchContext ctx, Vector2 point, string eventLabel)
     {
-        TeamSide award = ctx.LastTouchTeam != null ? ctx.EnemyOf(ctx.LastTouchTeam) : ctx.PlayerTeam;
-        return award != null ? award : ctx.PlayerTeam;
-    }
+        if (restartService == null) restartService = GetComponent<BallOutOfBounds>();
+        if (restartService != null)
+        {
+            restartService.AwardRestart(ctx, point, eventLabel);
+            return;
+        }
 
-    void Finish(MatchContext ctx, TeamSide award, bool corner)
-    {
+        // Stripped-down test scenes may omit BallOutOfBounds; retain the same loose-ball contract.
+        TeamSide offending = ctx.LastTouchTeam;
+        TeamSide awarded = offending != null ? ctx.EnemyOf(offending) : ctx.PlayerTeam;
+        if (awarded == null) return;
+        Rigidbody2D ball = ctx.Ball;
+        ball.transform.SetParent(null);
+        ball.simulated = true;
+        ball.position = point;
+        ball.transform.position = point;
+        ball.linearVelocity = Vector2.zero;
+        ball.angularVelocity = 0f;
+        ctx.SetPossession(null);
+        Transform fetcher = awarded.ClosestMemberTo(point);
+        ctx.BeginOutOfBoundsRestart(awarded, offending, point, fetcher);
         if (ShotClock.Instance != null) ShotClock.Instance.ResetClock();
-        if (EventFeed.Instance != null)
-            EventFeed.Instance.AddEvent((corner ? "Corner" : "Goal-line out") + " - " +
-                                        (award == ctx.PlayerTeam ? "YOU" : "BOT"));
     }
 }

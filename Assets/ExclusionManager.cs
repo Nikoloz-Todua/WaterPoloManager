@@ -46,12 +46,18 @@ public class ExclusionManager : MonoBehaviour
     [SerializeField] private MatchTimer matchTimer;           // to end the match on a forfeit
     [SerializeField] private TMP_Text exclusionText;          // HUD countdowns, e.g. "YOU EXC: 4.2"
 
-    [Header("Exclusion pen markers")]
-    // Where an excluded player sits out and re-enters from. Left empty these auto-find the scene
-    // objects named ExclusionSpot_Home (left half) / ExclusionSpot_Away (right half); if a scene
-    // has neither, defaults are self-healed at the bottom corners so exclusions always work.
-    [SerializeField] private Transform exclusionSpotHome;
-    [SerializeField] private Transform exclusionSpotAway;
+    [Header("Exclusion positions")]
+    [Tooltip("Penalty-box position for the team currently defending the left end.")]
+    [SerializeField] private Vector2 leftExclusionPosition = new Vector2(-6.7f, 3.6f);
+    [Tooltip("Penalty-box position for the team currently defending the right end.")]
+    [SerializeField] private Vector2 rightExclusionPosition = new Vector2(7.1f, 3.6f);
+    [Tooltip("Safe in-water re-entry point for the team currently defending the left end.")]
+    [SerializeField] private Vector2 leftReentryPosition = new Vector2(-5.8f, 3.5f);
+    [Tooltip("Safe in-water re-entry point for the team currently defending the right end.")]
+    [SerializeField] private Vector2 rightReentryPosition = new Vector2(6.1f, 3.5f);
+    [SerializeField, Min(0.05f)] private float simultaneousReentryOffset = 0.18f;
+    [Tooltip("Sorting order used only while a player is parked at an exclusion coordinate.")]
+    [SerializeField] private int excludedSortingOrder = 75;
 
     // cached from MatchContext (so no extra Inspector wiring of teams)
     private TeamSide playerTeam;
@@ -72,6 +78,7 @@ public class ExclusionManager : MonoBehaviour
     private readonly HashSet<Transform> excludedNow = new HashSet<Transform>();    // temporarily out
     private readonly HashSet<Transform> permanentlyOut = new HashSet<Transform>(); // gone for good
     private readonly Dictionary<TeamSide, Transform[]> originalRoster = new Dictionary<TeamSide, Transform[]>();
+    private readonly Dictionary<SpriteRenderer, int> regularSortingOrders = new Dictionary<SpriteRenderer, int>();
 
     void Awake()
     {
@@ -89,44 +96,22 @@ public class ExclusionManager : MonoBehaviour
             Snapshot(botTeam);
         }
         if (exclusionText != null) exclusionText.enabled = false;
-        EnsureExclusionSpots();
     }
 
-    // Resolve the two pen markers: serialized slot → scene object by name → self-healed default.
-    // The defaults sit at the bottom pool corners; if you see the warning, add empty GameObjects
-    // with these exact names in the scene and nudge them onto the exclusion pen art.
-    void EnsureExclusionSpots()
+    // A team's current end is the end it defends. MatchContext swaps defendGoal at halftime,
+    // so these coordinate choices automatically swap with it without relying on scene names.
+    bool IsOnLeftSide(TeamSide team)
     {
-        if (exclusionSpotHome == null)
-            exclusionSpotHome = FindOrCreateSpot("ExclusionSpot_Home", new Vector3(-7.2f, -4.1f, 0f));
-        if (exclusionSpotAway == null)
-            exclusionSpotAway = FindOrCreateSpot("ExclusionSpot_Away", new Vector3(7.2f, -4.1f, 0f));
+        if (team != null && team.defendGoal != null)
+            return team.defendGoal.position.x < 0f;
+        return team == playerTeam;
     }
 
-    static Transform FindOrCreateSpot(string name, Vector3 defaultPos)
-    {
-        GameObject go = GameObject.Find(name);
-        if (go == null)
-        {
-            go = new GameObject(name);
-            go.transform.position = defaultPos;
-            Debug.LogWarning("[ExclusionManager] No '" + name + "' in this scene — self-healed one at "
-                             + defaultPos + ". Create a scene object with that exact name (or wire the "
-                             + "Inspector slot) to place the pen where the art is.");
-        }
-        return go.transform;
-    }
+    Vector2 ExclusionPositionFor(TeamSide team)
+        => IsOnLeftSide(team) ? leftExclusionPosition : rightExclusionPosition;
 
-    // The pen for a team = whichever marker sits in the half of the pool the team currently
-    // DEFENDS (matched by x sign, not by name, so it stays correct after the halftime SwapEnds).
-    Transform PenFor(TeamSide team)
-    {
-        if (exclusionSpotHome == null) return exclusionSpotAway;
-        if (exclusionSpotAway == null) return exclusionSpotHome;
-        float sign = (team != null && team.defendGoal != null) ? Mathf.Sign(team.defendGoal.position.x) : -1f;
-        if (sign == 0f) sign = -1f;
-        return Mathf.Sign(exclusionSpotHome.position.x) == sign ? exclusionSpotHome : exclusionSpotAway;
-    }
+    Vector2 ReentryPositionFor(TeamSide team)
+        => IsOnLeftSide(team) ? leftReentryPosition : rightReentryPosition;
 
     void Snapshot(TeamSide team)
     {
@@ -147,13 +132,19 @@ public class ExclusionManager : MonoBehaviour
         MatchContext ctx = MatchContext.Instance;
         bool frozen = ctx != null && ctx.PlayFrozen;
 
+        Dictionary<int, int> returnsPerSide = null;
         for (int i = activeExclusions.Count - 1; i >= 0; i--)
         {
             Exclusion e = activeExclusions[i];
             if (!frozen) e.timer.Tick(Time.deltaTime);
             if (!e.timer.IsComplete) continue;
 
-            ReturnToPlay(e);            // restore roster slot + drop the body back onto the field
+            if (returnsPerSide == null) returnsPerSide = new Dictionary<int, int>();
+            int side = IsOnLeftSide(e.team) ? -1 : 1;
+            returnsPerSide.TryGetValue(side, out int returnIndex);
+            returnsPerSide[side] = returnIndex + 1;
+
+            ReturnToPlay(e, returnIndex); // restore roster slot + use a safe, non-overlapping entry
             activeExclusions.RemoveAt(i);
         }
 
@@ -167,9 +158,9 @@ public class ExclusionManager : MonoBehaviour
     //   1) restores the ORIGINAL roster slot (falling back to the Start() snapshot so a stale
     //      index can never silently drop the player OUT of the roster for good),
     //   2) clears the excluded flag so the brain drives it again, and
-    //   3) actively teleports it onto a live goal-side DEFENSIVE spot with zero velocity, so it
-    //      is unambiguously back in play instead of marooned behind its own goal line.
-    void ReturnToPlay(Exclusion e)
+    //   3) teleports it to the fixed safe in-water coordinate for its current side, with a small
+    //      offset for same-frame returns, so it cannot overlap a teammate or catch a wall.
+    void ReturnToPlay(Exclusion e, int simultaneousIndex)
     {
         Transform agent = e.agent;
         TeamSide team = e.team;
@@ -182,31 +173,16 @@ public class ExclusionManager : MonoBehaviour
             team.members[idx] = agent;   // restore FIRST so DefendSpot's role lookup finds it
 
         excludedNow.Remove(agent);       // IsExcluded → false → the brain resumes control
-        SetBenchedTint(agent, false);    // back to full opacity = visibly back in play
+        SetExcludedSorting(agent, false);
 
-        // Re-enter ONTO a live goal-side DEFENSIVE spot (the 2026-07-05 behavior, RESTORED
-        // 2026-07-09f). The 07-06 pen-marker revision quietly changed this to "pen position
-        // clamped 0.8u inside" — visually still AT the pen, with the whole rejoin left to the
-        // brain; that's the "served the exclusion but never reintegrated, sat inert in the
-        // corner" report. Dropping straight onto the team's defensive shape makes rejoining
-        // structural instead of brain-dependent. The pen-clamp stays only as the no-team fallback.
-        if (team != null)
+        Vector2 spot = ReentryPositionFor(team);
+        if (simultaneousIndex > 0)
         {
-            MatchContext ctx = MatchContext.Instance;
-            Vector2 ballPos = ctx != null ? ctx.BallPosition : Vector2.zero;
-            Vector2 spot = team.DefendSpot(agent, ballPos); // ClampToField keeps it in the pool
-            agent.position = new Vector3(spot.x, spot.y, agent.position.z);
+            int step = (simultaneousIndex + 1) / 2;
+            float direction = (simultaneousIndex & 1) == 1 ? 1f : -1f;
+            spot.y += direction * step * simultaneousReentryOffset;
         }
-        else
-        {
-            Transform pen = PenFor(team);
-            if (pen != null)
-            {
-                Vector3 p = pen.position;
-                agent.position = new Vector3(Mathf.Clamp(p.x, -6.4f, 6.4f),
-                                             Mathf.Clamp(p.y, -3.9f, 3.9f), agent.position.z);
-            }
-        }
+        agent.position = new Vector3(spot.x, spot.y, agent.position.z);
 
         // Stale AI intent from BEFORE the exclusion (an old mark, a half-finished drive or
         // screen) must not steer the first frames back — hand the brain a clean slate.
@@ -219,20 +195,40 @@ public class ExclusionManager : MonoBehaviour
         }
 
         Rigidbody2D rb = agent.GetComponent<Rigidbody2D>();
-        if (rb != null) rb.linearVelocity = Vector2.zero;
+        if (rb != null)
+        {
+            rb.position = spot;
+            rb.linearVelocity = Vector2.zero;
+            rb.angularVelocity = 0f;
+        }
     }
 
-    // Excluded players stay visible at the pen — dim them so they can't be read as a live
-    // defender standing in the corner (the "exclusion side looks wrong" report was this:
-    // a full-opacity benched player parked in the defensive corner DURING the enemy man-up).
-    const float BenchedAlpha = 0.45f;
-    static void SetBenchedTint(Transform agent, bool benched)
+    // MatchContext calls this immediately after the halftime end swap. Players already serving
+    // an exclusion move with their team's new visual side instead of remaining in the old pen.
+    public void OnEndsSwapped()
+    {
+        foreach (Exclusion e in activeExclusions)
+            if (e != null && e.agent != null) PlaceAtCorner(e.agent, e.team);
+    }
+
+    // Keep the authored sprite colors/alpha completely unchanged. Only lift render order while
+    // parked at the pen so pool-line water shaders cannot draw over and blue-tint the player.
+    void SetExcludedSorting(Transform agent, bool excluded)
     {
         if (agent == null) return;
         foreach (SpriteRenderer sr in agent.GetComponentsInChildren<SpriteRenderer>(true))
         {
-            Color c = sr.color;
-            sr.color = new Color(c.r, c.g, c.b, benched ? BenchedAlpha : 1f);
+            if (sr == null) continue;
+            if (excluded)
+            {
+                if (!regularSortingOrders.ContainsKey(sr)) regularSortingOrders[sr] = sr.sortingOrder;
+                sr.sortingOrder = Mathf.Max(sr.sortingOrder, excludedSortingOrder);
+            }
+            else if (regularSortingOrders.TryGetValue(sr, out int regularOrder))
+            {
+                sr.sortingOrder = regularOrder;
+                regularSortingOrders.Remove(sr);
+            }
         }
     }
 
@@ -467,7 +463,6 @@ public class ExclusionManager : MonoBehaviour
         DropBallHeldBy(agent);                  // drop the ball in place if carrying
         if (idx >= 0) team.members[idx] = null; // leave the roster (AI + formation auto-adapt)
         PlaceAtCorner(agent, team);             // park in the goal corner, stop moving
-        SetBenchedTint(agent, true);            // dimmed = visibly OUT of play (2026-07-09f)
         foulTimes.Remove(agent);                // fresh foul slate after serving
 
         int count = (exclusionCount.TryGetValue(agent, out int c) ? c : 0) + 1;
@@ -524,18 +519,20 @@ public class ExclusionManager : MonoBehaviour
         ctx.SetPossession(null);
     }
 
-    // Park the excluded player AT its team's pen marker (the old version hardcoded the goal
-    // corner at (±7, −4); now the pen art placement in the scene is the single source of truth).
+    // Park at the fixed penalty-box coordinate for the side the team currently defends.
     void PlaceAtCorner(Transform agent, TeamSide team)
     {
-        Transform pen = PenFor(team);
-        Vector3 p = pen != null
-            ? pen.position
-            : new Vector3(((team != null && team.defendGoal != null && team.defendGoal.position.x < 0f) ? -7f : 7f), -4f, 0f);
+        Vector2 p = ExclusionPositionFor(team);
         agent.position = new Vector3(p.x, p.y, agent.position.z);
+        SetExcludedSorting(agent, true);
 
         Rigidbody2D rb = agent.GetComponent<Rigidbody2D>();
-        if (rb != null) rb.linearVelocity = Vector2.zero;
+        if (rb != null)
+        {
+            rb.position = p;
+            rb.linearVelocity = Vector2.zero;
+            rb.angularVelocity = 0f;
+        }
     }
 
     int MemberIndex(TeamSide team, Transform agent)

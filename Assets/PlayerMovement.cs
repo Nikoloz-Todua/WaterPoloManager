@@ -641,6 +641,7 @@ public class PlayerMovement : MonoBehaviour
         // caught close-in while roughly facing it. Applies to auto-collect AND the E press.
         if (ctx != null)
         {
+            if (!ctx.IsAtOutOfBoundsBall(transform.position)) return;
             if (WaterPoloBrain.CanCatchLooseBall(ctx, transform.position, lastDirection, grabDistance))
                 GrabBall();
             return;
@@ -662,6 +663,7 @@ public class PlayerMovement : MonoBehaviour
         MatchContext ctx = MatchContext.Instance;
         if (ctx == null || ctx.PlayFrozen || !ctx.BallIsLoose || !ctx.CanGrab(ctx.PlayerTeam))
             return false;
+        if (ctx.OutOfBoundsRestartActive) return false; // fetch first; no long-range one-touch restart
         if (ball.transform.parent != null || !ball.simulated) return false;
 
         BallFlight flight = BallFlight.Instance;
