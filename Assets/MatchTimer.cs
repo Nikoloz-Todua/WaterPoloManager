@@ -89,6 +89,13 @@ public class MatchTimer : MonoBehaviour
         awaitingResume = true;
         MatchContext ctx = MatchContext.Instance;
         if (ctx != null) ctx.FreezeAll();
+
+        // The quarter boundary itself ends unfinished TEMPORARY exclusions. Do this as the
+        // break begins (not when RESUME is pressed) so the reset rule is immediate and the
+        // complete eligible roster is already restored for the next-quarter lineup.
+        if (ExclusionManager.Instance != null)
+            ExclusionManager.Instance.EndTemporaryExclusionsForRestart();
+
         if (TouchControls.Instance != null) TouchControls.Instance.SetGameplayVisible(false);
 
         int you = scoreManager != null ? scoreManager.HomeScore : 0;

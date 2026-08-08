@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using TMPro;
 
@@ -33,13 +34,35 @@ public class ScoreManager : MonoBehaviour
     // between the posts. These mirror GoalLineOut's serialized defaults — keep them in sync.
     const float GoalLineX = 7f;
     const float GoalMouthHalfHeight = 1.5f;
+    const float ScoredBallAbsorbSeconds = 0.38f;
+    const float ScoredBallMinTravel = 0.30f;
+    const float ScoredBallMaxTravel = 0.50f;
 
     private int homeScore = 0; // YOU  (= playerTeam)
     private int awayScore = 0; // BOT  (= botTeam)
 
-    // net-pulse bookkeeping: originals restored even if a pulse is ever cut short
-    private Transform pulseNet;
-    private Vector3 pulseScale0, pulsePos0;
+    // Localized net deformation is an overlay above each existing goal sprite. The original
+    // renderer/material is never swapped, recolored or made transparent, so the red/white frame
+    // remains rigid and PoolLineFloat keeps owning the complete goal transform.
+    const string LocalizedNetShaderName = "WaterPolo/LocalizedGoalNet";
+    const string LocalizedNetShaderResource = "Shaders/LocalizedGoalNet";
+    static readonly int ImpactLocalId = Shader.PropertyToID("_ImpactLocal");
+    static readonly int DeformDirectionUvId = Shader.PropertyToID("_DeformDirectionUV");
+    static readonly int DeformAmountId = Shader.PropertyToID("_DeformAmount");
+    static readonly int DeformRadiusId = Shader.PropertyToID("_DeformRadius");
+    static readonly int WavePhaseId = Shader.PropertyToID("_WavePhase");
+    sealed class NetReactionState
+    {
+        public Transform goal;
+        public SpriteRenderer source;
+        public SpriteRenderer overlay;
+        public Material material;
+        public Coroutine routine;
+        public int generation;
+    }
+
+    readonly Dictionary<Transform, NetReactionState> netReactions =
+        new Dictionary<Transform, NetReactionState>();
     private Transform netRippleTransform;
     private SpriteRenderer netRippleRenderer;
     private CameraFollow goalCamera;
@@ -55,11 +78,13 @@ public class ScoreManager : MonoBehaviour
     // public read-only access for other systems (e.g. MatchTimer's win condition)
     public int HomeScore => homeScore;
     public int AwayScore => awayScore;
+    public bool GoalRestartInProgress => restartInProgress;
 
     void Awake()
     {
         Instance = this;
         GoalReplaySystem.EnsureExists(gameObject);
+        PrepareGoalNetOverlays();
         PrepareNetRipple();
         Camera mainCamera = Camera.main;
         if (mainCamera != null) goalCamera = mainCamera.GetComponent<CameraFollow>();
@@ -134,8 +159,13 @@ public class ScoreManager : MonoBehaviour
         float steps = (netSign * GoalLineX - ball.position.x) / vx; // time to the line (slightly
         float yAtLine = ball.position.y + ball.linearVelocity.y * steps; // negative for a fast ball
         if (Mathf.Abs(yAtLine) > GoalMouthHalfHeight) return;       // caught just past it — still exact)
+        float impactSpeed = ball.linearVelocity.magnitude;          // capture before the restart stops physics
+        Vector2 scoredVelocity = ball.linearVelocity;
 
-        Collider2D goalCol = goalNet != null ? goalNet.GetComponent<Collider2D>() : null;
+        // The upgraded goal keeps its physical outer-net EdgeCollider2D on the visible root
+        // and its scoring BoxCollider2D trigger on a GoalLine child. Use that trigger's bounds
+        // for the existing position-aware net reaction while leaving the root transform untouched.
+        Collider2D goalCol = GoalImpactCollider(goalNet);
         Vector2 impactWorld = new Vector2(netSign * GoalLineX, yAtLine);
         Vector2 impactNorm = NormalizedImpact(goalCol, impactWorld);
         float goalHeight = goalCol != null ? goalCol.bounds.size.y : GoalMouthHalfHeight * 2f;
@@ -183,20 +213,8 @@ public class ScoreManager : MonoBehaviour
             goalCamera.FocusOnScoringBall(impactWorld, netSign,
                                           Mathf.Max(0.1f, replayLeadInSeconds + 0.1f));
 
-        Vector2 hangAnchor = new Vector2(netSign * (GoalLineX + 0.22f),
-                                         Mathf.Clamp(yAtLine, -GoalMouthHalfHeight + 0.08f,
-                                                                 GoalMouthHalfHeight - 0.08f));
-        RestartAfterGoal(conceding, hangAnchor);
-
-        // WHERE the ball actually crossed the goal line (x = the line, y = the projected
-        // crossing height from the frame-accuracy gate above) → the true impact point, and its
-        // position NORMALIZED to the goal collider's real bounds (0..1 left→right, 0..1
-        // bottom→top). Everything the net reaction does is driven off this, so a top-corner goal
-        // reacts differently from a bottom-corner or centre goal — and it survives an art/collider
-        // swap because nothing is a hardcoded pixel/world position.
-        // Net reaction AFTER RestartAfterGoal — its StopAllCoroutines would kill a pulse
-        // started any earlier. Plays over the hang-time hold.
-        PlayNetReaction(goalNet, netSign, impactNorm, impactWorld, goalHeight);
+        RestartAfterGoal(conceding, goalNet, netSign, impactNorm, goalHeight,
+                         impactSpeed, scoredVelocity);
     }
 
     // The world impact point expressed as a 0..1 coordinate inside the goal collider's REAL
@@ -213,6 +231,33 @@ public class ScoreManager : MonoBehaviour
         return new Vector2(Mathf.Clamp01(nx), Mathf.Clamp01(ny));
     }
 
+    static Collider2D GoalImpactCollider(Transform goalNet)
+    {
+        if (goalNet == null) return null;
+
+        Collider2D[] colliders = goalNet.GetComponentsInChildren<Collider2D>(true);
+        for (int i = 0; i < colliders.Length; i++)
+            if (colliders[i] != null && colliders[i].isTrigger)
+                return colliders[i];
+
+        // Backward compatibility with the former hierarchy where the root BoxCollider2D
+        // itself was the trigger.
+        return goalNet.GetComponent<Collider2D>();
+    }
+
+    // BallFlight calls this only for a real collision with a goal root's solid outer-net edge.
+    // It deliberately reuses the same presentation owner without touching scoring/restart state.
+    public void BallHitPhysicalNet(Transform goalNet, Vector2 impactWorld, float impactSpeed)
+    {
+        if (restartInProgress || goalNet == null) return;
+
+        float netSign = goalNet.position.x >= 0f ? 1f : -1f;
+        Collider2D goalCol = GoalImpactCollider(goalNet);
+        Vector2 impactNorm = NormalizedImpact(goalCol, impactWorld);
+        float goalHeight = goalCol != null ? goalCol.bounds.size.y : GoalMouthHalfHeight * 2f;
+        PlayNetReaction(goalNet, netSign, impactNorm, impactWorld, goalHeight, impactSpeed, false);
+    }
+
     // Which team currently attacks the net on the given side (+1 = Right, -1 = Left).
     TeamSide TeamAttacking(float netSign)
     {
@@ -223,12 +268,14 @@ public class ScoreManager : MonoBehaviour
         return null;
     }
 
-    // A goal restart is NOT a quarter start — there is NO sprint duel (Task 2). Play freezes
-    // THE INSTANT the ball hits the net and holds there (hang time — ball in the net, players
-    // where they stand); only then does the original reset sequence run in ResumeAfterGoal:
+    // A goal restart is NOT a quarter start — there is NO sprint duel (Task 2). Swimmers freeze
+    // the instant a valid line crossing is accepted, while the scored ball alone finishes a short
+    // presentation-only absorption into the net; only then does the original reset sequence run:
     // ball to centre + overview camera, the CONCEDING team set up with the ball, a silent
     // pause, then play resumes naturally with that team in possession.
-    void RestartAfterGoal(TeamSide concedingTeam, Vector2 hangAnchor)
+    void RestartAfterGoal(TeamSide concedingTeam, Transform goalNet, float netSign,
+                          Vector2 impactNorm, float goalHeight, float impactSpeed,
+                          Vector2 scoredVelocity)
     {
         restartInProgress = true; // cleared at the end of ResumeAfterGoal (Phase 4)
         MatchContext ctx = MatchContext.Instance;
@@ -239,21 +286,22 @@ public class ScoreManager : MonoBehaviour
             ctx.ClearGrabBan();
             ctx.FreezeAll();                      // Phase 0: everyone holds where they stand
         }
-        // A counted goal is already fully inside the net. Take it out of physics on this
-        // exact frame and anchor it behind the goal line so no hard shot can rebound back
-        // into the border/play area before the scoring sequence completes.
+        // From this accepted scoring frame onward the goal sequence owns the ball. Disable real
+        // collision immediately (so a queued back-net callback cannot reflect it out), but keep
+        // its current pose; AbsorbScoredBall advances it continuously deeper instead of snapping.
         if (ball != null)
         {
             ball.transform.SetParent(null);
             ball.linearVelocity = Vector2.zero;
             ball.angularVelocity = 0f;
             ball.simulated = false;
-            SetBallPose(hangAnchor);
         }
 
         if (TouchControls.Instance != null) TouchControls.Instance.SetGameplayVisible(false); // no UI during the restart
         StopAllCoroutines();
-        StartCoroutine(ResumeAfterGoal(concedingTeam));
+        ClearAllNetReactions();
+        StartCoroutine(ResumeAfterGoal(concedingTeam, goalNet, netSign, impactNorm,
+                                       goalHeight, impactSpeed, scoredVelocity));
     }
 
     // Goal restart flow, no sprint duel:
@@ -263,9 +311,17 @@ public class ScoreManager : MonoBehaviour
     //   Phase 2  natural restart spread inside each half; the CONCEDING team takes the ball at centre
     //   Phase 3  silent restart pause (postGoalPauseSeconds): no movement / pass / shoot / steal
     //   Phase 4  un-freeze; the team in possession begins the attack naturally
-    IEnumerator ResumeAfterGoal(TeamSide concedingTeam)
+    IEnumerator ResumeAfterGoal(TeamSide concedingTeam, Transform goalNet, float netSign,
+                                Vector2 impactNorm, float goalHeight, float impactSpeed,
+                                Vector2 scoredVelocity)
     {
         MatchContext ctx = MatchContext.Instance;
+
+        // Let the accepted ball continue visibly into the back net under deterministic,
+        // collider-free absorption. This can never rebound toward the pool and its poses are
+        // appended to the already-captured replay clip.
+        yield return StartCoroutine(AbsorbScoredBall(goalNet, netSign, impactNorm, goalHeight,
+                                                      impactSpeed, scoredVelocity));
 
         // Phase 0 — first let the live goal reaction read, then replay the actual rolling match
         // history while gameplay remains frozen. GoalReplaySystem restores this exact in-net
@@ -275,6 +331,11 @@ public class ScoreManager : MonoBehaviour
         if (replay != null && replay.HasCapturedGoalReplay)
         {
             yield return StartCoroutine(BallNetBob(Mathf.Max(0f, replayLeadInSeconds)));
+            // The clip already owns the captured deformation frames. Enter replay from a clean
+            // settled live state so a still-running live coroutine cannot fight replay material
+            // values or restore a half-deformed overlay afterward.
+            ClearAllNetReactions();
+            replay.CaptureGoalPostFrame(true);
             yield return replay.StartCoroutine(replay.PlayCapturedGoalReplay());
             yield return StartCoroutine(BallNetBob(Mathf.Max(0f, replayReturnHoldSeconds)));
         }
@@ -289,6 +350,12 @@ public class ScoreManager : MonoBehaviour
 
         // Phase 1 — celebration settle.
         yield return new WaitForSeconds(goalFreezeSeconds);
+
+        // A goal ends every unfinished TEMPORARY exclusion. Restore those roster slots immediately
+        // before formation placement so all eligible players take part in the restart; permanent
+        // removals live outside activeExclusions and are deliberately never restored.
+        if (ExclusionManager.Instance != null)
+            ExclusionManager.Instance.EndTemporaryExclusionsForRestart();
 
         // Phase 2 — natural spread (not a rigid goal-line); the conceding team gets the restart
         // at exact centre with the ball in hand (mates spread behind in their own half), while
@@ -344,9 +411,61 @@ public class ScoreManager : MonoBehaviour
             float y = Mathf.Sin(t * NetBobRate + phase) * NetBobAmpY * ease;
             float x = Mathf.Sin(t * NetBobRate * 0.55f + phase) * NetBobAmpX * ease;
             SetBallPose(rest + new Vector2(x, y));
+            if (GoalReplaySystem.Instance != null)
+                GoalReplaySystem.Instance.CaptureGoalPostFrame();
             yield return null;
         }
         if (ball != null) SetBallPose(rest);
+        if (GoalReplaySystem.Instance != null)
+            GoalReplaySystem.Instance.CaptureGoalPostFrame();
+    }
+
+    IEnumerator AbsorbScoredBall(Transform goalNet, float netSign, Vector2 impactNorm,
+                                 float goalHeight, float impactSpeed, Vector2 incomingVelocity)
+    {
+        if (ball == null) yield break;
+
+        Vector2 start = ball.transform.position;
+        float speed01 = Mathf.InverseLerp(4f, 20f, impactSpeed);
+        float travel = Mathf.Lerp(ScoredBallMinTravel, ScoredBallMaxTravel, speed01);
+        float startDepth = netSign * start.x;
+        float targetDepth = Mathf.Max(startDepth, GoalLineX) + travel;
+        targetDepth = Mathf.Min(targetDepth, GoalLineX + 0.62f);
+        targetDepth = Mathf.Max(targetDepth, startDepth); // never pull an already-deep ball outward
+
+        Vector2 direction = incomingVelocity.sqrMagnitude > 0.001f
+            ? incomingVelocity.normalized : new Vector2(netSign, 0f);
+        Vector2 target = new Vector2(
+            netSign * targetDepth,
+            Mathf.Clamp(start.y + direction.y * travel * 0.28f,
+                        -GoalMouthHalfHeight + 0.08f, GoalMouthHalfHeight - 0.08f));
+
+        float started = Time.unscaledTime;
+        bool netImpactPlayed = false;
+        while (Time.unscaledTime - started < ScoredBallAbsorbSeconds)
+        {
+            float t = Mathf.Clamp01((Time.unscaledTime - started) / ScoredBallAbsorbSeconds);
+            float eased = 1f - Mathf.Pow(1f - t, 3f); // fast arrival, naturally losing energy
+            SetBallPose(Vector2.LerpUnclamped(start, target, eased));
+
+            if (!netImpactPlayed && t >= 0.52f)
+            {
+                netImpactPlayed = true;
+                Vector2 actualImpact = ball.transform.position;
+                PlayNetReaction(goalNet, netSign, impactNorm, actualImpact,
+                                goalHeight, impactSpeed, true);
+            }
+
+            if (GoalReplaySystem.Instance != null)
+                GoalReplaySystem.Instance.CaptureGoalPostFrame();
+            yield return null;
+        }
+
+        SetBallPose(target);
+        if (!netImpactPlayed)
+            PlayNetReaction(goalNet, netSign, impactNorm, target, goalHeight, impactSpeed, true);
+        if (GoalReplaySystem.Instance != null)
+            GoalReplaySystem.Instance.CaptureGoalPostFrame();
     }
 
     void SetBallPose(Vector2 position)
@@ -384,73 +503,162 @@ public class ScoreManager : MonoBehaviour
         ball.transform.position = Vector3.zero;  // transform -> exact (0,0,0)
     }
 
-    // ---- net reaction: a springy squash on the goal sprite + an impact ripple, LOCALIZED to
-    // where the ball actually hit (Task 2) ----
-    // Cheapest thing that reads as "the ball hit the net HERE": the goal object gets one strong
-    // bulge (scale + a push that leans toward the struck spot) that wobbles back on a damped
-    // spring, plus an expanding white ring at the exact crossing point. A top-corner goal kicks
-    // the net up-and-out, a bottom-corner goal down-and-out, and a centre goal straight out;
-    // corner hits punch a touch harder. No cloth sim, no new art — hand-rolled Lerp/sine on the
-    // existing net sprite, all driven by the normalized impact so an art swap needs no retuning.
-
-    void PlayNetReaction(Transform goalNet, float netSign, Vector2 impactNorm, Vector2 impactWorld, float goalHeight)
+    // ---- localized net reaction ----
+    // Each goal keeps its original combined sprite and Sprite-Lit material untouched. A child
+    // overlay renders ONLY displaced warm-yellow net samples; the base sprite below guarantees
+    // that transparent displaced pixels can never expose the blue pool as a whole-goal flash.
+    void PlayNetReaction(Transform goalNet, float netSign, Vector2 impactNorm,
+                         Vector2 impactWorld, float goalHeight, float impactSpeed,
+                         bool showImpactRing)
     {
-        // a previous pulse could have been cut short by StopAllCoroutines — restore it first
-        if (pulseNet != null)
+        NetReactionState state = EnsureNetReaction(goalNet);
+        if (state != null)
         {
-            pulseNet.localScale = pulseScale0;
-            pulseNet.localPosition = pulsePos0;
-            pulseNet = null;
+            SyncNetOverlay(state);
+            Bounds spriteBounds = state.source.sprite.bounds;
+            Vector3 localImpact = goalNet.InverseTransformPoint(impactWorld);
+            Vector3 localOutward = goalNet.InverseTransformVector(new Vector3(netSign, 0f, 0f));
+            Vector2 directionUv = new Vector2(
+                localOutward.x / Mathf.Max(spriteBounds.size.x, 0.001f),
+                localOutward.y / Mathf.Max(spriteBounds.size.y, 0.001f));
+
+            Vector3 scale = goalNet.lossyScale;
+            float averageScale = Mathf.Max(0.001f,
+                (Mathf.Abs(scale.x) + Mathf.Abs(scale.y)) * 0.5f);
+            float radiusWorld = Mathf.Clamp(goalHeight * 0.62f, 0.82f, 1.15f);
+            float radiusLocal = radiusWorld / averageScale;
+
+            state.material.SetVector(ImpactLocalId,
+                new Vector4(localImpact.x, localImpact.y, 0f, 0f));
+            state.material.SetVector(DeformDirectionUvId,
+                new Vector4(directionUv.x, directionUv.y, 0f, 0f));
+            state.material.SetFloat(DeformRadiusId, radiusLocal);
+            state.material.SetFloat(DeformAmountId, 0f);
+            state.overlay.enabled = true;
+
+            float speedStrength = Mathf.Lerp(0.58f, 1.38f,
+                Mathf.InverseLerp(3f, 20f, impactSpeed));
+            float cornerStrength = Mathf.Lerp(1f, 1.06f,
+                Mathf.Abs(impactNorm.y * 2f - 1f));
+            state.generation++;
+            if (state.routine != null) StopCoroutine(state.routine);
+            state.routine = StartCoroutine(LocalizedNetWobble(
+                state, speedStrength * cornerStrength, state.generation));
         }
-        if (goalNet != null)
-        {
-            pulseNet = goalNet;
-            pulseScale0 = goalNet.localScale;
-            pulsePos0 = goalNet.localPosition;
-            StartCoroutine(NetPulse(goalNet, netSign, impactNorm, goalHeight));
-        }
-        SpawnNetRipple(impactWorld);
+        if (showImpactRing) SpawnNetRipple(impactWorld);
     }
 
-    IEnumerator NetPulse(Transform net, float sign, Vector2 impactNorm, float goalHeight)
+    IEnumerator LocalizedNetWobble(NetReactionState state, float strength, int generation)
     {
-        Vector3 s0 = pulseScale0;
-        Vector3 p0 = pulsePos0;
+        const float Duration = 1.10f;
+        const float PushSeconds = 0.16f;
+        const float MaxWorldPush = 0.16f;
+        float started = Time.unscaledTime;
 
-        // Impact as signed offsets from the net centre, in [-1, 1]:
-        //   iy < 0 = hit LOW, iy > 0 = hit HIGH (top/bottom corner is the salient cue).
-        float iy = Mathf.Clamp(impactNorm.y * 2f - 1f, -1f, 1f);
-        float corner = Mathf.Abs(iy);              // 0 dead-centre → 1 hard in a corner
-        float intensity = 1f + 0.6f * corner;      // corner goals punch a bit harder
-        // Vertical throw is a fraction of the goal's REAL height (not a baked distance), so it
-        // scales with whatever goal art/collider is in the scene.
-        float yThrow = 0.10f * goalHeight;
-
-        const float Dur = 0.45f;
-        float t0 = Time.time;
-        while (Time.time - t0 < Dur && net != null)
+        while (state != null && generation == state.generation && state.overlay != null &&
+               Time.unscaledTime - started < Duration)
         {
-            float t = (Time.time - t0) / Dur;
-            // damped spring: a hard bulge on impact, wobbling back to rest
-            float bulge = Mathf.Sin(t * 18f) * Mathf.Exp(-4.5f * t);
+            float elapsed = Time.unscaledTime - started;
+            float wobble;
+            if (elapsed < PushSeconds)
+            {
+                float push01 = Mathf.Clamp01(elapsed / PushSeconds);
+                wobble = push01 * push01 * (3f - 2f * push01); // readable build into the stretch
+            }
+            else
+            {
+                float springTime = elapsed - PushSeconds;
+                wobble = Mathf.Cos(springTime * 14f) * Mathf.Exp(-3.15f * springTime);
+            }
 
-            // outward (into the net) stretch on x; a y-squash that folds a little MORE for a
-            // corner hit (the net creases where it was struck)
-            net.localScale = new Vector3(
-                s0.x * (1f + 0.22f * intensity * bulge),
-                s0.y * (1f - (0.10f + 0.06f * corner) * bulge),
-                s0.z);
-
-            // nudge outward from the pool (sign*x) AND toward the struck height (iy*y): a top
-            // goal leans the net up-and-out, a bottom goal down-and-out, a centre goal straight out
-            net.localPosition = p0 + new Vector3(
-                sign * 0.09f * intensity * bulge,
-                iy * yThrow * bulge,
-                0f);
+            state.material.SetFloat(DeformAmountId, MaxWorldPush * strength * wobble);
+            state.material.SetFloat(WavePhaseId, elapsed * 13f);
             yield return null;
         }
-        if (net != null) { net.localScale = s0; net.localPosition = p0; }
-        if (pulseNet == net) pulseNet = null;
+
+        if (state == null || generation != state.generation) yield break;
+        state.material.SetFloat(DeformAmountId, 0f);
+        state.overlay.enabled = false;
+        state.routine = null;
+    }
+
+    void PrepareGoalNetOverlays()
+    {
+        Goal[] goals = Object.FindObjectsByType<Goal>(FindObjectsInactive.Include);
+        for (int i = 0; i < goals.Length; i++)
+            if (goals[i] != null) EnsureNetReaction(goals[i].transform);
+    }
+
+    NetReactionState EnsureNetReaction(Transform goalNet)
+    {
+        if (goalNet == null) return null;
+        if (netReactions.TryGetValue(goalNet, out NetReactionState existing)) return existing;
+
+        SpriteRenderer source = goalNet.GetComponent<SpriteRenderer>();
+        Shader shader = Resources.Load<Shader>(LocalizedNetShaderResource);
+        if (shader == null) shader = Shader.Find(LocalizedNetShaderName);
+        if (source == null || source.sprite == null || shader == null) return null;
+
+        GameObject overlayObject = new GameObject("LocalizedNetOverlay");
+        overlayObject.hideFlags = HideFlags.DontSave;
+        overlayObject.transform.SetParent(goalNet, false);
+        SpriteRenderer overlay = overlayObject.AddComponent<SpriteRenderer>();
+        Material material = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
+        material.SetColor("_Color", Color.white);
+        material.SetColor("_RendererColor", Color.white);
+        overlay.sharedMaterial = material;
+        overlay.color = Color.white;
+        overlay.enabled = false;
+
+        NetReactionState state = new NetReactionState
+        {
+            goal = goalNet,
+            source = source,
+            overlay = overlay,
+            material = material
+        };
+        netReactions.Add(goalNet, state);
+        SyncNetOverlay(state);
+        return state;
+    }
+
+    static void SyncNetOverlay(NetReactionState state)
+    {
+        if (state == null || state.source == null || state.overlay == null) return;
+        SpriteRenderer source = state.source;
+        SpriteRenderer overlay = state.overlay;
+        overlay.sprite = source.sprite;
+        overlay.flipX = source.flipX;
+        overlay.flipY = source.flipY;
+        overlay.drawMode = source.drawMode;
+        overlay.size = source.size;
+        overlay.maskInteraction = source.maskInteraction;
+        overlay.spriteSortPoint = source.spriteSortPoint;
+        overlay.sortingLayerID = source.sortingLayerID;
+        overlay.sortingOrder = source.sortingOrder + 1;
+        overlay.color = Color.white;
+    }
+
+    void ClearAllNetReactions()
+    {
+        foreach (NetReactionState state in netReactions.Values)
+        {
+            if (state == null) continue;
+            state.generation++;
+            state.routine = null;
+            if (state.material != null) state.material.SetFloat(DeformAmountId, 0f);
+            if (state.overlay != null) state.overlay.enabled = false;
+        }
+    }
+
+    void OnDisable() { ClearAllNetReactions(); }
+
+    void OnDestroy()
+    {
+        ClearAllNetReactions();
+        foreach (NetReactionState state in netReactions.Values)
+            if (state != null && state.material != null) Destroy(state.material);
+        netReactions.Clear();
     }
 
     // Expanding, fading white ring at the EXACT point the ball crossed the net (the projected

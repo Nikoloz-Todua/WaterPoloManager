@@ -15,19 +15,28 @@ public sealed class GoalReplaySystem : MonoBehaviour
 
     [Header("Rolling recording")]
     [SerializeField, Range(10f, 30f)] private float recordFramesPerSecond = 20f;
-    [SerializeField, Range(2f, 6f)] private float recordedSeconds = 4f;
+    [SerializeField, Range(3f, 7f)] private float recordedSeconds = 5f;
+    [Tooltip("Frozen live goal presentation appended after line crossing: net impact and settle.")]
+    [SerializeField, Range(0.7f, 1.6f)] private float postGoalCaptureSeconds = 1.2f;
 
-    [Header("Three-pass goal highlight")]
-    [Tooltip("Only the final shot-to-net moment is repeated; the full rolling buffer is not shown.")]
-    [SerializeField, Range(0.8f, 2f)] private float highlightSourceSeconds = 1.25f;
-    [SerializeField, Range(1f, 1.2f)] private float replayZoomOut = 1.04f;
-    [SerializeField, Range(0f, 0.6f)] private float finalFrameHoldSeconds = 0.28f;
-    [SerializeField, Range(0.04f, 0.3f)] private float transitionSeconds = 0.14f;
-    [SerializeField, Range(0.02f, 0.2f)] private float repeatCutSeconds = 0.08f;
+    [Header("Two-pass goal replay")]
+    [SerializeField, Range(0.8f, 2.5f)] private float fullActionPreRollSeconds = 1.5f;
+    [SerializeField, Range(2f, 4.5f)] private float fullActionMinimumSeconds = 3.0f;
+    [SerializeField, Range(0f, 0.4f)] private float slowMotionReleasePreRoll = 0.12f;
+    [SerializeField, Range(0.35f, 1.2f)] private float slowApproachSourceSeconds = 0.72f;
+    [SerializeField, Range(0.25f, 0.7f)] private float slowApproachSpeed = 0.42f;
+    [SerializeField, Range(0.4f, 0.85f)] private float slowPostGoalSpeed = 0.58f;
+    [SerializeField, Range(0f, 1f)] private float finalFrameHoldSeconds = 0.58f;
+    [SerializeField, Range(0.08f, 0.4f)] private float transitionSeconds = 0.2f;
+    [SerializeField, Range(0.05f, 0.35f)] private float repeatCutSeconds = 0.16f;
 
-    // A compact broadcast progression: real speed, then two increasingly deliberate looks at
-    // the same recorded scoring moment. Static storage means no pass array is allocated on goal.
-    static readonly float[] ReplayPassSpeeds = { 1f, 0.82f, 0.68f };
+    const string LocalizedNetShaderName = "WaterPolo/LocalizedGoalNet";
+    static readonly int ImpactLocalId = Shader.PropertyToID("_ImpactLocal");
+    static readonly int DeformDirectionUvId = Shader.PropertyToID("_DeformDirectionUV");
+    static readonly int DeformAmountId = Shader.PropertyToID("_DeformAmount");
+    static readonly int DeformRadiusId = Shader.PropertyToID("_DeformRadius");
+    static readonly int WavePhaseId = Shader.PropertyToID("_WavePhase");
+    const float GoalLineWorldX = 7f;
 
     Transform[] trackedRoots;
     SpriteRenderer[] trackedSprites;
@@ -60,6 +69,8 @@ public sealed class GoalReplaySystem : MonoBehaviour
     bool applyingReplayFrame;
     bool skipRequested;
     float playbackSourceTime;
+    int activeReplayPass;
+    float nextGoalPostCaptureAt;
 
     GameObject replayUi;
     Image fadeImage;
@@ -178,6 +189,12 @@ public sealed class GoalReplaySystem : MonoBehaviour
         Goalkeeper[] keepers = Object.FindObjectsByType<Goalkeeper>(FindObjectsInactive.Include);
         for (int i = 0; i < keepers.Length; i++) AddRoot(keepers[i] != null ? keepers[i].transform : null, roots, rootSet);
 
+        // Goal roots include the unchanged base sprite plus ScoreManager's lightweight net-only
+        // overlay. Recording them lets the actual localized deformation and gentle root bob play
+        // back from captured values instead of manufacturing a separate replay-only effect.
+        Goal[] goals = Object.FindObjectsByType<Goal>(FindObjectsInactive.Include);
+        for (int i = 0; i < goals.Length; i++) AddRoot(goals[i] != null ? goals[i].transform : null, roots, rootSet);
+
         MatchContext ctx = MatchContext.Instance;
         if (ctx != null && ctx.Ball != null) AddRoot(ctx.Ball.transform, roots, rootSet);
 
@@ -245,14 +262,16 @@ public sealed class GoalReplaySystem : MonoBehaviour
 
         float fps = Mathf.Clamp(recordFramesPerSecond, 10f, 30f);
         sampleInterval = 1f / fps;
-        int capacity = Mathf.Max(2, Mathf.CeilToInt(Mathf.Clamp(recordedSeconds, 2f, 6f) * fps) + 2);
+        int capacity = Mathf.Max(2, Mathf.CeilToInt(Mathf.Clamp(recordedSeconds, 3f, 7f) * fps) + 2);
+        int postCapacity = Mathf.Max(2,
+            Mathf.CeilToInt(Mathf.Clamp(postGoalCaptureSeconds, 0.7f, 1.6f) * fps) + 2);
         history = new ReplayFrame[capacity];
         for (int i = 0; i < capacity; i++) history[i] = new ReplayFrame(trackedRoots.Length, trackedSprites.Length);
 
         // Everything needed by the goal path is allocated here at match startup. Capturing a
         // goal now only stores references to already-recorded frames; it does not manufacture a
         // second tree of pose arrays on the most timing-sensitive frame of the match.
-        latestGoal = new GoalClip(capacity);
+        latestGoal = new GoalClip(capacity, postCapacity, trackedRoots.Length, trackedSprites.Length);
         liveRestoreFrame = new ReplayFrame(trackedRoots.Length, trackedSprites.Length);
         liveBodyStates = new BodyRuntimeState[trackedBodies.Length];
         hiddenRendererStates = new RendererRuntimeState[trackedAuxiliaryRenderers.Length];
@@ -298,6 +317,8 @@ public sealed class GoalReplaySystem : MonoBehaviour
         InitializeTracking();
         if (!trackingReady || latestGoal == null) return;
         latestGoal.frameCount = 0;
+        latestGoal.postFrameCount = 0;
+        latestGoal.acceptingPostFrames = false;
 
         MatchContext ctx = MatchContext.Instance;
         if (recordingInterrupted && ctx != null && !ctx.PlayFrozen && Time.timeScale > 0f)
@@ -311,7 +332,7 @@ public sealed class GoalReplaySystem : MonoBehaviour
 
         int oldest = (historyWriteIndex - historyCount + history.Length) % history.Length;
         int newest = (historyWriteIndex - 1 + history.Length) % history.Length;
-        float cutoff = history[newest].capturedAt - Mathf.Clamp(recordedSeconds, 2f, 6f);
+        float cutoff = history[newest].capturedAt - Mathf.Clamp(recordedSeconds, 3f, 7f);
 
         // Keep one frame immediately before the cutoff so interpolation begins smoothly, while
         // still bounding the clip by real elapsed time rather than an assumed sample count.
@@ -337,6 +358,58 @@ public sealed class GoalReplaySystem : MonoBehaviour
         latestGoal.awayScore = awayScore;
         latestGoal.shooter = shooter;
         latestGoal.goalSign = goalSign >= 0f ? 1f : -1f;
+        latestGoal.shooterRootIndex = RootIndexOf(shooter);
+
+        float firstCapturedAt = latestGoal.frames[0].capturedAt;
+        float goalCapturedAt = latestGoal.frames[clipCount - 1].capturedAt;
+        latestGoal.goalSourceTime = Mathf.Max(0f, goalCapturedAt - firstCapturedAt);
+
+        float releaseAt = ctx != null && shooter != null && ctx.LastReleaser == shooter
+            ? ctx.LastReleaseUnscaledTime : -10f;
+        latestGoal.releaseSourceTime = releaseAt >= firstCapturedAt && releaseAt <= goalCapturedAt
+            ? releaseAt - firstCapturedAt
+            : Mathf.Max(0f, latestGoal.goalSourceTime - 1.05f);
+
+        latestGoal.postCaptureDeadline = goalCapturedAt +
+            Mathf.Clamp(postGoalCaptureSeconds, 0.7f, 1.6f);
+        latestGoal.acceptingPostFrames = true;
+        nextGoalPostCaptureAt = goalCapturedAt + sampleInterval;
+    }
+
+    // ScoreManager calls this during its collider-free scored-ball absorption and in-net settle.
+    // It appends presentation poses to the already-captured clip at the recorder's normal cadence;
+    // gameplay remains frozen and no match physics is replayed or re-simulated.
+    public void CaptureGoalPostFrame(bool force = false)
+    {
+        if (!trackingReady || replayPlaying || latestGoal == null ||
+            !latestGoal.acceptingPostFrames)
+            return;
+
+        float now = Time.unscaledTime;
+        if ((!force && now > latestGoal.postCaptureDeadline) ||
+            latestGoal.postFrameCount >= latestGoal.postFrames.Length ||
+            latestGoal.frameCount >= latestGoal.frames.Length)
+        {
+            latestGoal.acceptingPostFrames = false;
+            return;
+        }
+        if (!force && now < nextGoalPostCaptureAt) return;
+
+        ReplayFrame destination = latestGoal.postFrames[latestGoal.postFrameCount++];
+        CaptureInto(destination);
+        destination.capturedAt = now;
+        latestGoal.frames[latestGoal.frameCount++] = destination;
+
+        nextGoalPostCaptureAt += sampleInterval;
+        if (nextGoalPostCaptureAt <= now) nextGoalPostCaptureAt = now + sampleInterval;
+    }
+
+    int RootIndexOf(Transform root)
+    {
+        if (root == null || trackedRoots == null) return -1;
+        for (int i = 0; i < trackedRoots.Length; i++)
+            if (trackedRoots[i] == root) return i;
+        return -1;
     }
 
     public IEnumerator PlayCapturedGoalReplay()
@@ -351,57 +424,72 @@ public sealed class GoalReplaySystem : MonoBehaviour
         replayPlaying = true;
         applyingReplayFrame = true;
         skipRequested = false;
+        latestGoal.acceptingPostFrames = false;
 
         SnapshotLivePresentation();
         PrepareReplayPresentation(latestGoal);
         float duration = ClipDuration(latestGoal);
-        float highlightStart = Mathf.Max(0f, duration - Mathf.Max(0.1f, highlightSourceSeconds));
-        playbackSourceTime = highlightStart;
+        float goalTime = Mathf.Clamp(latestGoal.goalSourceTime, 0f, duration);
+        float releaseTime = Mathf.Clamp(latestGoal.releaseSourceTime, 0f, goalTime);
+        float fullStart = Mathf.Max(0f, releaseTime - fullActionPreRollSeconds);
+        float slowStart = Mathf.Max(0f, releaseTime - slowMotionReleasePreRoll);
+        playbackSourceTime = fullStart;
+        activeReplayPass = 0;
         SetFade(1f);
         replayUi.SetActive(true);
 
         yield return Fade(1f, 0f, transitionSeconds);
 
-        // Repeat only the decisive final approach, never the whole rolling buffer. Every pass
-        // reads the same immutable recorded frames, so it cannot re-simulate into a different
-        // shot. The progressively slower passes remain compact while making the net crossing
-        // easy to read.
-        for (int pass = 0; pass < ReplayPassSpeeds.Length && !skipRequested; pass++)
+        // PASS 1 — enough build-up to see the shooter prepare/release, then the complete flight,
+        // goal, net deformation and settle. It remains normal-speed whenever enough source exists;
+        // only an unusually short real clip is slowed enough to reach a sensible minimum duration.
+        if (replayBadge != null)
+            replayBadge.text = "<color=#FF3B4D>●</color>  REPLAY  1/2  •  FULL ACTION";
+        float fullSourceLength = Mathf.Max(0.01f, duration - fullStart);
+        float fullSpeed = Mathf.Min(1f,
+            fullSourceLength / Mathf.Max(0.1f, fullActionMinimumSeconds));
+        while (playbackSourceTime < duration && !skipRequested)
         {
-            if (replayBadge != null)
-            {
-                if (pass == 0) replayBadge.text = "<color=#FF3B4D>●</color>  REPLAY  1/3";
-                else if (pass == 1) replayBadge.text = "<color=#FF3B4D>●</color>  REPLAY  2/3";
-                else replayBadge.text = "<color=#FF3B4D>●</color>  REPLAY  3/3";
-            }
+            playbackSourceTime = Mathf.Min(duration,
+                playbackSourceTime + Time.unscaledDeltaTime * fullSpeed);
+            yield return null;
+        }
 
-            playbackSourceTime = highlightStart;
-            float speed = ReplayPassSpeeds[pass];
+        float hold = 0f;
+        while (hold < 0.30f && !skipRequested)
+        {
+            hold += Time.unscaledDeltaTime;
+            yield return null;
+        }
+
+        // PASS 2 — release-to-goal from an offset shooter-side composition. The opening moves at
+        // near-normal speed; only the final approach and post-goal settle enter deliberate slow-mo.
+        if (!skipRequested)
+        {
+            yield return Fade(0f, 1f, repeatCutSeconds);
+            activeReplayPass = 1;
+            playbackSourceTime = slowStart;
+            if (replayBadge != null)
+                replayBadge.text = "<color=#FF3B4D>●</color>  REPLAY  2/2  •  SLOW MOTION";
+            yield return null; // pose the release-side camera while the cut is black
+            yield return Fade(1f, 0f, repeatCutSeconds);
+
+            float slowApproachStart = Mathf.Max(slowStart, goalTime - slowApproachSourceSeconds);
             while (playbackSourceTime < duration && !skipRequested)
             {
+                float speed = playbackSourceTime < slowApproachStart ? 0.9f
+                    : playbackSourceTime < goalTime ? slowApproachSpeed
+                    : slowPostGoalSpeed;
                 playbackSourceTime = Mathf.Min(duration,
                     playbackSourceTime + Time.unscaledDeltaTime * speed);
                 yield return null;
             }
 
-            if (skipRequested) break;
-            playbackSourceTime = duration;
-
-            bool finalPass = pass == ReplayPassSpeeds.Length - 1;
-            float holdDuration = finalPass ? finalFrameHoldSeconds : 0.06f;
-            float hold = 0f;
-            while (hold < holdDuration && !skipRequested)
+            hold = 0f;
+            while (hold < finalFrameHoldSeconds && !skipRequested)
             {
                 hold += Time.unscaledDeltaTime;
                 yield return null;
-            }
-
-            if (!finalPass && !skipRequested)
-            {
-                yield return Fade(0f, 1f, repeatCutSeconds);
-                playbackSourceTime = highlightStart;
-                yield return null; // pose the first highlight frame while the cut is black
-                yield return Fade(1f, 0f, repeatCutSeconds);
             }
         }
 
@@ -526,6 +614,10 @@ public sealed class GoalReplaySystem : MonoBehaviour
             SpriteRenderer sr = trackedSprites[i];
             if (sr == null) continue;
             Transform visual = sr.transform;
+            bool localizedNet = sr.gameObject.name == "LocalizedNetOverlay";
+            Material material = localizedNet ? sr.sharedMaterial : null;
+            localizedNet = material != null && material.shader != null &&
+                           material.shader.name == LocalizedNetShaderName;
             frame.sprites[i] = new SpritePose
             {
                 sprite = sr.sprite,
@@ -538,7 +630,13 @@ public sealed class GoalReplaySystem : MonoBehaviour
                 localRotation = visual.localRotation,
                 localScale = visual.localScale,
                 sortingLayerId = sr.sortingLayerID,
-                sortingOrder = sr.sortingOrder
+                sortingOrder = sr.sortingOrder,
+                localizedNet = localizedNet,
+                netImpactLocal = localizedNet ? material.GetVector(ImpactLocalId) : Vector4.zero,
+                netDirectionUv = localizedNet ? material.GetVector(DeformDirectionUvId) : Vector4.zero,
+                netAmount = localizedNet ? material.GetFloat(DeformAmountId) : 0f,
+                netRadius = localizedNet ? material.GetFloat(DeformRadiusId) : 0f,
+                netPhase = localizedNet ? material.GetFloat(WavePhaseId) : 0f
             };
         }
 
@@ -620,6 +718,25 @@ public sealed class GoalReplaySystem : MonoBehaviour
             sr.sortingLayerID = chosen.sortingLayerId;
             sr.sortingOrder = chosen.sortingOrder;
 
+            if (pa.localizedNet || pb.localizedNet)
+            {
+                Material material = sr.sharedMaterial;
+                if (material != null && material.shader != null &&
+                    material.shader.name == LocalizedNetShaderName)
+                {
+                    material.SetVector(ImpactLocalId,
+                        Vector4.LerpUnclamped(pa.netImpactLocal, pb.netImpactLocal, blend));
+                    material.SetVector(DeformDirectionUvId,
+                        Vector4.LerpUnclamped(pa.netDirectionUv, pb.netDirectionUv, blend));
+                    material.SetFloat(DeformAmountId,
+                        Mathf.LerpUnclamped(pa.netAmount, pb.netAmount, blend));
+                    material.SetFloat(DeformRadiusId,
+                        Mathf.LerpUnclamped(pa.netRadius, pb.netRadius, blend));
+                    material.SetFloat(WavePhaseId,
+                        Mathf.LerpUnclamped(pa.netPhase, pb.netPhase, blend));
+                }
+            }
+
             // A SpriteRenderer on the tracked root shares that root's transform. Reapplying its
             // captured local transform would overwrite the world pose above (and was especially
             // destructive for the tiny Ball root). Child visual transforms remain independent.
@@ -635,25 +752,68 @@ public sealed class GoalReplaySystem : MonoBehaviour
         if (replayCamera != null && a.hasCamera && b.hasCamera)
         {
             Vector3 cameraPosition = Vector3.LerpUnclamped(a.cameraPosition, b.cameraPosition, blend);
-            if (cinematicCamera && ballRootIndex >= 0 && ballRootIndex < a.roots.Length)
+            Quaternion cameraRotation = Quaternion.SlerpUnclamped(
+                a.cameraRotation, b.cameraRotation, blend);
+            float size = Mathf.LerpUnclamped(a.orthographicSize, b.orthographicSize, blend);
+
+            if (cinematicCamera && latestGoal != null && ballRootIndex >= 0 &&
+                ballRootIndex < a.roots.Length)
             {
                 Vector3 ballPosition = Vector3.LerpUnclamped(a.roots[ballRootIndex].position,
                                                               b.roots[ballRootIndex].position, blend);
-                float goalSign = latestGoal != null ? latestGoal.goalSign : Mathf.Sign(ballPosition.x);
+                float goalSign = latestGoal.goalSign;
                 if (Mathf.Abs(goalSign) < 0.5f) goalSign = 1f;
-                Vector3 goalFocus = new Vector3(
-                    Mathf.Clamp(ballPosition.x - goalSign * 1.15f, -5.65f, 5.65f),
-                    Mathf.Clamp(ballPosition.y * 0.62f, -2.35f, 2.35f),
-                    cameraPosition.z);
-                cameraPosition = Vector3.LerpUnclamped(cameraPosition, goalFocus, 0.9f);
+
+                Vector3 shooterPosition = ballPosition - new Vector3(goalSign * 2f, 0f, 0f);
+                int shooterIndex = latestGoal.shooterRootIndex;
+                if (shooterIndex >= 0 && shooterIndex < a.roots.Length)
+                    shooterPosition = Vector3.LerpUnclamped(a.roots[shooterIndex].position,
+                                                             b.roots[shooterIndex].position, blend);
+                Vector3 goalPosition = new Vector3(goalSign * GoalLineWorldX, 0f, ballPosition.z);
+
+                if (activeReplayPass == 0)
+                {
+                    // Full-action broadcast framing: contain shooter, live ball and goal with a
+                    // little breathing room, allowing the original action to read in one shot.
+                    float minX = Mathf.Min(shooterPosition.x, Mathf.Min(ballPosition.x, goalPosition.x));
+                    float maxX = Mathf.Max(shooterPosition.x, Mathf.Max(ballPosition.x, goalPosition.x));
+                    float minY = Mathf.Min(shooterPosition.y, Mathf.Min(ballPosition.y, goalPosition.y));
+                    float maxY = Mathf.Max(shooterPosition.y, Mathf.Max(ballPosition.y, goalPosition.y));
+                    Vector3 focus = new Vector3((minX + maxX) * 0.5f,
+                                                (minY + maxY) * 0.5f, cameraPosition.z);
+                    cameraPosition = Vector3.LerpUnclamped(cameraPosition, focus, 0.92f);
+
+                    float aspect = Mathf.Max(1f, replayCamera.aspect);
+                    float requiredByWidth = (maxX - minX) * 0.5f / aspect + 0.85f;
+                    float requiredByHeight = (maxY - minY) * 0.5f + 0.95f;
+                    size = Mathf.Clamp(Mathf.Max(requiredByWidth, requiredByHeight), 3.65f, 5.25f);
+                }
+                else
+                {
+                    // Shooter-side second look: stay just behind/offset from the release line,
+                    // then tighten toward the goal as the ball approaches. A tiny roll supplies
+                    // an angled sports-camera character without disorienting the 2D pitch.
+                    float approach01 = Mathf.InverseLerp(latestGoal.releaseSourceTime,
+                                                         latestGoal.goalSourceTime,
+                                                         playbackSourceTime);
+                    float verticalSide = Mathf.Abs(shooterPosition.y) > 0.12f
+                        ? Mathf.Sign(shooterPosition.y)
+                        : (latestGoal.playerScored ? 1f : -1f);
+                    Vector3 releaseFocus = Vector3.Lerp(shooterPosition, ballPosition, 0.48f);
+                    Vector3 goalFocus = Vector3.Lerp(ballPosition, goalPosition, 0.48f);
+                    Vector3 focus = Vector3.Lerp(releaseFocus, goalFocus,
+                                                Mathf.SmoothStep(0.18f, 0.82f, approach01));
+                    focus += new Vector3(-goalSign * 0.22f, -verticalSide * 0.20f, 0f);
+                    focus.z = cameraPosition.z;
+                    cameraPosition = Vector3.LerpUnclamped(cameraPosition, focus, 0.94f);
+                    size = Mathf.Lerp(4.35f, 3.72f, Mathf.SmoothStep(0f, 1f, approach01));
+                    cameraRotation = Quaternion.Euler(0f, 0f, verticalSide * goalSign * -2.4f);
+                }
             }
 
             replayCamera.transform.position = cameraPosition;
-            replayCamera.transform.rotation = Quaternion.SlerpUnclamped(a.cameraRotation, b.cameraRotation, blend);
-            float size = Mathf.LerpUnclamped(a.orthographicSize, b.orthographicSize, blend);
-            replayCamera.orthographicSize = cinematicCamera
-                ? Mathf.Clamp(size * replayZoomOut, 4.35f, 5.15f)
-                : size;
+            replayCamera.transform.rotation = cameraRotation;
+            replayCamera.orthographicSize = size;
         }
     }
 
@@ -765,7 +925,7 @@ public sealed class GoalReplaySystem : MonoBehaviour
         badgeRt.anchorMin = badgeRt.anchorMax = new Vector2(0f, 1f);
         badgeRt.pivot = new Vector2(0f, 1f);
         badgeRt.anchoredPosition = new Vector2(34f, -16f);
-        badgeRt.sizeDelta = new Vector2(230f, 48f);
+        badgeRt.sizeDelta = new Vector2(390f, 48f);
 
         goalText = MakeText(replayUi.transform, "GoalReplayTitle", string.Empty, 24f, TextAlignmentOptions.Center);
         RectTransform goalRt = goalText.rectTransform;
@@ -853,16 +1013,26 @@ public sealed class GoalReplaySystem : MonoBehaviour
     sealed class GoalClip
     {
         public readonly ReplayFrame[] frames;
+        public readonly ReplayFrame[] postFrames;
         public int frameCount;
+        public int postFrameCount;
         public bool playerScored;
         public int homeScore;
         public int awayScore;
         public Transform shooter;
         public float goalSign;
+        public int shooterRootIndex;
+        public float releaseSourceTime;
+        public float goalSourceTime;
+        public float postCaptureDeadline;
+        public bool acceptingPostFrames;
 
-        public GoalClip(int capacity)
+        public GoalClip(int historyCapacity, int postCapacity, int rootCount, int spriteCount)
         {
-            frames = new ReplayFrame[capacity];
+            frames = new ReplayFrame[historyCapacity + postCapacity];
+            postFrames = new ReplayFrame[postCapacity];
+            for (int i = 0; i < postFrames.Length; i++)
+                postFrames[i] = new ReplayFrame(rootCount, spriteCount);
         }
     }
 
@@ -905,6 +1075,12 @@ public sealed class GoalReplaySystem : MonoBehaviour
         public Vector3 localScale;
         public int sortingLayerId;
         public int sortingOrder;
+        public bool localizedNet;
+        public Vector4 netImpactLocal;
+        public Vector4 netDirectionUv;
+        public float netAmount;
+        public float netRadius;
+        public float netPhase;
     }
 
     struct BodyRuntimeState

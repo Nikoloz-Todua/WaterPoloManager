@@ -64,14 +64,15 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 | `BotMovement.cs` | Thin component on each bot. Always runs `WaterPoloBrain`. Implements `IAgentBody`. |
 | `WaterPoloAI.cs` | **The shared brain** + `IAgentBody` interface. All AI decisions live here once: carrier (shoot/pass/**drive**/dribble), support (get open), presser (nearest chases), defender (hold shape). 🟡 New: **drives** (beaten marker + clear lane → burst to 2m, shoot/kick-out/abort) and **picks/screens** (nominated screener plants on the carrier's marker; rubbing past = short "beaten" boost). Works, needs tuning. **This is C# state-machine AI — NOT an LLM.** |
 | `TeamSide.cs` | One per team. Holds goals + roster (`members`), formation math (auto-spreads ANY number of players), passing/positioning logic, **attacking-spacing + tactics tunables (center-feed, counter, shot-quality threshold, free-throw clearance), shot-quality + pass-risk scoring, and 4 defense modes — Press/Zone/Drop/MPress — incl. man-up 4-2 umbrella + man-down zone shapes**. 🟡 New: **dynamic Centre** (fights for inside water goal-side of its guard at 2m), wider lanes + weak-side wing drift, receiver-shot-quality pass bonus, drive/screen helpers (`DrivePoint`, `GetScreenSpot`, `FindScreenerForCarrier`), and **bot adaptive defense** (`EvaluateDefenseMode`, auto-detected `isAI`: Drop when man-down / protecting a late lead / Centre conceded 2+; Press otherwise). Scales 2v2 → 6v6 with no code change. |
-| `MatchContext.cs` | Singleton "match truth": ball position, possession + last toucher (`NoteTouch` for deflections), post-release grab cooldown (`releaseGrabDelay` 0.5s), freeze flag, shot-clock grab-ban, kickoff-pass flag, **free-throw state, keeper-hold flag, counterattack window, player goal-line clamp (`playerLimitX`)**, halftime `SwapEnds()`, `GiveBallTo()` / `ForceDropHeldBall()`, `EnemyOf()`, **`IsProtectedKeeper(carrier)`** (the keeper-steal safe-zone rule — true while a keeper carries the ball inside its safe zone, Task 5). |
+| `MatchContext.cs` | Singleton "match truth": ball position, possession + last toucher (`NoteTouch` for deflections), post-release grab cooldown (`releaseGrabDelay` 0.5s), freeze flag, shot-clock grab-ban, kickoff-pass flag, **free-throw state, keeper-hold flag, counterattack window, player goal-line clamp (`playerLimitX`)**, halftime `SwapEnds()`, `GiveBallTo()` / `ForceDropHeldBall()`, `EnemyOf()`, **`IsProtectedKeeper(carrier)`** (the keeper-steal safe-zone rule — true while a keeper carries the ball inside its safe zone, Task 5). `NoteRelease` also records unscaled release time for the existing replay buffer's release-anchored second pass. |
 | `TeamManager.cs` | On `GameManager`. Auto-switches control to the ball-holder after `autoSwitchDelay` (0.5s — so you keep control to chase your own loose ball); manual **C** / touch SWITCH (skips excluded); **Z** cycles defense (Press/Zone/Drop/MPress); never auto-activates excluded players. Exposes static **`ActivePlayer`** + **`ActivePlayerIndex`** (read by `CameraFollow` and the stamina HUD). |
 | `Goalkeeper.cs` | Kinematic keeper sliding along its physical goal line tracking ball Y (stays on its goal after the halftime swap). **Save % system:** a fast shot reaching its hands rolls `baseSaveChance` 0.65 minus penalties for HIGH (height >0.7), POWER (>9 u/s) and SKIP shots, plus a stamina penalty when tired; a slow ball is auto-collected. **Snatch:** an enemy carrier within `keeperSnatchDistance` (0.8u) is stripped with 100% success, no roll (`TrySnatchFromCarrier`; respects free throws, not vs another keeper). **Player keeper = full control:** while your own keeper holds the ball it plays like a field swimmer — free **2D movement** at `keeperMoveSpeed` (4), sprint, a charged shot fired in the **joystick/aim** direction (never auto-aimed at goal), and a **directional pass** (`FindKeeperPassTarget` scores ALL teammates by dot(aim,dir)−dist×0.05, no cone; reads the live `TouchControls.Instance` joystick, else `lastDir`). **No auto-pass** — fully manual; it SWIMS back to its line (never teleports) after you shoot/pass. **Safe zone (Task 5):** within `KeeperSafeZoneRadius` (1.5u) of the goal line the carrying keeper is unstealable; carry it OUTSIDE and `keeperLeftSafeZone` latches → enemies steal normally (exposed via `MatchContext.IsProtectedKeeper`; `OnBallStolen()` clears the hold on a successful strip). **Organic idle** (not holding, ball far): small random X drift 0.1–0.3u every 2–4s (≤0.4u off the line) + a subtle ±0.05u Y sine micro-bob. **Bot keeper** auto-distributes after `keeperHoldSeconds` (0.8s) OR immediately if crowded within `keeperPanicDistance` (2.5u) — UNCHANGED. **Stamina-aware** (tired = worse saves, no sprint at 0%). A keeper hold is NOT a possession change — the shot clock keeps ticking until the pass-out. **Distribution arcs (2026-07-04b):** `PassOut` throws the same untouchable BallFlight arc as every other pass (`ArcKind.Pass`; the forced DEEP outlet = the big `Lob`); point-blank falls back flat. **Freeze gate:** the keeper now fully freezes during `PlayFrozen` like every swimmer (needed so it can't fish the dead ball out of its own net during the goal hang-time). |
-| `Goal.cs` | Trigger on each net; reports `goalSide` ("Left"/"Right") + its own transform (for the net-pulse reaction) to ScoreManager. |
-| `ScoreManager.cs` | Team-based score (credits the team attacking that net → survives the halftime swap) shown on **separate `playerScoreText` + `botScoreText`** TMP fields; **ignores held-ball goals**; exposes `HomeScore`/`AwayScore` (read by the camera's goal-shake). **FRAME-ACCURACY GATE (2026-07-04b):** touching the goal trigger is NOT a goal — the ball's real velocity is projected onto the goal line and the crossing must land inside the mouth (|y| ≤ 1.5, moving INTO the net; consts mirror GoalLineOut) → skims/corner-clips/sideways drifts no longer score, badly-aimed shots miss. **NET REACTION:** on every goal the net sprite gets a damped-spring squash/bulge pulse (0.45s, scale + outward nudge, originals restored) + an expanding white impact ring at the ball. **Goal restart (NOT a quarter start → NO sprint duel):** 5 phases — (0) **HANG TIME (`goalHangSeconds` 3.5, NEW):** play freezes THE INSTANT the ball hits the net; ball stays IN the net (velocity cut ×0.15, fully stopped after 0.15s), everyone holds position, camera keeps following the action + goal shake — the reset only starts after this hold; (1) ball loose at exact (0,0), touch UI hidden + `ctx.ResetBallTouch()` (camera → overview), a `goalFreezeSeconds` (1s) celebration; (2) both teams snap into the **natural restart spread** (`TeamSide.SnapToRestartFormation(hasBall)`), the **conceding team** is given the ball at exact centre (`ctx.GiveBallTo`) + `ctx.ResetBallTouch()` again; (3) a **`postGoalPauseSeconds` (3s) silent pause**; (4) `Unfreeze` + `SetKickoffPass(conceding)` + `ctx.MarkBallTouched()` + restore UI + reset shot clock. |
-| `MatchTimer.cs` | Quarters (90s) + win/lose/draw; pauses during freezes; sprint duel each quarter; halftime swap. Full time submits the real score once through `MatchPresentationContext`, then runs reward-slot/mission/ranking/pass hooks and `MatchResultUI.Show()`. `ForfeitMatch()` also consumes a championship fixture with a forced one-goal winner if the live score does not match the forced outcome. |
+| `Goal.cs` | Existing scoring component on each goal root. The saved scoring trigger is now the child `GoalLine`; `Goal` relays callbacks from that child and reports `goalSide` + the root transform to the existing `ScoreManager`. No second scoring system. |
+| `ScoreManager.cs` | Team-based score (credits the team attacking that net → survives the halftime swap) shown on **separate `playerScoreText` + `botScoreText`** TMP fields; **ignores held-ball goals**; exposes `HomeScore`/`AwayScore`. **FRAME-ACCURACY GATE:** only an inward path crossing the child `GoalLine` inside |y| ≤ 1.5 scores. **SCORED-BALL ABSORPTION (2026-08-08b):** once accepted, physics is disabled before any queued back-net callback can reflect the ball; its current pose eases 0.30–0.50u farther into that same net over 0.38s, then the established bob/hang/replay/restart continues—no outward rebound and no fixed-position teleport. **LOCAL NET REACTION:** physical net hits and scored impacts share one 1.10s speed-scaled yellow-only overlay; the original goal material/sprite remains permanently visible, eliminating the blue transparency flash. Posts/frame, root transform, colliders and `PoolLineFloat` remain rigid/unchanged; the white ring remains scoring-only. Before restart formations, unfinished temporary exclusions end through the existing `ExclusionManager` return path; permanent removals remain out. |
+| `GoalReplaySystem.cs` | Existing preallocated rolling pose recorder/player, upgraded to a **two-pass sports replay**. Records 5s at 20 fps, uses the real shooter-release timestamp, and appends up to 1.2s of frozen post-goal absorption/net/settle frames without running match physics. Pass 1 begins 1.5s before release where history permits, frames shooter+ball+goal, stays at 1× when possible, and guarantees a 3.0s minimum for unusually fast clips. Pass 2 starts 0.12s before release, uses an offset/angled shooter-side camera, runs early action at 0.9×, final 0.72s approach at 0.42×, post-goal at 0.58×, then holds 0.58s. Goal roots and localized shader parameters are captured/applied, so the real stretch and settle replay. Existing freeze-safe pose/body/camera restoration, skip, letterbox UI, real championship club names and score overlay remain intact. |
+| `MatchTimer.cs` | Quarters (90s) + win/lose/draw; pauses during freezes; sprint duel each quarter; halftime swap. Every unfinished **temporary** exclusion ends before the next-quarter lineup/duel; permanently removed players remain out. Full time submits the real score once through `MatchPresentationContext`, then runs reward-slot/mission/ranking/pass hooks and `MatchResultUI.Show()`. `ForfeitMatch()` also consumes a championship fixture with a forced one-goal winner if the live score does not match the forced outcome. |
 | `ShotClock.cs` | 30s per-possession clock (singleton): resets on possession change / goal / defensive exclusion; turnover + grab-ban at 0; pauses when frozen, **during a free throw**, or match over; **a keeper hold does NOT reset it (keeps ticking until the keeper distributes)**. |
-| `ExclusionManager.cs` | Fouls + exclusions (singleton): failed steal = foul → **free throw** to the fouled team; 2 fouls in 10s → 5s exclusion (roster slot nulled → AI auto-adapts) **or a PENALTY if the victim was in the 2m zone**; 3rd → removal; forfeit < 4 players; HUD countdowns. 🟡 New: **virtual foul** when the victim is an inside-water Centre (Centres draw exclusions/penalties faster; toggle `centerFoulBoost` — may be too hot, watch in testing). |
+| `ExclusionManager.cs` | Fouls + exclusions (singleton): failed steal = foul → **free throw** to the fouled team; 2 fouls in 10s → temporary exclusion (roster slot nulled → AI auto-adapts) **or a PENALTY if the victim was in the 2m zone**; 3rd → permanent removal; forfeit < 4 players; HUD countdowns. `EndTemporaryExclusionsForRestart()` reuses the normal reliable `ReturnToPlay` path at a goal restart or quarter boundary. It never restores `permanentlyOut` players. 🟡 New: **virtual foul** when the victim is an inside-water Centre (Centres draw exclusions/penalties faster; toggle `centerFoulBoost` — may be too hot, watch in testing). |
 | `SprintDuel.cs` | Quarter-start duel (singleton), fully rebuilt. Builds its OWN screen-space UI in code (no wiring): a big centred **"5 → 4 → 3 → 2 → 1 → GO!" countdown** (1s each, scale-pulse per number; `countdownStart` 5) + a "TAP SPACE / TAP SPRINT FOR SPEED" hint, then a tall **vertical SPEED bar on the left** (red→orange→green, fills with the human's speed) under a pulsing "TAP FASTER!". Ball is pinned to EXACT (0,0,0) with physics OFF during the countdown, goes live at GO. At GO! the two sprinters race (bot fixed speed; human base speed + each **Space / LeftShift tap OR a tap anywhere on screen** boosts toward a cap, decays) AND **every other swimmer immediately jogs into formation at ~60% speed** (`formationMoveSpeed`, both teams alike — `RestartFormationSpot`, position-based so it ignores the freeze; no statues, no waiting for possession). The designated sprinter starts slightly ahead of its line (`sprinterForwardOffset`) so it's clearly the sprinter, not the keeper, and is made the **active player**. Runs at **quarter starts ONLY** (Q1 via `MatchTimer.Start`, Q2–Q4 via `AdvanceToNextQuarter`) — **never after goals/penalties/turnovers** (a goal restart is a separate, duel-free system in `ScoreManager`). `StartDuel` calls `ctx.ResetBallTouch()` so the camera holds the wide overview until a sprinter grabs. First within grabDistance wins → grabs → un-freeze → kickoff pass; the rest transition straight into normal AI from wherever they jogged to. **Hides the gameplay touch UI** (`TouchControls.SetGameplayVisible(false)`) for the duel's duration and restores it on finish. The TAP-for-speed mechanic lives ONLY here — regular play is hold-to-sprint. |
 | `EventFeed.cs` | Rolling last-5 event log (singleton): goals, exclusions, turnovers, out-of-bounds, forfeit, halftime. |
 | `BallOutOfBounds.cs` | Top/bottom-wall out rule: a loose ball at the edge → possession to the nearest player of the team that didn't touch it last. |
@@ -98,8 +99,9 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 | `PauseMenuUI.cs` | Pause system, built in code: pause button → `Time.timeScale = 0` + PAUSED / RESUME / QUIT / TEAM MANAGEMENT. QUIT confirms that the match counts as a loss; YES QUIT now calls the championship-aware `MatchTimer.ForfeitMatch(false)` before loading HubScene, so the fixture and simulated round advance. TEAM MANAGEMENT is still a placeholder. |
 | `CameraFollow.cs` | **FIFA-style follow camera** on **Main Camera** — self-contained, no Inspector wiring (pulls `TeamManager.ActivePlayer` + `MatchContext`). **Start/post-goal overview (Task 1):** until the ball is first touched after any reset (game start, after a goal, between quarters — `MatchContext.BallTouchedSinceReset`) it holds the wide pool overview centred on (0,0) at **maxSize 5.0**, no following; the first grab eases it smoothly into the normal follow. Tracks a weighted point between the active player (60%) and the ball (40%) — 70/30 when the ball is loose — via `SmoothDamp` (speeds up to `switchSpeed` 8 for 0.5s on a player switch). **Dynamic orthographic zoom** (`Mathf.Lerp`): 4.2 base → 5.0 (player/ball far) → 4.5 (`SprintHeld`) → 3.8 (you control the keeper). HARD pool-boundary clamps on the camera centre (X ±5.5, Y ±3.2); Z locked −10. **Screen shake** (additive): goal 0.15/0.4s (polls `ScoreManager` total), powerful shot (ball >10 u/s) 0.05/0.15s. Managers missing → parks at (0,0,−10) size 5, no errors. All tunables serialized. |
 | `StaminaSystem.cs` | FIFA-style stamina on every field swimmer + keeper. **Auto-installs at runtime** (`RuntimeInitializeOnLoadMethod`) onto any `PlayerMovement`/`IAgentBody`/`Goalkeeper` lacking one → 14 objects (6 players, 6 bots, 2 keepers), zero wiring (the 2 keepers keep a hand-tuned copy). **Field drain/recovery per sec:** idle +8% (×2 after 5s rest), swim −3%, hold+move −5%, sprint −12% (−18% after 3s fatigue), excluded +15%; **second wind** at 0% (ease off sprint 2s → +15% burst). **Effects:** <40% speed ×0.8; <20% speed ×0.6 + steal ×0.8; 0% sprint disabled. **Keeper:** track −2%, hold −1%, idle +10%; tired = worse saves, no sprint at 0%. Writes only neutral hooks (deleting it leaves the game identical); HUD lives in `TouchControls`. |
-| `BallFlight.cs` | Ball VFX + **the airborne-arc system**, **auto-added to the Ball at runtime** by `PlayerMovement` (no wiring), singleton. **ALL passes and HIGH shots fly as arcs** (`LaunchHighBall(landPos, speed, height01, ArcKind)`): the rigidbody flies a straight zero-damping constant-speed line with **colliders OFF** (players/keepers/walls/goal trigger can't touch it) while a sprite copy (`BallAirSprite`, sorted over swimmers) rides the height curve above a shrinking oval water shadow; the root sprite hides mid-flight. **Untouchable mid-air:** `MatchContext.BallGrabbable` is false while `HighBallActive` — grabs/steals/keeper saves all wait for the landing (exact at landPos; landings clamped into open water; overlapped swimmers collision-ignored until separated). **Three ArcKinds:** `Pass` (B / every bot pass — small quick SYMMETRIC hop, peak ≈ dist×0.055 clamped 0.18–0.5, swell 1.08, no spin), `Lob` (F+B / bot long-or-blocked ball — the big floaty parabola, peak ≈ dist×0.14 clamped 0.45–1.25, swell 1.2), `Shot` (charge >0.7 — **ASYMMETRIC** hand-built curve: easeOutQuad rise into a peak at 35% of the flight, easeInQuad fall that hangs near the top then drops; peak ≈ dist×0.10 clamped 0.35–0.9, swell 1.15; glows + keeps FULL speed on landing — passes land with a 25% roll). **Release SNAP (shots only, incl. bot/keeper):** raw un-eased squash 0.84 → pop 1.12 → settle over 0.12s at the instant of release. Plus: speed-gated **TrailRenderer** (>5 u/s, suppressed mid-arc); **flat point-blank high-shot** swell+glow fallback; **skip-shot** bounce 1.5u before the goal (Y jitter, squash + water ripple, 35% `KeeperFooled`); **spin** (shots 54°/s, fast loose 18°/s, arcs 9°/s — none on skip or any Pass, only >6 u/s, snaps upright on catch). All scaling uniform, recomputed from a clean base each frame. Exposes `ShotHeight`, `SkipActive`/`SkipBounced`, `HighBallActive`, `KeeperFooled`. |
-| `GoalColliderFixer.cs` | Editor tool (**Tools → Fix Goal Colliders**). Resizes GoalRight/GoalLeft Box Collider 2D to the visual goal mouth (size (4,15) → world ≈0.8×3.0u at scale 0.2). Idempotent; marks the scene dirty (Ctrl+S to save). |
+| `BallFlight.cs` | Ball VFX + **the airborne-arc system**, **auto-added to the Ball at runtime** by `PlayerMovement` (no wiring), singleton. **ALL passes and HIGH shots fly as arcs** with colliders off and land at their established safe point before normal collision resumes. **Physical goal response:** normal loose/grounded shots reflect firmly from post children (0.72 velocity retention); non-scored outer/back-net contacts absorb most pace (0.22 retention) and forward exact contact/speed to ScoreManager's one presentation method. Once `ScoreManager.GoalRestartInProgress` is true, a queued outer-net callback is ignored before reflection, so an accepted ball cannot be kicked back toward the field. `GoalLine` remains trigger-only. Existing pass/shot arcs, skip bounce, keeper timing, spin, trail, landing protection and `BallGrabbable` behavior remain intact. |
+| `GoalColliderFixer.cs` | **Legacy/retired editor helper. Do not run for the current goal hierarchy.** It expected a root trigger `BoxCollider2D`; the current manually saved architecture uses a solid root net edge plus separate child goal-line/post boxes. |
+| `Resources/Shaders/LocalizedGoalNet.shader` | Lightweight URP 2D sprite-lit **overlay** used by `ScoreManager`; Resources ownership guarantees player-build inclusion without wiring. It outputs only filtered warm yellow/orange samples, with three displacement samples forming a readable elastic bridge and distance phase lag around the real impact. The untouched original goal sprite remains below it, so transparent displaced pixels reveal the original—not blue pool—and red/white frame pixels never enter the overlay. No bones, mesh rebuild, persistent material asset, root movement or frame/post deformation. |
 | `PlayerLabel.cs` | ⬜ **NOT YET BUILT** (planned). Future: world-space player-number labels floating above each swimmer. |
 | `LeagueSeason.cs` | Durable offline championship domain. One JSON-saved run per competition; the player's saved **My Club** is automatically injected into Group A with nine fixed AI clubs (no official-club picker); five-round schedule with one bye per club whose round/bye order is shuffled once per fresh run; seeded deterministic simulation; real player result + every other fixture in both groups; top-2 cross-group semifinals; simulated 5th/7th/9th and third-place matches; unique 1–10 final order. Exact top-3 Gold/Diamond rewards are granted once; 1st unlocks only the next tier. A win-gated mid-run restart resets only that competition while preserving currencies/unlocks. |
 | `ClubCatalog.cs` | Offline Resources ScriptableObject: 34 club IDs/display names/strength levels/tightly cropped direct logo Sprite references plus four trophies and three medals. Runtime lookups never scan AssetDatabase or require internet. |
@@ -148,7 +150,7 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 - **Bot1 … Bot6** — Circles (~0.5), magenta. Each: Rigidbody2D + Circle Collider 2D + `BotMovement`: **My Team = BotTeam** (+ tunables). Plus Animator + `BotAnimator` and a runtime-auto-installed **`StaminaSystem`**.
 
 **Goals & keepers**
-- **GoalRight** (Pos (7,0)) / **GoalLeft** (Pos (-7,0)) — Squares (0.5,3), **Box Collider 2D Is Trigger ON**, sized to the goal mouth via **Tools → Fix Goal Colliders** (`GoalColliderFixer`: size (4,15) ≈ 0.8×3.0u world at scale 0.2). `Goal`: Goal Side = "Right"/"Left", **Score Manager = ScoreManager**.
+- **GoalRight** (Pos (7,0)) / **GoalLeft** (Pos (-7,0)) — keep the existing combined **`original-net` / `original-net 1`** SpriteRenderers and their root `PoolLineFloat`. Current manually saved collider hierarchy (authoritative as of 2026-08-08): root **`EdgeCollider2D`, Is Trigger OFF**, traced around the outer/back net; child **`GoalLine`** with `BoxCollider2D`, **Is Trigger ON**; child **`TopPostCollider`** with `BoxCollider2D`, **Is Trigger OFF**; child **`BottomPostCollider`** with `BoxCollider2D`, **Is Trigger OFF** (the saved GoalRight child is currently spelled `BottonPostCollider`; classification is structural, so it still works). `Goal` remains on the root with Goal Side = "Right"/"Left" and Score Manager = ScoreManager; it relays the child trigger. Do **not** run the retired `GoalColliderFixer` against this hierarchy. The root Edge and post boxes provide physical deflection; only GoalLine scores.
 - **KeeperRight** (~(6.3,0)) / **KeeperLeft** (~(-6.3,0)) — thin tall Squares. Box Collider 2D (trigger OFF) + Rigidbody2D **Kinematic** (Use Full Kinematic Contacts ON, Gravity 0). `Goalkeeper`: **Ball = Ball**, Track Speed 4, Min/Max Y, and grab-and-control fields: Keeper Grab Distance 1.2, Base Save Chance 0.65, **Keeper Snatch Distance 0.8** (strip a point-blank enemy carrier, 100% no roll), **Keeper Hold 0.8** (bot auto-distribute), **Keeper Panic Distance 2.5** (bot distributes now if crowded), Hold Offset 0.5, **Keeper Move Speed 4** (free-roam while you hold the ball). Keepers guard their physical goal even after the halftime swap. Each keeper also has an **Animator + `GoalkeeperAnimator`** (DiveState, `GoalkeeperAnimation.controller`) and a hand-added **`StaminaSystem`** (tuned keeper drain rates).
 
 **Managers — all components on ONE `GameManager` GameObject:**
@@ -881,7 +883,7 @@ and alternate competition-specific pool art are also intentionally deferred.
 - Players tap hands at pool edge; outgoing player must fully exit before new one enters; excluded/benched players uncontrollable during transition.
 
 ### B16.9 Exclusion System ✅ DONE (man-up/man-down via roster auto-adapt, not special-cased)
-- A failed steal = foul (offender locked out, carrier keeps the ball). **2 fouls within 10s → 5s exclusion:** the player leaves its `TeamSide.members` slot (set null → formation + marking auto-adapt to the extra/missing man), parks in its goal corner, fully inert. **3rd exclusion → permanent removal** (GameObject disabled). If a team drops **below 4 players → forfeit** (other team wins, via `MatchTimer.ForfeitMatch`). HUD shows exclusion countdowns; event feed logs each. (`ExclusionManager.cs`.) Tunables: Foul Window 10, Fouls 2, Exclusion 5s, Max 3, Min Players 4.
+- A failed steal = foul (offender locked out, carrier keeps the ball). **2 fouls within 10s → temporary exclusion:** the player leaves its `TeamSide.members` slot (set null → formation + marking auto-adapt to the extra/missing man), parks in its goal corner, and becomes inert. The current inspector defaults are **20 displayed seconds / 7.5 real live-play seconds**. Any unfinished temporary exclusion ends on a **goal restart** or **quarter boundary**, before the new formation/lineup begins; this reuses the normal slot/sorting/AI-state `ReturnToPlay` path. **3rd exclusion → permanent removal** (GameObject disabled), and permanent removals are never restored by these resets. If a team drops **below 4 players → forfeit** (other team wins, via `MatchTimer.ForfeitMatch`). HUD shows exclusion countdowns; event feed logs each. (`ExclusionManager.cs`.) Other tunables: Foul Window 10, Fouls 2, Max 3, Min Players 4.
 
 ### B16.10 AI Behaviour 🟡 PARTIAL (full defensive AI DONE in C#; only exclusion-based repositioning NOT yet)
 - With ball → attack positions; lose ball → defensive positions; players hold assigned positions; opponent excluded → exploit extra man; own exclusion → shorthanded defense.
@@ -893,8 +895,10 @@ and alternate competition-specific pool art are also intentionally deferred.
 - **Done:** failed-steal fouls + exclusions (see B16.9); **free throw** on an ordinary foul (shot clock pauses, the carrier is protected from steals, enemies back off `freeThrowClearance`); **penalty shot** for an exclusion-level foul inside the **2m zone** (`PenaltyManager`: shooter on the penalty spot |x|≈2.47, aim cone, everyone behind the shooter; human charges Space / AI auto-fires with a miss chance); **top/bottom out-of-bounds** (loose ball at the edge → nearest player of the team that didn't touch it last, re-enters just inside, "Out - YOU/BOT" feed); **goal-line out + corner restart** (`GoalLineOut`, deflection-aware via `BallTouchTracker`); **held-ball goals ignored**; **player goal-line clamp**.
 - **NOT yet:** corners specifically on KEEPER deflections; poolside referee.
 
-### B16.12 Goals & Replays 🟡 PARTIAL (goal detection + scoring DONE; replays/celebrations/sounds not)
-- Goal → auto replay; player can save replay (→ Club highlights); celebrations; specific crowd sounds.
+### B16.12 Goals & Replays 🟡 MOSTLY DONE (scoring + polished auto replay DONE; saved highlights/celebrations/sounds not)
+- **Two-pass automatic replay:** the existing rolling pose buffer now captures shooter preparation/release plus frozen post-goal absorption, localized net deformation and settle. Pass 1 is a complete mostly-normal-speed broadcast view with a 3s minimum; Pass 2 is release-anchored, shooter-side/angled, and slows the final approach/post-goal moment. Both keep smooth black transitions, skip, exact live-state restoration, and championship club-name/score overlays.
+- **Current goal collision/presentation:** only the `GoalLine` child trigger scores; solid post boxes and non-scored root outer-net contacts retain physical deflection. An accepted goal takes collision ownership immediately, eases the ball deeper without a teleport/rebound, and settles inside. Airborne arcs remain collider-off until their established landing. A yellow-only overlay deforms locally while the original combined goal sprite, red/white frame, colliders and root bob remain untouched.
+- **Still future:** save replay to Club highlights; richer celebrations; specific crowd/audio replay treatment.
 
 ### B16.13 Post-Match 🟡 MOSTLY DONE
 - Final whistle → championship actual-score handoff and round simulation; normal reward-slot pack;
@@ -1548,8 +1552,9 @@ untouched files).
 → ScoreManager component still has **Ball / Player+Bot Score Text / Player+Bot Team** set and
 shows the new **Goal Hang Seconds** (3.5) field; **GoalRight/GoalLeft** → Goal component still
 has **Score Manager** set; **Player1–6** PlayerMovement **Ball + Aim Line** slots; **KeeperLeft/
-KeeperRight** Goalkeeper **Ball** slot. Also worth re-running **Tools → Fix Goal Colliders** once
-so the trigger boxes match the visual mouth (the new gate makes scoring exact even if they don't).
+KeeperRight** Goalkeeper **Ball** slot. **Superseded hierarchy note (2026-08-08):** do not run
+`Tools → Fix Goal Colliders`; the authoritative layout is now the manually saved root solid
+`EdgeCollider2D` plus child `GoalLine` trigger and two solid post boxes documented in A6.
 
 ---
 
@@ -1669,8 +1674,8 @@ Two targeted fixes, no new systems. Only `ExclusionManager.cs` and `ScoreManager
 **Slot re-check (nothing NEW to wire — both changes are pure code):** verify the usual slots survived
 the full-script replaces — **ScoreManager** → Ball / Player+Bot Score Text / Player+Bot Team / Goal
 Hang Seconds; **ExclusionManager** → Match Timer / Exclusion Text; **GoalRight/GoalLeft** must each
-still have a **Box Collider 2D** (the net reaction reads its bounds — run **Tools → Fix Goal Colliders**
-if unsure) + their Goal **Score Manager** ref.
+retain their root solid net `EdgeCollider2D`, child trigger `GoalLine`, and two solid child post boxes,
+plus their Goal **Score Manager** ref. (`GoalColliderFixer` is retired for this hierarchy.)
 
 **How to test — TASK 1 (re-entry):** Play. Provoke exclusions (spam Space/Block steals on a carrier —
 2 failed fouls in 10 s → 5 s exclusion), watch the offender sit in its goal corner, and confirm at the
@@ -2497,7 +2502,8 @@ This corrects the 2026-07-26c interpretation after an actual visual report from 
 
 ### Verification
 
-- `dotnet build Assembly-CSharp.csproj --no-restore` → **0 warnings, 0 errors**.
+- `dotnet build Assembly-CSharp.csproj --no-restore` and
+  `dotnet build Assembly-CSharp-Editor.csproj` → **0 warnings, 0 errors**.
 - `dotnet build Assembly-CSharp-Editor.csproj --no-restore` → **0 warnings, 0 errors**.
 - `git diff --check` reports no whitespace errors (only informational LF→CRLF notices).
 - Static audit finds no direct `Button1` sprite assignment outside the shared styler. The already
@@ -2539,3 +2545,119 @@ This corrects the 2026-07-26c interpretation after an actual visual report from 
 - Static audits confirm all crest arrows use the compact helper and Shop ad buttons resolve
   `Ad-Button` with Simple/Preserve Aspect. The open recovery Unity process has not refreshed assets;
   the editor initializer will generate the SDF asset automatically on the next normal refresh.
+
+---
+
+## SESSION LOG — 2026-08-08 (physical goal frame, localized net wobble, exclusion resets)
+
+This was an integration pass over the existing systems, not a rebuild. `Goal.cs`, `ScoreManager.cs`,
+`BallFlight.cs`, scoring validation, goal hang/restart, the in-net ball bob and replay capture remain
+the owners of their previous responsibilities.
+
+### Audited saved goal architecture
+
+- Both goals keep the existing combined `original-net` / `original-net 1` sprites and root
+  `PoolLineFloat` bob/sway.
+- Each goal root now has a solid `EdgeCollider2D` traced around the outer/back net. Each has a child
+  trigger `GoalLine`, plus solid `TopPostCollider` and `BottomPostCollider` box children (GoalRight's
+  lower child is presently misspelled `BottonPostCollider`; behavior does not depend on the name).
+- `Goal` relays the child trigger into the existing `ScoreManager`; `ScoreManager` discovers the
+  scoring child collider for its exact crossing bounds. There is no duplicate score/net controller.
+- `BallFlight` keeps airborne arc colliders disabled exactly as before. Arcs land at the established
+  pre-goal landing point, then the real ball collider resumes. Normal loose/grounded shots reflect
+  from solid post children at **0.72 velocity retention** and lose most energy against the solid
+  outer/back net edge at **0.22 retention**. Every real outer-net contact forwards its exact point
+  and incoming speed to ScoreManager's same visual method; the scoring trigger never deflects.
+- The legacy `GoalColliderFixer` describes the superseded single-root-trigger layout and must not be
+  run on the current manually authored hierarchy.
+
+### Localized net deformation
+
+- Replaced the old whole-root scale/nudge pulse with the Resources-backed
+  `LocalizedGoalNet.shader`; no bones, `SpriteSkin`, mesh generation or scene wiring is used.
+- **Final 2026-08-08b refinement:** the custom material now lives on a runtime yellow-net-only child
+  overlay. The existing combined sprite and Sprite-Lit material are never swapped or made
+  transparent, eliminating the blue-pool flash while keeping the red/white frame rigid.
+- The exact hit builds into a 0.16u maximum speed-scaled push over 0.16s, then follows a damped
+  14-rad/s spring for a 1.10s total effect. Three filtered yellow samples form a visible stretch;
+  nearby squares receive less movement plus a small distance phase lag.
+- Physical outer-net contacts that do not score use the same localized material reaction at their
+  real contact point; they do not enter the scoring/restart path or spawn the goal-only white ring.
+- The goal root and colliders remain untouched, allowing `PoolLineFloat` to move the complete goal
+  normally. The existing exact-position white scoring ring is preserved.
+
+### Temporary exclusion reset rules
+
+- `ExclusionManager.EndTemporaryExclusionsForRestart()` ends all active temporary exclusions using
+  the existing reliable `ReturnToPlay` path (original roster slot, render order, position, velocity
+  and stale AI intent). Multiple same-side returns retain the existing safe offset behavior.
+- `ScoreManager` invokes it after the goal celebration freeze and immediately before restart
+  formations. `MatchTimer` invokes it as the quarter-break begins, before the next lineup/duel.
+- Permanent removals remain in the separate `permanentlyOut` set, disabled and absent from roster
+  slots. Neither reset path restores them.
+
+### Verification
+
+- `dotnet build Assembly-CSharp.csproj --no-restore` → **0 warnings, 0 errors**.
+- No new scene reference or Inspector wiring is required. Focused Play Mode checks remain: centre and
+  corner net hits at low/high speed; post rebound; outer-net absorption; goal during an exclusion;
+  and quarter expiry during an exclusion.
+
+---
+
+## SESSION LOG — 2026-08-08b (scored-ball absorption, net overlay fix, two-pass replay)
+
+This is a narrow polish pass over the existing goal/replay architecture. Scoring validation,
+`BallFlight` arcs and post response, keeper logic, goal restart ownership, exclusion resets and
+permanent ejections were preserved.
+
+### Root causes found
+
+- `BallFlight` wrote the 0.22-retention outer-net reflection before notifying `ScoreManager`.
+  `ScoreManager` correctly ignored the presentation callback during a goal restart, but that check
+  happened after the reflected velocity was already assigned. Same-step Unity callback ordering
+  could therefore kick an accepted ball back toward the field.
+- The first localized shader made displaced yellow pixels transparent on the only goal renderer.
+  That revealed the blue pool behind the sparse grid and read as a blue flash. The saved goal tint,
+  Sprite-Lit `_Color`/`_RendererColor`, URP lighting and `PoolLineFloat` were not the source.
+- The former replay owned a 4s/20fps buffer but intentionally discarded all except the last 1.25s,
+  repeated that same slice three times at 1.0/0.82/0.68 speed, and stopped at the scoring frame.
+  Frozen post-goal motion and goals/net materials were not tracked, so quick scores produced tiny
+  repetitive clips with no impact or settle.
+
+### Final behavior and tuning
+
+- Once scoring is accepted, `GoalRestartInProgress` blocks any queued outer-net reflection before
+  it writes velocity. Post boxes remain 0.72 retention and non-scored outer-net hits remain 0.22.
+- The scored ball keeps its exact accepted pose, leaves physics, and eases **0.30–0.50 world units**
+  deeper along its incoming direction over **0.38s**. The cubic energy-loss curve settles it where
+  it arrives; there is no fixed-position teleport and no rebound toward the pool. Existing in-net
+  bob, replay, centre reset, conceding-team restart and exclusion reset follow normally.
+- Each goal gets one runtime `LocalizedNetOverlay` child before replay tracking initializes. Its
+  shader outputs only warm yellow/orange net samples; the original goal renderer/material remains
+  visible and unchanged underneath. The exact contact builds to a **0.16u maximum push over 0.16s**,
+  scales by impact speed (**0.58–1.38** before the small corner factor), then follows a damped
+  **14 rad/s** spring for **1.10s** total. Three displacement samples create a readable local stretch
+  and nearby falloff/phase lag. Frame/posts/root/colliders never move or recolor.
+- Replay remains one preallocated pose-buffer system: **5s at 20fps** live history plus up to **1.2s**
+  preallocated frozen post-goal frames. `MatchContext.NoteRelease` supplies the release timestamp.
+  Goal roots, overlay enabled state and shader impact/direction/amount/radius/phase are captured, so
+  the real ball absorption, net stretch and settle play back without simulating match physics.
+- **Pass 1 — FULL ACTION:** begins up to **1.5s before release**, frames shooter/ball/goal, stays 1x
+  when enough source exists, and slows only unusually short clips enough to guarantee **3.0s**.
+- **Pass 2 — SLOW MOTION:** begins **0.12s before release**, uses the shooter-side offset camera with
+  a subtle ±2.4° angle, runs early action at **0.9x**, the final **0.72 source seconds at 0.42x**,
+  post-goal at **0.58x**, then holds the settled result for **0.58s**. Black transitions are 0.20s
+  in/out and 0.16s between passes. Skip, state restoration and real championship identities remain.
+
+### Files changed and verification
+
+- `BallFlight.cs`, `ScoreManager.cs`, `GoalReplaySystem.cs`, `MatchContext.cs`,
+  `Resources/Shaders/LocalizedGoalNet.shader`, and `plan.md`.
+- `ExclusionManager.cs` / `MatchTimer.cs` were re-audited but not redesigned: goals and quarter
+  breaks still call `EndTemporaryExclusionsForRestart`; `permanentlyOut` is still never restored.
+- No scene or Inspector wiring is required; overlays and replay tracking are runtime-owned.
+- Unity's shader importer has reported a successful `LocalizedGoalNet.shader` import with no shader
+  error; the open editor remains on its recovery backup scene, so final visual Play Mode validation
+  is still required after returning it to the saved PoolB scene.
+- Runtime/editor assemblies: **0 warnings, 0 errors**. Relevant `git diff --check`: clean.

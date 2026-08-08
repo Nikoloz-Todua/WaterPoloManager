@@ -59,6 +59,13 @@ public class BallFlight : MonoBehaviour
     const float LandingProbeRadius = 0.5f;  // who did we land on? (collision-ignored until separated)
     const float LandingSeparationMax = 1.5f;// give-up cap for that separation wait
 
+    // ---- physical goal response (grounded/live ball only) ----
+    // Arc colliders deliberately remain OFF overhead. Every shot arc lands before the frame,
+    // so the collider is live again when it can legitimately hit a post or the outer net.
+    const float GoalCollisionMinSpeed = 1f;
+    const float PostVelocityRetention = 0.72f; // rigid frame: a lively but controlled rebound
+    const float NetVelocityRetention = 0.22f;  // net: catches most of the pace, with a soft kick-back
+
     // Per-kind arc profiles: peak height per unit of ground distance (clamped), the swell at
     // the peak, and the shadow's on-water size. Pass = a toned-down lob (small quick hop);
     // Lob = the original big floaty ball; Shot = a lower dart with the asymmetric curve.
@@ -159,6 +166,7 @@ public class BallFlight : MonoBehaviour
     private float arc01;                   // THIS frame's normalized arc height (0..1)
     private float storedDamping;           // ball's authored linearDamping (zeroed in flight)
     private bool physicsSuppressed;
+    private Vector2 prePhysicsVelocity;     // velocity entering the current physics step
     private float snapStart = -10f;        // release-snap start time (shots only)
 
     private bool passActive; // a plain pass: NO scale change and NO trail (gentle spin only)
@@ -463,6 +471,71 @@ public class BallFlight : MonoBehaviour
         UpdateTrail();
         UpdateSettleRipples();
         ApplyVisuals();
+    }
+
+    void FixedUpdate()
+    {
+        // OnCollisionEnter2D runs after the solver may already have removed the velocity into a
+        // zero-bounce collider. Preserve the incoming velocity so posts can reflect the real shot
+        // rather than the solver's already-flattened result.
+        prePhysicsVelocity = rb != null && rb.simulated && transform.parent == null
+            ? rb.linearVelocity : Vector2.zero;
+    }
+
+    void OnCollisionEnter2D(Collision2D collision)
+    {
+        if (collision == null || collision.collider == null || rb == null || !rb.simulated ||
+            transform.parent != null || highBallActive)
+            return;
+
+        Collider2D hit = collision.collider;
+        if (hit.isTrigger) return; // GoalLine is scoring-only; it must never deflect the ball.
+
+        Goal goal = hit.GetComponentInParent<Goal>();
+        if (goal == null) return;  // swimmers and pool boundaries keep their established response.
+
+        bool post = hit is BoxCollider2D && hit.transform != goal.transform;
+        bool net = hit is EdgeCollider2D || hit.transform == goal.transform;
+        if (!post && !net) return;
+
+        // A validated goal owns the ball from that scoring frame onward. Unity may deliver the
+        // already-generated solid-net callback later in the same physics step; never let that
+        // stale callback overwrite the scored-ball absorption with a 22% rebound toward play.
+        if (net && ScoreManager.Instance != null && ScoreManager.Instance.GoalRestartInProgress)
+            return;
+
+        Vector2 incoming = prePhysicsVelocity;
+        if (incoming.sqrMagnitude < GoalCollisionMinSpeed * GoalCollisionMinSpeed) return;
+
+        Vector2 normal;
+        Vector2 impactPoint;
+        if (collision.contactCount > 0)
+        {
+            ContactPoint2D contact = collision.GetContact(0);
+            normal = contact.normal;
+            impactPoint = contact.point;
+        }
+        else
+        {
+            Vector2 closest = hit.ClosestPoint(rb.position);
+            impactPoint = closest;
+            normal = rb.position - closest;
+            if (normal.sqrMagnitude < 1e-6f) normal = -incoming;
+            normal.Normalize();
+        }
+
+        // Contact-normal orientation can differ with callback ownership. Reflection only needs
+        // the normal facing against travel, so normalize that relationship explicitly.
+        if (Vector2.Dot(incoming, normal) > 0f) normal = -normal;
+
+        float retention = post ? PostVelocityRetention : NetVelocityRetention;
+        Vector2 deflected = Vector2.Reflect(incoming, normal) * retention;
+        rb.linearVelocity = deflected;
+        prePhysicsVelocity = deflected;
+
+        // The same ScoreManager-owned material effect handles scoring and non-scoring outer-net
+        // contacts. This reports presentation only; it cannot award a goal or alter restart flow.
+        if (net) goal.NotifyNetHit(impactPoint, incoming.magnitude);
     }
 
     // Start the two-phase ripple exactly once when a fast loose ball slows to a float. Held,

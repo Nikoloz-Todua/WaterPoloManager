@@ -39,7 +39,13 @@ public class MatchContext : MonoBehaviour
     // the last SWIMMER to release the ball (shot / pass / drop) — lets ScoreManager
     // credit a goal to a specific player (Centre-goal tracking for the bot's adaptive D).
     public Transform LastReleaser { get; private set; }
-    public void NoteRelease(Transform t) { if (t != null) LastReleaser = t; }
+    public float LastReleaseUnscaledTime { get; private set; } = -10f;
+    public void NoteRelease(Transform t)
+    {
+        if (t == null) return;
+        LastReleaser = t;
+        LastReleaseUnscaledTime = Time.unscaledTime;
+    }
 
     // last time the ball was released (shot/passed/dropped); used for the grab cooldown
     private float lastReleaseTime = -10f;
@@ -113,6 +119,7 @@ public class MatchContext : MonoBehaviour
     {
         Instance = this;
         lastReleaseTime = -10f; // allow an immediate grab at kickoff
+        LastReleaseUnscaledTime = -10f;
     }
 
     // called by a player/bot when it grabs (team) or releases (null) the ball

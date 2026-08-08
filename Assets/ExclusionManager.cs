@@ -259,6 +259,36 @@ public class ExclusionManager : MonoBehaviour
         return n;
     }
 
+    // A dead-ball restart (goal or new quarter) cancels every unfinished TEMPORARY exclusion.
+    // Reuse the proven single-player return path so roster slots, sorting and AI state are restored
+    // identically to a timer expiry. Permanent removals are never in activeExclusions and remain
+    // disabled/null in their roster slots.
+    public void EndTemporaryExclusionsForRestart()
+    {
+        Dictionary<int, int> returnsPerSide = null;
+        for (int i = activeExclusions.Count - 1; i >= 0; i--)
+        {
+            Exclusion exclusion = activeExclusions[i];
+            if (exclusion == null || exclusion.agent == null ||
+                permanentlyOut.Contains(exclusion.agent))
+            {
+                if (exclusion != null && exclusion.agent != null)
+                    excludedNow.Remove(exclusion.agent);
+                activeExclusions.RemoveAt(i);
+                continue;
+            }
+
+            if (returnsPerSide == null) returnsPerSide = new Dictionary<int, int>();
+            int side = IsOnLeftSide(exclusion.team) ? -1 : 1;
+            returnsPerSide.TryGetValue(side, out int returnIndex);
+            returnsPerSide[side] = returnIndex + 1;
+
+            ReturnToPlay(exclusion, returnIndex);
+            activeExclusions.RemoveAt(i);
+        }
+        UpdateHud();
+    }
+
     // Called on EVERY failed steal. `victim` = the carrier that was fouled. Carrier keeps
     // the ball; offender is locked out. An ordinary foul gives the victim a FREE THROW;
     // enough fouls escalate to an exclusion — or a PENALTY if the victim was in the 2m zone.
