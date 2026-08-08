@@ -12,7 +12,8 @@ public class BotMovement : MonoBehaviour, IAgentBody
     [SerializeField] private float chaseSpeed = 3f;
     [SerializeField] private float carrySpeed = 1.8f;
     [SerializeField] private float supportSpeed = 2.5f;
-    [SerializeField] private float grabDistance = 1f;
+    [UnityEngine.Serialization.FormerlySerializedAs("grabDistance")]
+    [SerializeField] private float stealDistance = 1f;
     [SerializeField] private float holdOffset = 0.6f;
     [SerializeField] private float shootRange = 4f;
     [SerializeField] private float shootPower = 12f; // 2026-07-09g: aligned with the scene (was 11 code / 20 scene — bots fired lasers)
@@ -78,11 +79,11 @@ public class BotMovement : MonoBehaviour, IAgentBody
     public float ChaseSpeed => chaseSpeed * staminaMult;       // stamina scales movement
     public float CarrySpeed => carrySpeed * staminaMult;
     public float SupportSpeed => supportSpeed * staminaMult;
-    public float GrabDistance => grabDistance;
     public float HoldOffset => holdOffset;
     public float ShootRange => shootRange;
     public float ShootPower => shootPower;
     public float StealChance => stealChance * staminaStealMult; // stamina scales steal chance
+    public float StealDistance => stealDistance;
     public float LooseHoldStealBonus => looseHoldStealBonus;
     public float StaminaMult { get => staminaMult; set => staminaMult = value; }
     public float StaminaStealMult { get => staminaStealMult; set => staminaStealMult = value; }

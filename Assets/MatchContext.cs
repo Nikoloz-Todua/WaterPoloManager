@@ -21,8 +21,14 @@ public class MatchContext : MonoBehaviour
     [SerializeField] private float playerLimitX = 6.9f;
     [Tooltip("Counterattack window: winning the ball in your own half starts a fast-break for this long.")]
     [SerializeField] private float counterWindowSeconds = 4f;
-    [Tooltip("Maximum distance from an OOB restart ball before it can be picked up. Kept tiny so the swimmer reaches the ball before it snaps to the hand.")]
+    [Tooltip("Exact-arrival distance used by the designated keeper's special OOB fetch branch. Field swimmers use the shared front pickup point below.")]
     [SerializeField, Range(0.01f, 0.2f)] private float outOfBoundsPickupDistance = 0.05f;
+    [Tooltip("World-space radius around a field swimmer's front pickup point that counts as genuine loose-ball contact.")]
+    [SerializeField, Range(0.05f, 0.35f)] private float looseBallPickupRadius = 0.18f;
+    [Tooltip("World-space distance from a field swimmer's centre to the front/head/hand pickup point.")]
+    [SerializeField, Range(0.1f, 0.8f)] private float pickupFrontOffset = 0.42f;
+    [Tooltip("Seconds used to ease a contacted loose ball from its exact world pose into the existing hold pose.")]
+    [SerializeField, Range(0.05f, 0.25f)] private float pickupTransitionDuration = 0.11f;
 
     // who currently holds the ball: null = loose
     public TeamSide PossessingTeam { get; private set; }
@@ -49,6 +55,14 @@ public class MatchContext : MonoBehaviour
 
     // last time the ball was released (shot/passed/dropped); used for the grab cooldown
     private float lastReleaseTime = -10f;
+
+    // One field swimmer may reserve a genuinely contacted loose ball while it eases into the
+    // existing hand pose. Possession is assigned only when this very short secure transition
+    // completes, but the reservation makes two same-frame pickups atomic.
+    private Transform looseBallPickupClaimant;
+    private Coroutine looseBallPickupRoutine;
+    private const float FastLooseBallSpeed = 2.5f;
+    private const float FastLooseBallRadiusMultiplier = 0.65f;
 
     // While true, all swimmers freeze (sprint-duel line-up/race, goal settle, etc).
     public bool PlayFrozen { get; private set; }
@@ -125,6 +139,12 @@ public class MatchContext : MonoBehaviour
     // called by a player/bot when it grabs (team) or releases (null) the ball
     public void SetPossession(TeamSide team)
     {
+        // A rules system may deliberately assign/release the ball while a field pickup is in its
+        // short presentation transition. That assignment owns the ball and cancels the claim.
+        // Normal pickup completion clears its claim immediately before calling SetPossession.
+        if (looseBallPickupClaimant != null)
+            CancelLooseBallPickup(team == null);
+
         TeamSide prev = PossessingTeam;
         TeamSide prevTouch = LastTouchTeam; // who last touched it BEFORE this grab/release
 
@@ -453,9 +473,134 @@ public class MatchContext : MonoBehaviour
     // steals, keeper saves and the goal-line loose rule all read this and wait for it to land.
     public bool BallGrabbable =>
         PossessingTeam == null &&
+        looseBallPickupClaimant == null &&
         (!OutOfBoundsRestartActive || OutOfBoundsRestartReady) &&
         (Time.time - lastReleaseTime) >= Mathf.Min(releaseGrabDelay, MaxReleaseGrabDelay) &&
         (BallFlight.Instance == null || !BallFlight.Instance.HighBallActive);
+
+    // Geometry + legality shared by human control, both field-AI wrappers, landed receptions,
+    // live field-player restarts and the sprint duel. The point is in FRONT of the swimmer, not
+    // at its root, so the swimmer reaches the ball rather than collecting from a large centre
+    // circle. A fast loose ball gets an even smaller intersection zone.
+    public bool CanBeginLooseBallPickup(Transform holder, TeamSide team, Vector2 facing)
+    {
+        if (ball == null || holder == null || team == null || !holder.gameObject.activeInHierarchy)
+            return false;
+        if (!BallGrabbable || !CanGrab(team) || ball.transform.parent != null || !ball.simulated)
+            return false;
+        BallFlight flight = BallFlight.Instance;
+        if (flight != null && flight.SkipActive && !flight.SkipBounced)
+            return false; // the low skip remains untouchable by field swimmers until its bounce
+
+        float radius = looseBallPickupRadius;
+        if (ball.linearVelocity.magnitude > FastLooseBallSpeed)
+            radius *= FastLooseBallRadiusMultiplier;
+        return LooseBallPickupContactDistance(holder, facing) <= radius ||
+               HasPhysicalLooseBallContact(holder);
+    }
+
+    // A pass may land exactly under a swimmer while BallFlight temporarily ignores collision
+    // response. The front point should remain the normal catch, but genuine collider overlap must
+    // also count so an already-touching ball cannot become stranded at the swimmer's centre.
+    bool HasPhysicalLooseBallContact(Transform holder)
+    {
+        Collider2D ballCollider = ball != null ? ball.GetComponent<Collider2D>() : null;
+        Collider2D swimmerCollider = holder != null ? holder.GetComponent<Collider2D>() : null;
+        if (ballCollider == null || swimmerCollider == null ||
+            !ballCollider.enabled || !swimmerCollider.enabled)
+            return false;
+
+        ColliderDistance2D separation = Physics2D.Distance(ballCollider, swimmerCollider);
+        return separation.isOverlapped || separation.distance <= 0.01f;
+    }
+
+    public float LooseBallPickupContactDistance(Transform holder, Vector2 facing)
+    {
+        if (ball == null || holder == null) return float.PositiveInfinity;
+        Vector2 direction = facing.sqrMagnitude > 0.0001f
+            ? facing.normalized
+            : BallPosition - (Vector2)holder.position;
+        if (direction.sqrMagnitude < 0.0001f) direction = Vector2.right;
+        Vector2 pickupPoint = (Vector2)holder.position + direction.normalized * pickupFrontOffset;
+        return Vector2.Distance(pickupPoint, BallPosition);
+    }
+
+    // Atomically reserve a contacted field ball, stop it at its exact current pose, and ease it
+    // into the caller's LIVE existing hand/hold pose. The completion callback then invokes the
+    // established human/AI possession method; forced GiveBallTo paths intentionally bypass this.
+    public bool TryBeginLooseBallPickup(Transform holder, TeamSide team, Vector2 facing,
+                                        System.Func<Vector2> liveHoldWorldPosition,
+                                        System.Action completeExistingGrab)
+    {
+        if (liveHoldWorldPosition == null || completeExistingGrab == null ||
+            !CanBeginLooseBallPickup(holder, team, facing))
+            return false;
+
+        looseBallPickupClaimant = holder;
+        looseBallPickupRoutine = StartCoroutine(SecureLooseBall(
+            holder, liveHoldWorldPosition, completeExistingGrab));
+        return true;
+    }
+
+    IEnumerator SecureLooseBall(Transform holder, System.Func<Vector2> liveHoldWorldPosition,
+                                 System.Action completeExistingGrab)
+    {
+        Vector3 start = ball.transform.position;
+        float z = start.z;
+        ball.transform.SetParent(null);
+        ball.simulated = false;
+        ball.linearVelocity = Vector2.zero;
+        ball.angularVelocity = 0f;
+
+        float elapsed = 0f;
+        float duration = Mathf.Max(0.01f, pickupTransitionDuration);
+        while (elapsed < duration)
+        {
+            if (holder == null || ball == null || looseBallPickupClaimant != holder)
+            {
+                if (looseBallPickupClaimant == holder) looseBallPickupClaimant = null;
+                looseBallPickupRoutine = null;
+                if (ball != null && ball.transform.parent == null && PossessingTeam == null)
+                    ball.simulated = true;
+                yield break;
+            }
+
+            elapsed += Time.deltaTime;
+            float t = Mathf.Clamp01(elapsed / duration);
+            float eased = t * t * (3f - 2f * t); // smooth acceleration and deceleration
+            Vector2 target = liveHoldWorldPosition();
+            Vector2 world = Vector2.Lerp((Vector2)start, target, eased);
+            ball.transform.position = new Vector3(world.x, world.y, z);
+            yield return null;
+        }
+
+        if (holder == null || ball == null || looseBallPickupClaimant != holder)
+        {
+            if (looseBallPickupClaimant == holder) looseBallPickupClaimant = null;
+            looseBallPickupRoutine = null;
+            if (ball != null && ball.transform.parent == null && PossessingTeam == null)
+                ball.simulated = true;
+            yield break;
+        }
+
+        Vector2 finalTarget = liveHoldWorldPosition();
+        ball.transform.position = new Vector3(finalTarget.x, finalTarget.y, z);
+        looseBallPickupClaimant = null;
+        looseBallPickupRoutine = null;
+        completeExistingGrab();
+    }
+
+    void CancelLooseBallPickup(bool restoreLoosePhysics)
+    {
+        Coroutine running = looseBallPickupRoutine;
+        looseBallPickupRoutine = null;
+        looseBallPickupClaimant = null;
+        if (running != null) StopCoroutine(running);
+
+        if (restoreLoosePhysics && ball != null && ball.transform.parent == null &&
+            PossessingTeam == null)
+            ball.simulated = true;
+    }
 
     // given a team, returns the other team
     public TeamSide EnemyOf(TeamSide team)
@@ -493,6 +638,10 @@ public class MatchContext : MonoBehaviour
     public void GiveBallTo(Transform holder, TeamSide team)
     {
         if (ball == null || holder == null) return;
+
+        // Rules assignments (penalty / goal restart) stay immediate and supersede any incidental
+        // in-progress field pickup. The sprint duel now reaches this only after its contact ease.
+        if (looseBallPickupClaimant != null) CancelLooseBallPickup(false);
 
         PlayerMovement pm = holder.GetComponent<PlayerMovement>();
         if (pm != null) { pm.TakeOverHeldBall(); return; } // parents ball + sets PlayerTeam possession + isHolding

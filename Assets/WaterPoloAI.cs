@@ -13,12 +13,12 @@ public interface IAgentBody
     float ChaseSpeed { get; }
     float CarrySpeed { get; }
     float SupportSpeed { get; }
-    float GrabDistance { get; }
     float HoldOffset { get; }
     float ShootRange { get; }
     float ShootPower { get; }   // used as a deterministic shot SPEED (units/sec)
 
     float StealChance { get; }
+    float StealDistance { get; }
     float LooseHoldStealBonus { get; } // extra steal chance vs a Shift-sprinting (loose-hold) carrier
     float HoldStartTime { get; set; }
     float NextStealTime { get; set; }
@@ -88,13 +88,6 @@ public static class WaterPoloBrain
     const float KeeperProtectRadius = 2.5f; // a presser can't crowd a ball-holding keeper
     const float MinTeammateSeparation = 1.5f; // teammates never pack tighter than this (lower priority yields; 1.2 → 1.5, 2026-07-09g anti-cluster)
 
-    // ---- catching a MOVING ball needs real positioning (2026-07-09g) ----
-    // A ball still flying through the water (above FastBallSpeed) can only be caught
-    // close-in AND roughly in front of the receiver; a slow/settled ball keeps the old
-    // omnidirectional pickup at the full grab radius so play never stalls on a floater.
-    const float FastBallSpeed = 2.5f;   // u/s — above this the ball is "in flight", not settled
-    const float FastCatchRadius = 0.6f; // reach for catching a flying ball (vs GrabDistance 1.0 settled)
-    const float CatchFacingDot = 0.1f;  // must roughly face the incoming ball (~±84°)
     const float TeammateSprintFollowMult = 1.2f; // player-team mates hustle to keep shape while the human sprints (Task 4)
 
     // ---- drives (Feature 1) ----
@@ -143,14 +136,11 @@ public static class WaterPoloBrain
             return;
         }
 
-        // Collect a genuinely loose ball within reach (cooldown stops snatch-backs;
-        // CanGrab enforces the shot-clock turnover ban on the violating team). A HIGH
-        // ball overhead is untouchable outright — BallGrabbable is false mid-flight.
-        // 2026-07-09g: CanCatchLooseBall replaces the flat GrabDistance check — a FLYING
-        // ball needs the catcher close AND facing it; a settled ball keeps the old radius.
+        // Collect only after the shared FRONT pickup point makes genuine contact. MatchContext
+        // owns the atomic reservation and the tiny loose→hand ease; the existing Grab below still
+        // owns normal AI possession. A HIGH ball remains impossible because BallGrabbable is false.
         if (ctx.BallGrabbable && ctx.CanGrab(a.Team) &&
-            ctx.IsAtOutOfBoundsBall(a.Body.position) &&
-            CanCatchLooseBall(ctx, a.Body.position, a.LastDirection, a.GrabDistance) &&
+            ctx.CanBeginLooseBallPickup(a.Tf, a.Team, a.LastDirection) &&
             (ctx.OutOfBoundsRestartActive || !HumanTeammateCloserToBall(a, ctx)) &&
             TryCollectLoose(a, ctx))
             return;
@@ -464,26 +454,6 @@ public static class WaterPoloBrain
         return false;
     }
 
-    // Shared positional-catch rule (2026-07-09g), used by the AI collect gate AND the human's
-    // TryGrabBall so both obey the same physics: a slow/settled loose ball is picked up inside
-    // `slowRadius` from any side (the old behavior); a ball still FLYING (a zipped pass or
-    // deflected shot passing by) is only caught within FastCatchRadius AND while the catcher
-    // roughly faces it — swimmers no longer vacuum fast balls out of the water at full grab
-    // range as they zip past. Legality gates (BallGrabbable / CanGrab / grab bans) stay with
-    // the callers; this is geometry only.
-    public static bool CanCatchLooseBall(MatchContext ctx, Vector2 myPos, Vector2 facing, float slowRadius)
-    {
-        if (ctx == null || ctx.Ball == null) return false;
-        Vector2 ballPos = ctx.BallPosition;
-        float dist = Vector2.Distance(myPos, ballPos);
-        float ballSpeed = ctx.Ball.simulated ? ctx.Ball.linearVelocity.magnitude : 0f;
-        if (ballSpeed <= FastBallSpeed) return dist <= slowRadius; // settled/slow → old pickup
-        if (dist > FastCatchRadius) return false;                  // flying → must be right on it...
-        Vector2 toBall = ballPos - myPos;
-        if (toBall.sqrMagnitude < 1e-4f || facing.sqrMagnitude < 1e-4f) return true;
-        return Vector2.Dot(facing.normalized, toBall.normalized) >= CatchFacingDot; // ...and facing it
-    }
-
     // Keep a swimmer inside the play area — can't cross the goal line. Called from each
     // body's FixedUpdate during LIVE play only (the bodies return before this while frozen
     // or excluded, so duel/penalty/corner placements are never clamped). Ball + keepers
@@ -514,15 +484,33 @@ public static class WaterPoloBrain
         // ball to a world point (this was the "ball freezes in place" bug).
         if (ctx.Ball.transform.parent != a.Tf) { a.IsHolding = false; return; }
 
+        const float rockDegrees = 7f;
+        Vector2 localPosition = HeldBallLocalPosition(a, out bool moving, out float motion);
+        ctx.Ball.transform.localPosition = (Vector3)localPosition;
+        ctx.Ball.transform.localRotation = moving
+            ? Quaternion.Euler(0f, 0f, motion * rockDegrees)
+            : Quaternion.identity;
+    }
+
+    // World-space form of the existing AI hold pose. MatchContext samples this during the short
+    // secure transition, so the target follows a moving swimmer and arrives with no final snap.
+    public static Vector2 HeldBallWorldPosition(IAgentBody a)
+    {
+        if (a == null || a.Tf == null) return Vector2.zero;
+        Vector2 localPosition = HeldBallLocalPosition(a, out _, out _);
+        return a.Tf.TransformPoint(localPosition);
+    }
+
+    static Vector2 HeldBallLocalPosition(IAgentBody a, out bool moving, out float motion)
+    {
         const float movingThreshold = 0.1f;
         const float pushAmplitude = 0.06f;
         const float pushCyclesPerSecond = 1.7f;
-        const float rockDegrees = 7f;
         const float diagonalHeldBallDistanceMultiplier = 0.72f;
         const float diagonalHeldBallHeadBias = 0.65f;
 
         Vector2 velocity = a.Body != null ? a.Body.linearVelocity : Vector2.zero;
-        bool moving = velocity.sqrMagnitude > movingThreshold * movingThreshold;
+        moving = velocity.sqrMagnitude > movingThreshold * movingThreshold;
         Vector2 forward = moving ? HeldBallVisualForward(velocity, diagonalHeldBallHeadBias)
                                  : a.LastDirection.normalized;
         if (forward.sqrMagnitude < 1e-4f) forward = Vector2.right;
@@ -530,14 +518,11 @@ public static class WaterPoloBrain
         // A stable per-swimmer phase prevents every carrier from pulsing in lock-step. This is
         // presentation only: shooting/passing still use LastDirection and their existing physics.
         float phase = Mathf.Abs(Animator.StringToHash(a.Tf.name) % 360) * Mathf.Deg2Rad;
-        float motion = Mathf.Sin(Time.time * pushCyclesPerSecond * Mathf.PI * 2f + phase);
+        motion = Mathf.Sin(Time.time * pushCyclesPerSecond * Mathf.PI * 2f + phase);
         float diagonal = moving ? DiagonalAmount(velocity.normalized) : 0f;
         float distance = (a.HoldOffset + (moving ? motion * pushAmplitude : 0f)) *
                          Mathf.Lerp(1f, diagonalHeldBallDistanceMultiplier, diagonal);
-        ctx.Ball.transform.localPosition = (Vector3)(forward * distance);
-        ctx.Ball.transform.localRotation = moving
-            ? Quaternion.Euler(0f, 0f, motion * rockDegrees)
-            : Quaternion.identity;
+        return forward * distance;
     }
 
     static Vector2 HeldBallVisualForward(Vector2 velocity, float diagonalHeadBias)
@@ -950,8 +935,8 @@ public static class WaterPoloBrain
     {
         PlayerMovement active = TeamManager.ActivePlayer;
         if (active == null || a.Team == null || !a.Team.Contains(active.transform)) return false;
-        float mine = Vector2.Distance(a.Body.position, ctx.BallPosition);
-        float human = Vector2.Distance(active.transform.position, ctx.BallPosition);
+        float mine = ctx.LooseBallPickupContactDistance(a.Tf, a.LastDirection);
+        float human = ctx.LooseBallPickupContactDistance(active.transform, active.Facing);
         return human <= mine;
     }
 
@@ -959,15 +944,10 @@ public static class WaterPoloBrain
     // whole flight — nobody on either team can pick an airborne arc off).
     static bool TryCollectLoose(IAgentBody a, MatchContext ctx)
     {
-        BallFlight flight = BallFlight.Instance;
-
-        // A SKIP SHOT in mid-air (before its bounce) is too fast + low to grab — AI gets
-        // ZERO intercept. It's a shot at goal, never a pass, so no auto-targeting either.
-        // Only AFTER it bounces is it a normal, collectable loose ball.
-        if (flight != null && flight.SkipActive && !flight.SkipBounced) return false;
-
-        Grab(a, ctx);
-        return true;
+        return ctx.TryBeginLooseBallPickup(
+            a.Tf, a.Team, a.LastDirection,
+            () => HeldBallWorldPosition(a),
+            () => Grab(a, ctx));
     }
 
     static void Grab(IAgentBody a, MatchContext ctx)
@@ -977,7 +957,10 @@ public static class WaterPoloBrain
         ctx.Ball.simulated = false;
         ctx.Ball.linearVelocity = Vector2.zero;
         ctx.Ball.transform.SetParent(a.Tf);
-        ctx.Ball.transform.localPosition = (Vector3)(a.LastDirection * a.HoldOffset);
+        Vector2 target = HeldBallWorldPosition(a);
+        ctx.Ball.transform.position = new Vector3(target.x, target.y,
+                                                   ctx.Ball.transform.position.z);
+        ctx.Ball.transform.localRotation = Quaternion.identity;
         ctx.SetPossession(a.Team);
         a.HoldStartTime = Time.time;
     }
@@ -1011,7 +994,7 @@ public static class WaterPoloBrain
         // and a flat success bonus (PlayerMovement.IsLooseHold).
         PlayerMovement carrierPm = carrier.GetComponent<PlayerMovement>();
         bool looseHold = carrierPm != null && carrierPm.IsLooseHold;
-        float reach = a.GrabDistance;
+        float reach = a.StealDistance;
         if (Vector2.Distance(a.Body.position, carrier.position) > reach) return false;
 
         // Rear/outside-front-arc contact is a real close-range attempt, but an illegal blindside

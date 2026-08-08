@@ -12,8 +12,6 @@ public class PlayerMovement : MonoBehaviour
 
     [Header("Ball")]
     [SerializeField] private Rigidbody2D ball;
-    [Tooltip("How close (centre-to-centre) the player must be to collect a loose ball. Kept generous so colliders pushing the ball away can't make your own loose ball unreachable.")]
-    [SerializeField] private float grabDistance = 1f; // aligned to the scene's live value (was 1.6 in code only — the scene always said 1)
     [SerializeField] private float holdOffset = 0.6f;
     [Tooltip("Anchor the held ball snaps to on pickup. Leave empty to parent to this player's root.")]
     [SerializeField] private Transform handPosition;
@@ -636,20 +634,15 @@ public class PlayerMovement : MonoBehaviour
         // loose + past cooldown + not under a shot-clock turnover ban
         if (ctx != null && (!ctx.BallGrabbable || !ctx.CanGrab(ctx.PlayerTeam))) return;
 
-        // 2026-07-09g: the same positional catch rule the AI uses — a slow/settled ball is
-        // picked up inside grabDistance from any side; a ball still FLYING past can only be
-        // caught close-in while roughly facing it. Applies to auto-collect AND the E press.
+        // Shared professional field pickup: the player must bring the small front/head/hand
+        // acquisition point into real contact. MatchContext atomically reserves the ball and
+        // eases it from this exact loose pose into our live, art-tuned hold pose.
         if (ctx != null)
         {
-            if (!ctx.IsAtOutOfBoundsBall(transform.position)) return;
-            if (WaterPoloBrain.CanCatchLooseBall(ctx, transform.position, lastDirection, grabDistance))
-                GrabBall();
+            if (!ctx.CanBeginLooseBallPickup(transform, ctx.PlayerTeam, lastDirection)) return;
+            ctx.TryBeginLooseBallPickup(transform, ctx.PlayerTeam, lastDirection,
+                                        CurrentHeldBallWorldPosition, GrabBall);
             return;
-        }
-
-        if (Vector2.Distance(transform.position, ball.position) <= grabDistance)
-        {
-            GrabBall();
         }
     }
 
@@ -690,7 +683,9 @@ public class PlayerMovement : MonoBehaviour
         ball.simulated = false;
         ball.linearVelocity = Vector2.zero;
         ball.transform.SetParent(handPosition != null ? handPosition : transform);
-        ball.transform.localPosition = Vector3.zero; // snap to the hand anchor
+        Vector2 target = CurrentHeldBallWorldPosition();
+        ball.transform.position = new Vector3(target.x, target.y, ball.transform.position.z);
+        ball.transform.localRotation = Quaternion.identity;
 
         if (MatchContext.Instance != null)
             MatchContext.Instance.SetPossession(MatchContext.Instance.PlayerTeam);
@@ -1117,16 +1112,29 @@ public class PlayerMovement : MonoBehaviour
             bool movingWithBall = IsMovingWithBall;
             float motion = Mathf.Sin(
                 Time.time * movingHoldBallPushCyclesPerSecond * Mathf.PI * 2f + heldBallMotionPhase);
-            Vector2 visualOffset = movingWithBall
-                ? MovingHeldBallOffset(rb.linearVelocity, motion)
-                : HeldBallHandOffset();
-            Vector3 p = transform.position + (Vector3)visualOffset;
+            Vector3 p = CurrentHeldBallWorldPosition();
             p.z = ball.transform.position.z;
             ball.transform.position = p;
             ball.transform.localRotation = movingWithBall
                 ? Quaternion.Euler(0f, 0f, motion * movingHoldBallRockDegrees)
                 : Quaternion.identity;
         }
+    }
+
+    // The acquisition transition reads the same pose LateUpdate uses, including the swimmer's
+    // live velocity and the existing moving push. It intentionally does not require isHolding,
+    // because it is the moving target during the short loose→secure hand motion.
+    public Vector2 CurrentHeldBallWorldPosition()
+    {
+        bool moving = rb != null &&
+                      rb.linearVelocity.sqrMagnitude >
+                      MovingHoldSpeedThreshold * MovingHoldSpeedThreshold;
+        float motion = Mathf.Sin(
+            Time.time * movingHoldBallPushCyclesPerSecond * Mathf.PI * 2f + heldBallMotionPhase);
+        Vector2 visualOffset = moving
+            ? MovingHeldBallOffset(rb.linearVelocity, motion)
+            : HeldBallHandOffset();
+        return (Vector2)transform.position + visualOffset;
     }
 
     // Horizontal swim art has a left/right head even when the body travels diagonally. A raw

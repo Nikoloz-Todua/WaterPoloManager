@@ -59,12 +59,12 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 
 | File | Role |
 |---|---|
-| `PlayerMovement.cs` | Human control of the active player: move, grab (E), **charged shoot** (hold Space; time-based `shotChargeTime` 0.7s, min-speed floor so a tap never drops), aim chevron + **power bar** (world-unit `powerBarWidth` 1.2 — >2× the keeper bar, grows left→right), **directional charged pass** (hold B — fires where the facing triangle/joystick points with a tunable `passAssist`, NOT auto-homed; `FindPassAssistTarget` scores teammates by dot with `lastDirection`). **Shot height** (`shotHeight` 0..1, charges in lock-step with power: low 0–0.3 / mid / high 0.7–1; read by Goalkeeper + GoalkeeperAnimator for the dive tier; **charge >0.7 releases as the untouchable ASYMMETRIC shot arc** landing 1.5u before the aimed goal line — `HighShotLandPoint`, raw aim, no assist). **Shots ×1.35 code-side speed** (`ShotSpeedMult` — shots always outpace passes; serialized `maxShootPower` 12 untouched). **Skip shot** (hold Q while charging Space → fast LOW bounce shot via `BallFlight`). **Every B pass arcs** (`ArcKind.Pass` small hop to the assist target, else a charge-scaled 3.5–6.5u spot along the aim); **F+B = the big high LOB** (`ArcKind.Lob`, ×0.7 speed) — both untouchable mid-flight (nobody intercepts an airborne ball; contests happen at the landing). **Charge bar reads shot-vs-pass:** pass = cool blue→cyan; shot = green→yellow→red strobing white past 0.7 (the high-shot zone). Ball held via **parenting**; reports possession to MatchContext. `TakeOverHeldBall()` for clean control transfer; `TouchBlockSteal()` (Block button — half steal chance, 50% foul-on-miss). **Stamina hooks** (`StaminaSpeedMult`/`StaminaSprintMult`/`StaminaSprintBlocked`/`StaminaStealMult`/`StaminaPercent01`, neutral 1 by default). |
+| `PlayerMovement.cs` | Human control of the active player: move, grab (E), **professional close-contact loose pickup** (auto/E both request the one `MatchContext` front-point acquisition; no centre-radius snap), **charged shoot** (hold Space; time-based `shotChargeTime` 0.7s, min-speed floor so a tap never drops), aim chevron + **power bar** (world-unit `powerBarWidth` 1.2 — >2× the keeper bar, grows left→right), **directional charged pass** (hold B — fires where the facing triangle/joystick points with a tunable `passAssist`, NOT auto-homed; `FindPassAssistTarget` scores teammates by dot with `lastDirection`). **Shot height** (`shotHeight` 0..1, charges in lock-step with power: low 0–0.3 / mid / high 0.7–1; read by Goalkeeper + GoalkeeperAnimator for the dive tier; **charge >0.7 releases as the untouchable ASYMMETRIC shot arc** landing 1.5u before the aimed goal line — `HighShotLandPoint`, raw aim, no assist). **Shots ×1.35 code-side speed** (`ShotSpeedMult` — shots always outpace passes; serialized `maxShootPower` 12 untouched). **Skip shot** (hold Q while charging Space → fast LOW bounce shot via `BallFlight`). **Every B pass arcs** (`ArcKind.Pass` small hop to the assist target, else a charge-scaled 3.5–6.5u spot along the aim); **F+B = the big high LOB** (`ArcKind.Lob`, ×0.7 speed) — both untouchable mid-flight (nobody intercepts an airborne ball; contests happen at the landing). **Charge bar reads shot-vs-pass:** pass = cool blue→cyan; shot = green→yellow→red strobing white past 0.7 (the high-shot zone). Ball held via **parenting** and the existing art-tuned offsets; reports possession to MatchContext. `TakeOverHeldBall()` for clean control transfer; `TouchBlockSteal()` (Block button — half steal chance, 50% foul-on-miss). **Stamina hooks** (`StaminaSpeedMult`/`StaminaSprintMult`/`StaminaSprintBlocked`/`StaminaStealMult`/`StaminaPercent01`, neutral 1 by default). |
 | `TeammateAI.cs` | Thin component on each player. When NOT human-controlled, runs the shared `WaterPoloBrain`. Implements `IAgentBody`. |
 | `BotMovement.cs` | Thin component on each bot. Always runs `WaterPoloBrain`. Implements `IAgentBody`. |
-| `WaterPoloAI.cs` | **The shared brain** + `IAgentBody` interface. All AI decisions live here once: carrier (shoot/pass/**drive**/dribble), support (get open), presser (nearest chases), defender (hold shape). 🟡 New: **drives** (beaten marker + clear lane → burst to 2m, shoot/kick-out/abort) and **picks/screens** (nominated screener plants on the carrier's marker; rubbing past = short "beaten" boost). Works, needs tuning. **This is C# state-machine AI — NOT an LLM.** |
+| `WaterPoloAI.cs` | **The shared brain** + `IAgentBody` interface. All AI decisions live here once: carrier (shoot/pass/**drive**/dribble), support (get open), presser (nearest chases the ball's live `MatchContext.BallPosition`), defender (hold shape). Normal bot/teammate collection now requests the same atomic front-point acquisition as the human and supplies its existing moving hold pose as the transition target. The old `grabDistance` field is no longer a pickup radius; it migrates to `stealDistance` so established steal reach is preserved. 🟡 New: **drives** (beaten marker + clear lane → burst to 2m, shoot/kick-out/abort) and **picks/screens** (nominated screener plants on the carrier's marker; rubbing past = short "beaten" boost). Works, needs tuning. **This is C# state-machine AI — NOT an LLM.** |
 | `TeamSide.cs` | One per team. Holds goals + roster (`members`), formation math (auto-spreads ANY number of players), passing/positioning logic, **attacking-spacing + tactics tunables (center-feed, counter, shot-quality threshold, free-throw clearance), shot-quality + pass-risk scoring, and 4 defense modes — Press/Zone/Drop/MPress — incl. man-up 4-2 umbrella + man-down zone shapes**. 🟡 New: **dynamic Centre** (fights for inside water goal-side of its guard at 2m), wider lanes + weak-side wing drift, receiver-shot-quality pass bonus, drive/screen helpers (`DrivePoint`, `GetScreenSpot`, `FindScreenerForCarrier`), and **bot adaptive defense** (`EvaluateDefenseMode`, auto-detected `isAI`: Drop when man-down / protecting a late lead / Centre conceded 2+; Press otherwise). Scales 2v2 → 6v6 with no code change. |
-| `MatchContext.cs` | Singleton "match truth": ball position, possession + last toucher (`NoteTouch` for deflections), post-release grab cooldown (`releaseGrabDelay` 0.5s), freeze flag, shot-clock grab-ban, kickoff-pass flag, **free-throw state, keeper-hold flag, counterattack window, player goal-line clamp (`playerLimitX`)**, halftime `SwapEnds()`, `GiveBallTo()` / `ForceDropHeldBall()`, `EnemyOf()`, **`IsProtectedKeeper(carrier)`** (the keeper-steal safe-zone rule — true while a keeper carries the ball inside its safe zone, Task 5). `NoteRelease` also records unscaled release time for the existing replay buffer's release-anchored second pass. |
+| `MatchContext.cs` | Singleton "match truth": ball position, possession + last toucher (`NoteTouch` for deflections), post-release grab cooldown (`releaseGrabDelay` 0.5s), freeze flag, shot-clock grab-ban, kickoff-pass flag, **free-throw state, keeper-hold flag, counterattack window, player goal-line clamp (`playerLimitX`)**, halftime `SwapEnds()`, `GiveBallTo()` / `ForceDropHeldBall()`, `EnemyOf()`, **`IsProtectedKeeper(carrier)`** (the keeper-steal safe-zone rule — true while a keeper carries the ball inside its safe zone, Task 5). It also owns the single atomic field-player loose-ball claim: front point offset **0.42u**, contact radius **0.18u** (fast ball >2.5u/s uses 65% = 0.117u), with an exact physical-collider-contact fallback for a ball already touching/under the swimmer, then a **0.11s SmoothStep** from the ball's exact loose world pose to the claimant's live existing hand pose before normal possession begins. `BallGrabbable`, grab bans, release cooldown, skip pre-bounce and `BallFlight.HighBallActive` remain prerequisite gates. `GiveBallTo()` remains the immediate rules-assignment path. `NoteRelease` also records unscaled release time for the existing replay buffer's release-anchored second pass. |
 | `TeamManager.cs` | On `GameManager`. Auto-switches control to the ball-holder after `autoSwitchDelay` (0.5s — so you keep control to chase your own loose ball); manual **C** / touch SWITCH (skips excluded); **Z** cycles defense (Press/Zone/Drop/MPress); never auto-activates excluded players. Exposes static **`ActivePlayer`** + **`ActivePlayerIndex`** (read by `CameraFollow` and the stamina HUD). |
 | `Goalkeeper.cs` | Kinematic keeper sliding along its physical goal line tracking ball Y (stays on its goal after the halftime swap). **Save % system:** a fast shot reaching its hands rolls `baseSaveChance` 0.65 minus penalties for HIGH (height >0.7), POWER (>9 u/s) and SKIP shots, plus a stamina penalty when tired; a slow ball is auto-collected. **Snatch:** an enemy carrier within `keeperSnatchDistance` (0.8u) is stripped with 100% success, no roll (`TrySnatchFromCarrier`; respects free throws, not vs another keeper). **Player keeper = full control:** while your own keeper holds the ball it plays like a field swimmer — free **2D movement** at `keeperMoveSpeed` (4), sprint, a charged shot fired in the **joystick/aim** direction (never auto-aimed at goal), and a **directional pass** (`FindKeeperPassTarget` scores ALL teammates by dot(aim,dir)−dist×0.05, no cone; reads the live `TouchControls.Instance` joystick, else `lastDir`). **No auto-pass** — fully manual; it SWIMS back to its line (never teleports) after you shoot/pass. **Safe zone (Task 5):** within `KeeperSafeZoneRadius` (1.5u) of the goal line the carrying keeper is unstealable; carry it OUTSIDE and `keeperLeftSafeZone` latches → enemies steal normally (exposed via `MatchContext.IsProtectedKeeper`; `OnBallStolen()` clears the hold on a successful strip). **Organic idle** (not holding, ball far): small random X drift 0.1–0.3u every 2–4s (≤0.4u off the line) + a subtle ±0.05u Y sine micro-bob. **Bot keeper** auto-distributes after `keeperHoldSeconds` (0.8s) OR immediately if crowded within `keeperPanicDistance` (2.5u) — UNCHANGED. **Stamina-aware** (tired = worse saves, no sprint at 0%). A keeper hold is NOT a possession change — the shot clock keeps ticking until the pass-out. **Distribution arcs (2026-07-04b):** `PassOut` throws the same untouchable BallFlight arc as every other pass (`ArcKind.Pass`; the forced DEEP outlet = the big `Lob`); point-blank falls back flat. **Freeze gate:** the keeper now fully freezes during `PlayFrozen` like every swimmer (needed so it can't fish the dead ball out of its own net during the goal hang-time). |
 | `Goal.cs` | Existing scoring component on each goal root. The saved scoring trigger is now the child `GoalLine`; `Goal` relays callbacks from that child and reports `goalSide` + the root transform to the existing `ScoreManager`. No second scoring system. |
@@ -73,7 +73,7 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 | `MatchTimer.cs` | Quarters (90s) + win/lose/draw; pauses during freezes; sprint duel each quarter; halftime swap. Every unfinished **temporary** exclusion ends before the next-quarter lineup/duel; permanently removed players remain out. Full time submits the real score once through `MatchPresentationContext`, then runs reward-slot/mission/ranking/pass hooks and `MatchResultUI.Show()`. `ForfeitMatch()` also consumes a championship fixture with a forced one-goal winner if the live score does not match the forced outcome. |
 | `ShotClock.cs` | 30s per-possession clock (singleton): resets on possession change / goal / defensive exclusion; turnover + grab-ban at 0; pauses when frozen, **during a free throw**, or match over; **a keeper hold does NOT reset it (keeps ticking until the keeper distributes)**. |
 | `ExclusionManager.cs` | Fouls + exclusions (singleton): failed steal = foul → **free throw** to the fouled team; 2 fouls in 10s → temporary exclusion (roster slot nulled → AI auto-adapts) **or a PENALTY if the victim was in the 2m zone**; 3rd → permanent removal; forfeit < 4 players; HUD countdowns. `EndTemporaryExclusionsForRestart()` reuses the normal reliable `ReturnToPlay` path at a goal restart or quarter boundary. It never restores `permanentlyOut` players. 🟡 New: **virtual foul** when the victim is an inside-water Centre (Centres draw exclusions/penalties faster; toggle `centerFoulBoost` — may be too hot, watch in testing). |
-| `SprintDuel.cs` | Quarter-start duel (singleton), fully rebuilt. Builds its OWN screen-space UI in code (no wiring): a big centred **"5 → 4 → 3 → 2 → 1 → GO!" countdown** (1s each, scale-pulse per number; `countdownStart` 5) + a "TAP SPACE / TAP SPRINT FOR SPEED" hint, then a tall **vertical SPEED bar on the left** (red→orange→green, fills with the human's speed) under a pulsing "TAP FASTER!". Ball is pinned to EXACT (0,0,0) with physics OFF during the countdown, goes live at GO. At GO! the two sprinters race (bot fixed speed; human base speed + each **Space / LeftShift tap OR a tap anywhere on screen** boosts toward a cap, decays) AND **every other swimmer immediately jogs into formation at ~60% speed** (`formationMoveSpeed`, both teams alike — `RestartFormationSpot`, position-based so it ignores the freeze; no statues, no waiting for possession). The designated sprinter starts slightly ahead of its line (`sprinterForwardOffset`) so it's clearly the sprinter, not the keeper, and is made the **active player**. Runs at **quarter starts ONLY** (Q1 via `MatchTimer.Start`, Q2–Q4 via `AdvanceToNextQuarter`) — **never after goals/penalties/turnovers** (a goal restart is a separate, duel-free system in `ScoreManager`). `StartDuel` calls `ctx.ResetBallTouch()` so the camera holds the wide overview until a sprinter grabs. First within grabDistance wins → grabs → un-freeze → kickoff pass; the rest transition straight into normal AI from wherever they jogged to. **Hides the gameplay touch UI** (`TouchControls.SetGameplayVisible(false)`) for the duel's duration and restores it on finish. The TAP-for-speed mechanic lives ONLY here — regular play is hold-to-sprint. |
+| `SprintDuel.cs` | Quarter-start duel (singleton), fully rebuilt. Builds its OWN screen-space UI in code (no wiring): a big centred **"5 → 4 → 3 → 2 → 1 → GO!" countdown** (1s each, scale-pulse per number; `countdownStart` 5) + a "TAP SPACE / TAP SPRINT FOR SPEED" hint, then a tall **vertical SPEED bar on the left** (red→orange→green, fills with the human's speed) under a pulsing "TAP FASTER!". Ball is pinned to EXACT (0,0,0) with physics OFF during the countdown, goes live at GO. At GO! the two sprinters race (bot fixed speed; human base speed + each **Space / LeftShift tap OR a tap anywhere on screen** boosts toward a cap, decays) AND **every other swimmer immediately jogs into formation at ~60% speed** (`formationMoveSpeed`, both teams alike — `RestartFormationSpot`, position-based so it ignores the freeze; no statues, no waiting for possession). The designated sprinter starts slightly ahead of its line (`sprinterForwardOffset`) so it's clearly the sprinter, not the keeper, and is made the **active player**. Runs at **quarter starts ONLY** (Q1 via `MatchTimer.Start`, Q2–Q4 via `AdvanceToNextQuarter`) — **never after goals/penalties/turnovers** (a goal restart is a separate, duel-free system in `ScoreManager`). `StartDuel` calls `ctx.ResetBallTouch()` so the camera holds the wide overview until a sprinter grabs. The old separate 1.0u duel win radius is retired: the first shared front contact wins; if both contact in one physics step, pickup-point proximity resolves it, the short secure motion plays, then the existing `GiveBallTo`/unfreeze/kickoff sequence runs. **Hides the gameplay touch UI** (`TouchControls.SetGameplayVisible(false)`) for the duel's duration and restores it on finish. The TAP-for-speed mechanic lives ONLY here — regular play is hold-to-sprint. |
 | `EventFeed.cs` | Rolling last-5 event log (singleton): goals, exclusions, turnovers, out-of-bounds, forfeit, halftime. |
 | `BallOutOfBounds.cs` | Top/bottom-wall out rule: a loose ball at the edge → possession to the nearest player of the team that didn't touch it last. |
 | `PenaltyManager.cs` | Penalty shot (singleton, B16.11): on an exclusion-level foul inside the 2m zone, freezes play, puts the fouled shooter on the penalty spot (|x|≈2.47) facing the open corner, lines everyone else up **behind the shooter**. Human charges with **Space** within an aim cone; AI auto-fires after a delay (with a miss chance). The freeze lifts on the shot; a goal flows through the normal `Goal` path. |
@@ -256,7 +256,7 @@ Game Mode screen with 4 competition cards, lock-sign sprite, animated background
 
 - **WASD / arrows** — move active player.
 - **Hold LeftShift** — **sprint** (2x speed while moving). Sprinting WITH the ball = **loose hold**: you keep the ball but opponents get 2x steal range + a steal-chance bonus (`looseHoldStealBonus` 0.15 on BotMovement/TeammateAI).
-- **E** — grab / drop a loose ball.
+- **E** — request a loose-ball grab / drop a held ball. A grab never pulls from range: swim until the 0.42u front point is within the shared 0.18u contact zone, then the ball eases into the existing hand pose over 0.11s. Normal close pickup also remains automatic.
 - **Hold Space** — charge & shoot (release to fire). Charge past 0.7 (bar strobes white) = the HIGH shot: an untouchable asymmetric arc landing 1.5u before the goal line you aimed at. Shots travel ×1.35 faster than passes and punch-snap on release.
 - **Hold B** — charge & pass. **DIRECTIONAL (FIFA-style):** the ball goes where you AIM (the facing triangle / joystick / WASD), not auto-homed to a teammate. A gentle `passAssist` (default 0.3) bends it toward a teammate that's roughly along the aim; aim at the keeper or empty water and it goes there. **Every pass now flies a small arc** (untouchable mid-flight; the receiver collects it where it lands — a mis-aimed pass still lands in empty water / with the enemy). Tunables on PlayerMovement: `passAssist`, `passAssistRange`, `passAssistMinDot`, `passAccuracy`, `passInaccuracyDegrees`.
 - **Space (when NOT holding)** — attempt steal (chance-based; must be in front of the carrier).
@@ -265,13 +265,14 @@ Game Mode screen with 4 competition cards, lock-sign sprite, animated background
 
 ## A10. What's working today (DONE)
 
-Movement, ball carry (parented), charged shoot, aim line; passing with control hand-off; two AI teammates + two AI bots on ONE shared C# brain (carrier shoots/passes/dribbles, nearest presses, others hold a spread formation, support gets open); AI shoots at the goal CORNER via direct velocity (mass-independent); post-release grab cooldown (0.35s) so shots/passes travel; goalkeepers block shots; pool walls; two team-aware goals; on-screen scoreboard; formation spacing that auto-spreads any roster; **auto-switch control to whoever on your team holds the ball.**
+Movement, ball carry (parented), charged shoot, aim line; passing with control hand-off; two AI teammates + two AI bots on ONE shared C# brain (carrier shoots/passes/dribbles, nearest presses, others hold a spread formation, support gets open); AI shoots at the goal CORNER via direct velocity (mass-independent); post-release grab cooldown (0.5s) so shots/passes travel; **professional loose-ball acquisition (approach live ball → front-point contact → 0.11s secure motion; no long-distance snap)**; goalkeepers block shots; pool walls; two team-aware goals; on-screen scoreboard; formation spacing that auto-spreads any roster; **auto-switch control to whoever on your team holds the ball.**
 
 Also now DONE:
 - **Human B-pass** to nearest teammate.
 - **Charged, direct-velocity shooting** (mass-independent).
 - **Human steal on Space** (chance-based, with cooldown) when not holding the ball.
 - **AI steal** — pressers strip the carrier (chance-based, with cooldown).
+- **Atomic close-contact loose pickup** — human auto/E pickup, `BotMovement`, `TeammateAI`, landed pass/lob reception, live field-player out/corner fetches, and sprint-duel centre contact share one `MatchContext` claim. The ball keeps its real Rigidbody2D pose until contact; only one swimmer can reserve it; the transition target follows that swimmer. Penalty/post-goal rules assignment, free-throw ownership, keeper saves/catches/snatches, steals, and `TeamManager` handoff deliberately remain immediate/separate.
 - **AI catch-then-shoot settle delay** — carrier squares up before shooting.
 - **4-quarter match timer** (90s/quarter, tunable) with **win/lose/draw at full time**.
 - **Scaled from 2v2 → 4v4 → 6v6** (formation + AI scale with no code change).
@@ -536,10 +537,10 @@ Both in `Assets/Sprites/Players/Animations/`.
 ### ⬜ Not working / known issues
 1. **Players too small** at scale 0.07 — needs a size pass (raise scale, or re-export sprites so a
    larger scale reads correctly).
-2. **No hand anchor for the held ball.** Ball *parenting* already works (`PlayerMovement` does
-   `ball.transform.SetParent(transform)` on pickup, `SetParent(null)` on release), but the ball sits
-   at the body centre, not a hand — there's no `HandPosition` child. Holding visuals currently rely
-   on the ball baked into `hold.png`.
+2. **Held-ball anchoring is code-tuned, not a scene child.** `PlayerMovement` already supplies
+   direction/art-specific hand offsets plus moving-carrier push; AI has its existing local hold pose.
+   The loose-ball secure transition samples those live poses directly, so no `HandPosition` child or
+   manual scene wiring is required. Further work here is visual tuning only.
 3. **Floating + holding are now ANIMATED via bone bodies** (2026-06-20) — `BoneBody` (floating) and
    `HoldBody` (holding) SpriteSkin children play real bone clips (see the 2026-06-20 subsection
    above). The earlier "static / abandoned" problem came from mixing bone + sprite-swap on ONE body;
@@ -595,7 +596,7 @@ Both in `Assets/Sprites/Players/Animations/`.
 - **Better sprint:** generate more aggressive arm-position frames; give `sprinting` its own art
   rather than reusing the swim frames.
 - **Quick wins:** fix body scale (#1), normalize sprite export sizes so floating/swimming match (#4),
-  add a `HandPosition` child and parent the ball to it on pickup (#2).
+  and tune the existing serialized hand offsets if new art moves the visible hands (#2).
 
 ## Player System Architecture
 
@@ -2661,3 +2662,66 @@ permanent ejections were preserved.
   error; the open editor remains on its recovery backup scene, so final visual Play Mode validation
   is still required after returning it to the saved PoolB scene.
 - Runtime/editor assemblies: **0 warnings, 0 errors**. Relevant `git diff --check`: clean.
+
+---
+
+## SESSION LOG — 2026-08-08c (professional loose-ball pickup / possession transition)
+
+This pass replaces field swimmers' old centre-radius instant grab with one shared
+**approach → contact → secure** path. It reuses `MatchContext`, the existing human/AI grab
+completion, live AI pursuit, hold offsets, `BallFlight`, release cooldown, shot-clock rules and
+control transfer; it does not add another possession manager.
+
+### Audited cause and scene scale
+
+- Human auto/E pickup and both `WaterPoloBrain` field wrappers accepted a slow loose ball at a
+  **1.0u centre radius**, then disabled its Rigidbody2D, parented it and assigned possession in the
+  same frame. Moving balls above 2.5u/s used a still-generous 0.6u radius. SprintDuel had another
+  separate 1.0u win radius. Those were the visible long-distance teleports.
+- In saved `SampleScene_PoolB`, field collision radii are about 0.10u, the ball collision radius is
+  0.02u and its visible radius is about 0.116u. Current human/bot art displays around 0.65×1.30u /
+  0.72×1.45u, confirming the 1.0u root radius was not believable hand contact.
+- The ball previously had no acquisition interpolation: success moved directly from its loose
+  world pose to human art-tuned hand offsets or the AI local hold pose.
+
+### Final close-contact architecture and tuning
+
+- `MatchContext` owns one atomic in-progress claimant. `BallGrabbable` becomes false as soon as the
+  claim begins, so a second swimmer cannot parent/flicker the same ball. Possession remains null
+  until the short secure motion finishes, then the established human/AI grab method assigns it and
+  all existing shot-clock, last-touch, auto-control and camera behavior proceeds normally.
+- Contact uses a world-space point **0.42u in front** of the swimmer and a **0.18u radius**. Above
+  **2.5u/s**, field pickup uses 65% of that radius (**0.117u**) so a fast ball must genuinely meet
+  the hand point rather than merely pass nearby. Exact collider contact is a narrow fallback for a
+  landed ball already touching/under the swimmer. SprintDuel uses the same contact; a same-step tie
+  is resolved by exact pickup-point proximity.
+- Once contact succeeds, the ball stops at its exact current world pose and SmoothSteps for
+  **0.11s** to the swimmer's live existing hold pose. That target follows the moving swimmer and
+  preserves `PlayerMovement` hand offsets / moving push and `WaterPoloBrain`'s scaled local AI pose.
+- AI pursuit was already correct and remains lightweight: `ChaseBall` reads the live
+  `MatchContext.BallPosition` every physics step until the contact gate succeeds. No scene anchor,
+  trigger collider, IK, bones or per-frame allocation while swimmers are outside contact was added.
+- `BallGrabbable`, `CanGrab`, the 0.5s release cooldown, shot-clock grab ban, OOB readiness,
+  `BallFlight.HighBallActive`, and skip-shot pre-bounce protection all run before contact. Landed
+  passes/lobs become eligible only after the established landing path restores the grounded ball.
+
+### Paths using vs bypassing the secure transition
+
+- **Uses it:** human auto pickup and E, `BotMovement`, `TeammateAI`, normal grounded recoveries,
+  landed pass/lob reception, live field-player out/corner fetches, and SprintDuel centre-ball contact.
+- **Deliberately immediate/separate:** penalty and post-goal restart `GiveBallTo`, ordinary free
+  throws (the victim already retains the ball), all steals and keeper snatches, goalkeeper
+  save/collection and keeper OOB fetch, plus `TeamManager.TakeOverHeldBall` for an already-held ball.
+  Keeper grab 1.2u / snatch 0.8u and every save probability remain unchanged.
+- The old AI `grabDistance` serialized value now migrates to the explicit `stealDistance` field via
+  `FormerlySerializedAs`; it no longer controls pickup, while established AI steal reach is retained.
+
+### Files and verification
+
+- Changed: `MatchContext.cs`, `PlayerMovement.cs`, `WaterPoloAI.cs`, `BotMovement.cs`,
+  `TeammateAI.cs`, `SprintDuel.cs`, and `plan.md`.
+- No scene or Inspector setup is required. The three useful defaults live on `MatchContext`; an
+  existing saved component receives their code defaults until Unity next serializes the scene.
+- Runtime and editor assemblies both build with **0 warnings, 0 errors**; `git diff --check` is
+  clean apart from informational LF→CRLF notices. Focused Play Mode feel/rules validation remains
+  required in the saved PoolB scene because command-line assembly builds do not simulate gameplay.

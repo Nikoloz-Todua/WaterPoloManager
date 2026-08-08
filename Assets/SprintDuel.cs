@@ -14,8 +14,9 @@ using System.Collections.Generic;
 //              the human swims at a base speed that each Space / Sprint TAP (keyboard or an
 //              on-screen tap anywhere) boosts toward a cap. A tall vertical SPEED bar on the
 //              left fills with that speed (red→orange→green) under a pulsing "TAP FASTER!".
-//   Post-duel: the first sprinter within grabDistance grabs the ball, ALL duel UI disappears,
-//              the normal joystick / buttons / stamina HUD return, and play resumes.
+//   Post-duel: the first sprinter whose front pickup point genuinely contacts the ball secures it,
+//              ALL duel UI disappears, the normal joystick / buttons / stamina HUD return,
+//              and play resumes.
 //
 // The whole duel UI is built in code (no prefabs / no Inspector wiring) and the gameplay touch
 // controls are hidden for its duration (Feature 4). During the duel everyone is frozen via
@@ -39,7 +40,6 @@ public class SprintDuel : MonoBehaviour
     [SerializeField] private float boostDecay = 2f;      // speed bleeds back toward base (/sec)
 
     [Header("Geometry")]
-    [SerializeField] private float grabDistance = 1f;    // first sprinter within this wins
     [SerializeField] private float lineInset = 1f;       // how far inward from the goal line
     [SerializeField] private float lineupYSpread = 3f;   // vertical spread of the line-up
     [Tooltip("The designated sprinter starts this much further inward (toward centre) than the rest of its line, so it's clearly the sprinter and not the goalkeeper sitting behind it (Task 1).")]
@@ -214,13 +214,45 @@ public class SprintDuel : MonoBehaviour
         MoveTeamToFormation(ctx.PlayerTeam);
         MoveTeamToFormation(ctx.BotTeam);
 
-        float dH = Dist(humanSprinter, ballPos);
-        float dB = Dist(botSprinter, ballPos);
-        bool humanWins = dH <= grabDistance && (dB > grabDistance || dH <= dB);
-        bool botWins = !humanWins && dB <= grabDistance;
+        Vector2 humanFacing = DirectionToBall(humanSprinter, ballPos);
+        Vector2 botFacing = DirectionToBall(botSprinter, ballPos);
+        bool humanContact = ctx.CanBeginLooseBallPickup(humanSprinter, ctx.PlayerTeam, humanFacing);
+        bool botContact = ctx.CanBeginLooseBallPickup(botSprinter, ctx.BotTeam, botFacing);
+        if (!humanContact && !botContact) return;
 
-        if (humanWins) Finish(ctx, humanSprinter, ctx.PlayerTeam);
-        else if (botWins) Finish(ctx, botSprinter, ctx.BotTeam);
+        // If both front contact zones arrive in the same physics step, actual pickup-point
+        // proximity decides the winner. MatchContext then reserves the ball atomically while the
+        // same short world→hand secure motion plays; GiveBallTo remains the final duel assignment.
+        bool humanWins = humanContact && (!botContact ||
+            ctx.LooseBallPickupContactDistance(humanSprinter, humanFacing) <=
+            ctx.LooseBallPickupContactDistance(botSprinter, botFacing));
+        if (humanWins) BeginContactPickup(ctx, humanSprinter, ctx.PlayerTeam, humanFacing);
+        else BeginContactPickup(ctx, botSprinter, ctx.BotTeam, botFacing);
+    }
+
+    static Vector2 DirectionToBall(Transform swimmer, Vector2 ballPosition)
+    {
+        if (swimmer == null) return Vector2.right;
+        Vector2 direction = ballPosition - (Vector2)swimmer.position;
+        return direction.sqrMagnitude > 0.0001f ? direction.normalized : Vector2.right;
+    }
+
+    void BeginContactPickup(MatchContext ctx, Transform winner, TeamSide team, Vector2 facing)
+    {
+        if (winner == null || team == null) return;
+
+        PlayerMovement player = winner.GetComponent<PlayerMovement>();
+        IAgentBody agent = winner.GetComponent<IAgentBody>();
+        if (player != null) player.SetFacing(facing);
+        if (agent != null) agent.LastDirection = facing;
+
+        System.Func<Vector2> holdTarget;
+        if (player != null) holdTarget = player.CurrentHeldBallWorldPosition;
+        else if (agent != null) holdTarget = () => WaterPoloBrain.HeldBallWorldPosition(agent);
+        else holdTarget = () => (Vector2)winner.position + facing * 0.4f;
+
+        ctx.TryBeginLooseBallPickup(winner, team, facing, holdTarget,
+                                    () => Finish(ctx, winner, team));
     }
 
     void Finish(MatchContext ctx, Transform winner, TeamSide team)
