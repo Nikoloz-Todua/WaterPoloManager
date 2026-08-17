@@ -87,7 +87,7 @@ public sealed class Q1MatchIntro : MonoBehaviour
             if (player == null || !player.GameplayEligible) continue;
             player.BeginMove(MatchMovePurpose.Q1Huddle,
                 duel.StartPositionFor(player.Team, player.transform), huddleMoveSpeed,
-                DuelHandoffArrivalRadius, true, false);
+                DuelHandoffArrivalRadius, true, false, MatchMoveAnchor.SprintStart);
         }
         while (!AllArrived()) yield return null;
 
@@ -142,7 +142,7 @@ public sealed class Q1MatchIntro : MonoBehaviour
                 ringIndex++;
             }
             player.BeginMove(MatchMovePurpose.Q1Huddle, target, huddleMoveSpeed,
-                             arrivalRadius, true, false);
+                             arrivalRadius, true, false, MatchMoveAnchor.Q1Huddle);
         }
     }
 

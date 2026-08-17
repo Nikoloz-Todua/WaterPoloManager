@@ -94,6 +94,9 @@ public class PlayerAnimator : MonoBehaviour
     private PlayerMovement movement;
     private Rigidbody2D rb;
     private Material paletteMaterialInstance;
+    private bool hasMatchTeamPalette;
+    private Color matchTeamCapTint;
+    private Color matchTeamSwimwearTint;
     private readonly PlayerFlipbookPlayback flipbookPlayback = new PlayerFlipbookPlayback();
     private PlayerFlipbookVisualState flipbookVisualState = PlayerFlipbookVisualState.Legacy;
     private PlayerFlipbookVisualState pendingFlipbookVisualState;
@@ -605,6 +608,13 @@ public class PlayerAnimator : MonoBehaviour
 
     void ResolvePaletteTints(out Color resolvedCapTint, out Color resolvedSwimwearTint)
     {
+        if (hasMatchTeamPalette)
+        {
+            resolvedCapTint = matchTeamCapTint;
+            resolvedSwimwearTint = matchTeamSwimwearTint;
+            return;
+        }
+
         Color defaultCap = new Color(0.78f, 0.16f, 0.16f, 1f);
         Color defaultSwimwear = Color.white;
         resolvedCapTint = defaultCap;
@@ -622,6 +632,20 @@ public class PlayerAnimator : MonoBehaviour
                ColorUtility.TryParseHtmlString("#" + hex, out Color parsed)
             ? parsed
             : fallback;
+    }
+
+    // MatchSquadManager owns team membership. These presentation hooks let it capture the same
+    // saved-club palette used by scene starters, then enforce that identity on runtime bodies.
+    public void GetConfiguredTeamPalette(out Color capTint, out Color swimwearTint)
+        => ResolvePaletteTints(out capTint, out swimwearTint);
+
+    public void ApplyMatchTeamPalette(Color capTint, Color swimwearTint)
+    {
+        hasMatchTeamPalette = true;
+        matchTeamCapTint = capTint;
+        matchTeamSwimwearTint = swimwearTint;
+        if (paletteMaterialInstance != null)
+            PlayerPaletteSwapRuntime.SetTints(paletteMaterialInstance, capTint, swimwearTint);
     }
 
     void OnDestroy()

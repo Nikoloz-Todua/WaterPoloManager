@@ -29,7 +29,7 @@ public sealed class SubstitutionManager : MonoBehaviour
     [SerializeField] private float suggestionLifetimeSeconds = 8f;
     [SerializeField] private float evaluationIntervalSeconds = 1f;
 
-    private enum ExchangeKind { Live, ExclusionReplacement }
+    private enum ExchangeKind { Live, Timeout, ExclusionReplacement }
     private enum ExchangePhase { Approaching, HandTouch, Dispersing }
 
     private sealed class Exchange
@@ -43,6 +43,7 @@ public sealed class SubstitutionManager : MonoBehaviour
         public Vector2 fixedAnchor;
         public float phaseElapsed;
         public bool incomingReachedBenchLane;
+        public bool incomingEnteredField;
         public Action<MatchPlayerState> exclusionTouchComplete;
         public bool callbackSent;
     }
@@ -110,6 +111,23 @@ public sealed class SubstitutionManager : MonoBehaviour
         return true;
     }
 
+    // Timeout substitutions are legal from any location and therefore do not use the live
+    // flying-area hand-touch. The slot changes atomically while play is dead, then both visible
+    // bodies swim naturally toward bench/restart positions during the remaining timeout.
+    public bool RequestDuringTimeout(MatchPlayerState outgoing, MatchPlayerState incoming,
+                                     out string validationError)
+    {
+        if (TimeoutManager.Instance == null || !TimeoutManager.Instance.Active)
+        {
+            validationError = "No active timeout";
+            return false;
+        }
+        if (!ValidateLive(outgoing, incoming, out validationError)) return false;
+        if (StartTimeoutExchange(outgoing, incoming)) return true;
+        validationError = "Lineup changed before the timeout substitution could begin";
+        return false;
+    }
+
     public bool QueuePending(MatchPlayerState outgoing, MatchPlayerState incoming,
                              out string validationError)
     {
@@ -150,7 +168,15 @@ public sealed class SubstitutionManager : MonoBehaviour
         if (item.outgoing != null) item.outgoing.SetPending(false);
         if (item.incoming != null) item.incoming.SetPending(false);
         if (ValidateLive(item.outgoing, item.incoming, out string error))
-            StartLiveExchange(item.outgoing, item.incoming);
+        {
+            if (TimeoutManager.Instance != null && TimeoutManager.Instance.Active)
+            {
+                if (!StartTimeoutExchange(item.outgoing, item.incoming) && EventFeed.Instance != null)
+                    EventFeed.Instance.AddEvent("Substitution cancelled - lineup changed");
+            }
+            else
+                StartLiveExchange(item.outgoing, item.incoming);
+        }
         else if (EventFeed.Instance != null)
             EventFeed.Instance.AddEvent("Substitution cancelled - " + error);
     }
@@ -217,9 +243,9 @@ public sealed class SubstitutionManager : MonoBehaviour
         replacement.SetPending(false);
         replacement.SetStatus(MatchPlayerStatus.ExclusionReplacementApproach, false);
         replacement.BeginMove(MatchMovePurpose.Exclusion,
-                               MatchSquadManager.Instance.Geometry.ExclusionBenchLane(excluded.Team),
+                               MatchSquadManager.Instance.Geometry.ExclusionBenchApproach(excluded.Team),
                                choreographySpeed, exchangeArrivalRadius,
-                               true, true);
+                               true, true, MatchMoveAnchor.ExclusionBenchApproach);
         active.Add(new Exchange
         {
             kind = ExchangeKind.ExclusionReplacement,
@@ -247,12 +273,13 @@ public sealed class SubstitutionManager : MonoBehaviour
         outgoing.SetPending(false);
         incoming.SetPending(false);
 
-        Vector2 inside = squad.Geometry.SubstitutionInside(outgoing.Team);
-        Vector2 outsidePoint = squad.Geometry.SubstitutionOutside(outgoing.Team);
-        outgoing.BeginMove(MatchMovePurpose.Substitution, inside, choreographySpeed,
-                           exchangeArrivalRadius, true, true);
-        incoming.BeginMove(MatchMovePurpose.Substitution, outsidePoint, choreographySpeed,
-                           exchangeArrivalRadius, true, true);
+        FlyingSubstitutionArea area = squad.Geometry.GetFlyingSubstitutionArea(outgoing.Team);
+        outgoing.BeginMove(MatchMovePurpose.Substitution, area.ExchangeInside, choreographySpeed,
+                           exchangeArrivalRadius, true, true,
+                           MatchMoveAnchor.FlyingSubstitutionExchange);
+        incoming.BeginMove(MatchMovePurpose.Substitution, area.ExchangeOutside, choreographySpeed,
+                           exchangeArrivalRadius, true, true,
+                           MatchMoveAnchor.FlyingSubstitutionExchange);
 
         active.Add(new Exchange
         {
@@ -267,6 +294,52 @@ public sealed class SubstitutionManager : MonoBehaviour
         if (EventFeed.Instance != null)
             EventFeed.Instance.AddEvent("Substitution - " + outgoing.DisplayName +
                                         " / " + incoming.DisplayName);
+    }
+
+    bool StartTimeoutExchange(MatchPlayerState outgoing, MatchPlayerState incoming)
+    {
+        MatchSquadManager squad = MatchSquadManager.Instance;
+        int slot = squad.MemberIndex(outgoing.Team, outgoing.transform);
+        if (slot < 0) slot = outgoing.RoleSlot;
+
+        DropHeldBall(outgoing);
+        squad.RemoveFromField(outgoing);
+        outgoing.SetStatus(MatchPlayerStatus.SubstitutingOut, false);
+        outgoing.SetPending(false);
+        incoming.SetPending(false);
+
+        if (!squad.AssignToField(incoming, slot, MatchPlayerStatus.SubstitutingIn))
+        {
+            squad.AssignToField(outgoing, slot, MatchPlayerStatus.OnField);
+            incoming.SetStatus(MatchPlayerStatus.Bench, false);
+            return false;
+        }
+
+        outgoing.BeginMove(MatchMovePurpose.Timeout,
+            squad.Geometry.BenchPoint(outgoing.Team, outgoing.CapNumber),
+            choreographySpeed, formationArrivalRadius, true, true,
+            MatchMoveAnchor.Bench);
+        Vector2 target = TimeoutManager.Instance != null
+            ? TimeoutManager.Instance.GetPositioningTarget(incoming)
+            : squad.FormationPoint(incoming);
+        incoming.BeginMove(MatchMovePurpose.Timeout, target, choreographySpeed,
+                           formationArrivalRadius, true, true,
+                           MatchMoveAnchor.TimeoutPosition);
+        active.Add(new Exchange
+        {
+            kind = ExchangeKind.Timeout,
+            phase = ExchangePhase.Dispersing,
+            outgoing = outgoing,
+            incoming = incoming,
+            team = outgoing.Team,
+            slot = slot,
+            incomingEnteredField = true
+        });
+        TeamManager.EnsureValidActive();
+        if (EventFeed.Instance != null)
+            EventFeed.Instance.AddEvent("Timeout substitution - " + outgoing.DisplayName +
+                                        " / " + incoming.DisplayName);
+        return true;
     }
 
     void UpdateExchanges()
@@ -287,10 +360,11 @@ public sealed class SubstitutionManager : MonoBehaviour
             {
                 if (exchange.kind == ExchangeKind.Live)
                 {
+                    FlyingSubstitutionArea area = squad.Geometry.GetFlyingSubstitutionArea(exchange.team);
                     exchange.outgoing.Retarget(MatchMovePurpose.Substitution,
-                        squad.Geometry.SubstitutionInside(exchange.team));
+                        area.ExchangeInside, MatchMoveAnchor.FlyingSubstitutionExchange);
                     exchange.incoming.Retarget(MatchMovePurpose.Substitution,
-                        squad.Geometry.SubstitutionOutside(exchange.team));
+                        area.ExchangeOutside, MatchMoveAnchor.FlyingSubstitutionExchange);
                 }
                 else if (!exchange.incomingReachedBenchLane)
                 {
@@ -298,7 +372,8 @@ public sealed class SubstitutionManager : MonoBehaviour
                     exchange.incomingReachedBenchLane = true;
                     exchange.incoming.BeginMove(MatchMovePurpose.Exclusion,
                         exchange.fixedAnchor + Vector2.up * 0.12f, choreographySpeed,
-                        exchangeArrivalRadius, true, true);
+                        exchangeArrivalRadius, true, true,
+                        MatchMoveAnchor.ExclusionReentry);
                     continue;
                 }
 
@@ -335,21 +410,41 @@ public sealed class SubstitutionManager : MonoBehaviour
                 continue;
             }
 
+            if (exchange.kind == ExchangeKind.Live && !exchange.incomingEnteredField)
+            {
+                FlyingSubstitutionArea area = squad.Geometry.GetFlyingSubstitutionArea(exchange.team);
+                exchange.incoming.Retarget(MatchMovePurpose.Substitution, area.EntryInside,
+                                           MatchMoveAnchor.FlyingSubstitutionEntry);
+                if (exchange.incoming.AtMoveTarget)
+                {
+                    exchange.incomingEnteredField = true;
+                    exchange.incoming.BeginMove(MatchMovePurpose.Substitution,
+                        squad.FormationPoint(exchange.incoming), choreographySpeed,
+                        formationArrivalRadius, true, true, MatchMoveAnchor.Formation);
+                }
+            }
+
             bool outgoingDone = exchange.outgoing.MovePurpose == MatchMovePurpose.None ||
                                 exchange.outgoing.AtMoveTarget;
             bool incomingDone = exchange.kind == ExchangeKind.ExclusionReplacement ||
-                                exchange.incoming.MovePurpose == MatchMovePurpose.None ||
-                                exchange.incoming.AtMoveTarget;
+                                (exchange.kind != ExchangeKind.ExclusionReplacement &&
+                                 exchange.incomingEnteredField &&
+                                 (exchange.incoming.MovePurpose == MatchMovePurpose.None ||
+                                  exchange.incoming.AtMoveTarget));
 
-            if (exchange.kind == ExchangeKind.Live && incomingDone)
+            if ((exchange.kind == ExchangeKind.Live || exchange.kind == ExchangeKind.Timeout) &&
+                incomingDone)
             {
-                exchange.incoming.StopMove(MatchMovePurpose.Substitution);
+                exchange.incoming.StopMove(exchange.kind == ExchangeKind.Live
+                    ? MatchMovePurpose.Substitution : MatchMovePurpose.Timeout);
                 exchange.incoming.SetStatus(MatchPlayerStatus.OnField, true);
             }
             if (outgoingDone)
             {
                 MatchMovePurpose purpose = exchange.kind == ExchangeKind.Live
-                    ? MatchMovePurpose.Substitution : MatchMovePurpose.Exclusion;
+                    ? MatchMovePurpose.Substitution
+                    : exchange.kind == ExchangeKind.Timeout
+                        ? MatchMovePurpose.Timeout : MatchMovePurpose.Exclusion;
                 exchange.outgoing.StopMove(purpose);
                 if (exchange.outgoing.PermanentlyDisqualified)
                     exchange.outgoing.SetStatus(MatchPlayerStatus.PermanentlyOut, false);
@@ -380,10 +475,13 @@ public sealed class SubstitutionManager : MonoBehaviour
         exchange.outgoing.SetStatus(MatchPlayerStatus.Bench, false);
         exchange.outgoing.BeginMove(MatchMovePurpose.Substitution,
             squad.Geometry.BenchPoint(exchange.team, exchange.outgoing.CapNumber),
-            choreographySpeed, formationArrivalRadius, true, true);
+            choreographySpeed, formationArrivalRadius, true, true,
+            MatchMoveAnchor.Bench);
+        FlyingSubstitutionArea area = squad.Geometry.GetFlyingSubstitutionArea(exchange.team);
         exchange.incoming.BeginMove(MatchMovePurpose.Substitution,
-            squad.FormationPoint(exchange.incoming), choreographySpeed,
-            formationArrivalRadius, true, true);
+            area.EntryInside, choreographySpeed,
+            formationArrivalRadius, true, true,
+            MatchMoveAnchor.FlyingSubstitutionEntry);
         TeamManager.EnsureValidActive();
         return true;
     }
@@ -397,7 +495,8 @@ public sealed class SubstitutionManager : MonoBehaviour
             ? MatchPlayerStatus.PermanentlyOut : MatchPlayerStatus.ExcludedReplacedBench, false);
         exchange.outgoing.BeginMove(MatchMovePurpose.Exclusion,
             squad.Geometry.BenchPoint(exchange.team, exchange.outgoing.CapNumber),
-            choreographySpeed, formationArrivalRadius, true, true);
+            choreographySpeed, formationArrivalRadius, true, true,
+            MatchMoveAnchor.Bench);
 
         if (!exchange.callbackSent)
         {
@@ -454,7 +553,8 @@ public sealed class SubstitutionManager : MonoBehaviour
         MatchSquadManager squad = MatchSquadManager.Instance;
         // ExclusionManager, not this exchange, owns the excluded swimmer's trip to the area.
         // Cancelling only the approaching substitute must not strand that swimmer mid-pool.
-        if (exchange.outgoing != null && exchange.kind == ExchangeKind.Live)
+        if (exchange.outgoing != null &&
+            (exchange.kind == ExchangeKind.Live || exchange.kind == ExchangeKind.Timeout))
             exchange.outgoing.StopMove();
         if (exchange.incoming != null)
         {
@@ -469,13 +569,17 @@ public sealed class SubstitutionManager : MonoBehaviour
                     exchange.incoming.BeginMove(MatchMovePurpose.Substitution,
                         currentSquad.Geometry.BenchPoint(exchange.incoming.Team,
                                                          exchange.incoming.CapNumber),
-                        choreographySpeed, formationArrivalRadius, true, true);
+                        choreographySpeed, formationArrivalRadius, true, true,
+                        MatchMoveAnchor.Bench);
                     if (!returningToBench.Contains(exchange.incoming))
                         returningToBench.Add(exchange.incoming);
                 }
             }
         }
-        if (exchange.kind == ExchangeKind.Live && squad != null && exchange.outgoing != null &&
+        if (exchange.kind == ExchangeKind.Timeout && squad != null && exchange.incoming != null)
+            squad.RemoveFromField(exchange.incoming);
+        if ((exchange.kind == ExchangeKind.Live || exchange.kind == ExchangeKind.Timeout) &&
+            squad != null && exchange.outgoing != null &&
             !exchange.outgoing.PermanentlyDisqualified)
         {
             squad.AssignToField(exchange.outgoing, exchange.slot, MatchPlayerStatus.OnField);
@@ -537,6 +641,17 @@ public sealed class SubstitutionManager : MonoBehaviour
                                                                         exchange.outgoing.CapNumber));
                 }
                 else CancelBrokenExchange(exchange);
+            }
+            else if (exchange.kind == ExchangeKind.Timeout)
+            {
+                exchange.outgoing.StopMove();
+                exchange.outgoing.SetStatus(exchange.outgoing.PermanentlyDisqualified
+                    ? MatchPlayerStatus.PermanentlyOut : MatchPlayerStatus.Bench, false);
+                exchange.outgoing.PlaceAt(squad.Geometry.BenchPoint(exchange.team,
+                                                                    exchange.outgoing.CapNumber));
+                exchange.incoming.StopMove();
+                exchange.incoming.SetStatus(MatchPlayerStatus.OnField, true);
+                exchange.incoming.PlaceAt(squad.FormationPoint(exchange.incoming));
             }
             else
             {
@@ -602,7 +717,7 @@ public sealed class SubstitutionManager : MonoBehaviour
             TeamManager.EnsureValidActive();
             return null;
         }
-        incoming.PlaceAt(squad.Geometry.ExclusionEntryInside(incoming.Team));
+        incoming.PlaceAt(squad.Geometry.ExclusionReentrySpot(incoming.Team));
         TeamManager.EnsureValidActive();
         return incoming;
     }

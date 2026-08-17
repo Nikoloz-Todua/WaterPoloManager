@@ -16,6 +16,14 @@ public sealed class TimeoutManager : MonoBehaviour
     [SerializeField] private float defensiveHalfDisplayedSeconds = 45f;
     [SerializeField] private float positioningSpeed = 3.7f;
     [SerializeField] private float positioningArrivalRadius = 0.24f;
+    [SerializeField] private float halfwayRestartInset = 0.35f;
+
+    [Header("Bot coach")]
+    [SerializeField] private float botEvaluationIntervalSeconds = 1f;
+    [SerializeField] private float botCoachSpacingSeconds = 18f;
+    [SerializeField] private int botCallScoreThreshold = 65;
+    [SerializeField] private float severeFatigueThreshold = 0.22f;
+    [SerializeField] private float tiredFatigueThreshold = 0.36f;
 
     private readonly Dictionary<TeamSide, int> used = new Dictionary<TeamSide, int>();
     private enum RestartMode { LivePossession, FreeThrow, OutOfBounds, Penalty, GoalRestart }
@@ -24,13 +32,17 @@ public sealed class TimeoutManager : MonoBehaviour
     private TeamSide callingTeam;
     private RestartMode restartMode;
     private Transform restartCarrier;
-    private Vector2 preservedRestartPoint;
-    private Goalkeeper keeperRestartSource;
     private CompressedTimer timeoutClock;
     private bool active;
     private bool restartPreparation;
     private float nextPositionRefresh;
     private float timeoutStartedAt;
+    private readonly List<Goalkeeper> timeoutKeepers = new List<Goalkeeper>();
+    private float nextBotEvaluationTime;
+    private float lastBotTimeoutTime = -1000f;
+    private int observedHomeScore;
+    private int observedAwayScore;
+    private int humanUnansweredGoals;
 
     private GameObject canvasRoot;
     private Button timeoutButton;
@@ -58,12 +70,26 @@ public sealed class TimeoutManager : MonoBehaviour
         BuildUI();
     }
 
+    void Start()
+    {
+        if (ScoreManager.Instance != null)
+        {
+            observedHomeScore = ScoreManager.Instance.HomeScore;
+            observedAwayScore = ScoreManager.Instance.AwayScore;
+        }
+    }
+
     void OnDestroy() { if (Instance == this) Instance = null; }
 
     void Update()
     {
         UpdateHudButton();
-        if (!active) return;
+        ObserveScoreMomentum();
+        if (!active)
+        {
+            EvaluateBotTimeout();
+            return;
+        }
         if (Time.timeScale <= 0f) return; // hard user pause suspends even the timeout
 
         timeoutClock.Tick(Time.deltaTime);
@@ -80,7 +106,11 @@ public sealed class TimeoutManager : MonoBehaviour
             else CommandDefensiveHalves();
         }
         UpdateActivePanel();
-        if (timeoutClock.IsComplete) EndTimeout(true);
+        if (timeoutClock.IsComplete)
+        {
+            CommandRestartPreparation();
+            if (RestartTakerReady()) EndTimeout(true);
+        }
     }
 
     public int UsedTimeouts(TeamSide team)
@@ -119,10 +149,15 @@ public sealed class TimeoutManager : MonoBehaviour
     public bool CallTimeout(TeamSide team)
     {
         if (!CanCall(team)) return false;
-        CaptureRestartState(team);
-        if (!context.BeginWaterPoloStoppage(WaterPoloStoppageKind.Timeout, team)) return false;
-        used[team] = UsedTimeouts(team) + 1;
         callingTeam = team;
+        CaptureRestartState(team);
+        if (!context.BeginWaterPoloStoppage(WaterPoloStoppageKind.Timeout, team))
+        {
+            callingTeam = null;
+            return false;
+        }
+        used[team] = UsedTimeouts(team) + 1;
+        RefereeController.Instance?.TriggerFoul();
         float realSeconds = MatchTimer.Instance != null
             ? MatchTimer.Instance.RealSecondsForDisplayedSeconds(timeoutDisplayedSeconds)
             : timeoutDisplayedSeconds * (90f / 480f);
@@ -134,10 +169,16 @@ public sealed class TimeoutManager : MonoBehaviour
         activePanel.SetActive(true);
         MatchSubstitutionSuggestionUI.Instance?.Close();
         if (TouchControls.Instance != null) TouchControls.Instance.SetGameplayVisible(false);
+        CacheAndCommandKeepers();
         CommandDefensiveHalves();
         UpdateActivePanel();
         if (EventFeed.Instance != null)
             EventFeed.Instance.AddEvent("Timeout - " + (team == context.PlayerTeam ? "YOU" : "BOT"));
+        if (team == context.BotTeam)
+        {
+            lastBotTimeoutTime = Time.time;
+            humanUnansweredGoals = 0;
+        }
         return true;
     }
 
@@ -145,24 +186,19 @@ public sealed class TimeoutManager : MonoBehaviour
     {
         CommandTeam(context != null ? context.PlayerTeam : null, false);
         CommandTeam(context != null ? context.BotTeam : null, false);
+        CommandKeepers();
     }
 
     void CommandRestartPreparation()
     {
         CommandTeam(context != null ? context.PlayerTeam : null, true);
         CommandTeam(context != null ? context.BotTeam : null, true);
+        CommandKeepers();
     }
 
     void CommandTeam(TeamSide team, bool restart)
     {
         if (team == null || team.members == null || MatchSquadManager.Instance == null) return;
-        Vector2 ownGoal = team.defendGoal != null ? (Vector2)team.defendGoal.position : Vector2.zero;
-        float span = team.attackGoal != null && team.defendGoal != null
-            ? Vector2.Distance(team.attackGoal.position, team.defendGoal.position) : 14f;
-        Vector2 forward = team.attackGoal != null
-            ? ((Vector2)team.attackGoal.position - ownGoal).normalized
-            : (ownGoal.x < 0f ? Vector2.right : Vector2.left);
-        Vector2 across = new Vector2(-forward.y, forward.x);
         for (int i = 0; i < team.members.Length; i++)
         {
             MatchPlayerState player = MatchPlayerState.For(team.members[i]);
@@ -170,49 +206,68 @@ public sealed class TimeoutManager : MonoBehaviour
                 (player.MovePurpose != MatchMovePurpose.None &&
                  player.MovePurpose != MatchMovePurpose.Timeout)) continue;
 
-            Vector2 target;
-            if (!restart)
-            {
-                // Compact but readable organization in the team's own defensive half.
-                float lateral = team.members.Length > 1
-                    ? ((float)i / (team.members.Length - 1)) * 2f - 1f : 0f;
-                target = ownGoal + forward * (span * 0.28f) + across * (lateral * 1.45f);
-            }
-            else if (restartMode == RestartMode.Penalty &&
-                     PenaltyManager.Instance != null &&
-                     PenaltyManager.Instance.TryGetTimeoutRestartTarget(player.transform,
-                                                                         out Vector2 penaltyTarget))
-            {
-                target = penaltyTarget;
-            }
-            else if (restartMode == RestartMode.OutOfBounds &&
-                     player.transform == restartCarrier)
-            {
-                target = preservedRestartPoint;
-            }
-            else if (player.transform == restartCarrier && team == callingTeam)
-            {
-                if (restartMode == RestartMode.FreeThrow || restartMode == RestartMode.GoalRestart)
-                    target = preservedRestartPoint;
-                else
-                {
-                    // A live-possession timeout resumes on or just behind halfway for its owner.
-                    Vector2 middle = team.attackGoal != null
-                        ? ((Vector2)team.attackGoal.position + ownGoal) * 0.5f : Vector2.zero;
-                    target = middle - forward * 0.25f;
-                }
-            }
-            else
-            {
-                target = team.RestartFormationSpot(player.transform, team == callingTeam);
-            }
+            Vector2 target = GetPositioningTarget(player, restart);
 
             if (player.MovePurpose == MatchMovePurpose.Timeout)
-                player.Retarget(MatchMovePurpose.Timeout, target);
+                player.Retarget(MatchMovePurpose.Timeout, target,
+                                MatchMoveAnchor.TimeoutPosition);
             else
                 player.BeginMove(MatchMovePurpose.Timeout, target, positioningSpeed,
-                                 positioningArrivalRadius, true, false);
+                                 positioningArrivalRadius, true, false,
+                                 MatchMoveAnchor.TimeoutPosition);
         }
+    }
+
+    // Shared with timeout substitutions so a replacement coming from the bench joins the exact
+    // current phase rather than first swimming to the live flying-substitution exchange.
+    public Vector2 GetPositioningTarget(MatchPlayerState player)
+        => GetPositioningTarget(player, restartPreparation);
+
+    Vector2 GetPositioningTarget(MatchPlayerState player, bool restart)
+    {
+        MatchSquadManager squad = MatchSquadManager.Instance;
+        if (player == null || player.Team == null || squad == null) return Vector2.zero;
+        TeamSide team = player.Team;
+
+        if (!restart)
+        {
+            int ordinal = 0;
+            int eligibleCount = 0;
+            if (team.members != null)
+            {
+                for (int i = 0; i < team.members.Length; i++)
+                {
+                    MatchPlayerState member = MatchPlayerState.For(team.members[i]);
+                    if (member == null || !member.GameplayEligible) continue;
+                    if (member == player) ordinal = eligibleCount;
+                    eligibleCount++;
+                }
+            }
+            return squad.Geometry.TimeoutGatheringPoint(team, ordinal, eligibleCount);
+        }
+
+        if (restartMode == RestartMode.Penalty && PenaltyManager.Instance != null &&
+            PenaltyManager.Instance.TryGetTimeoutRestartTarget(player.transform,
+                                                                out Vector2 penaltyTarget))
+            return penaltyTarget;
+
+        EnsureRestartCarrier();
+        Vector2 restartPoint = HalfwayRestartPoint(callingTeam);
+        if (team == callingTeam && player.transform == restartCarrier) return restartPoint;
+
+        TeamSide opponent = context != null ? context.EnemyOf(team) : null;
+        if (team == callingTeam)
+        {
+            bool manUp = MissingLegalFieldPlayers(opponent) > 0;
+            return manUp ? team.ManUpSpot(player.transform, restartPoint)
+                         : team.AttackPositionFor(player.transform, restartPoint, opponent);
+        }
+
+        bool manDown = MissingLegalFieldPlayers(team) > 0;
+        if (manDown) return team.ManDownSpot(player.transform, restartPoint);
+        Transform assignment = team.MarkAssignmentFor(player.transform, callingTeam);
+        return assignment != null ? team.MarkSpot(player.transform, assignment)
+                                  : team.RestartFormationSpot(player.transform, false);
     }
 
     void EndTimeout(bool restoreControls)
@@ -224,19 +279,35 @@ public sealed class TimeoutManager : MonoBehaviour
         {
             IReadOnlyList<MatchPlayerState> players = squad.Participants;
             for (int i = 0; i < players.Count; i++)
-                if (players[i] != null) players[i].StopMove(MatchMovePurpose.Timeout);
+            {
+                MatchPlayerState player = players[i];
+                if (player == null) continue;
+                // A very late timeout substitution may still be visibly entering/leaving. Its
+                // lineup slot is already legal and atomic; let that choreography finish instead
+                // of marooning the body outside the wall or teleporting it at the whistle.
+                bool timeoutSubStillMoving = player.MovePurpose == MatchMovePurpose.Timeout &&
+                    (player.Status == MatchPlayerStatus.SubstitutingIn ||
+                     player.Status == MatchPlayerStatus.SubstitutingOut);
+                if (!timeoutSubStillMoving) player.StopMove(MatchMovePurpose.Timeout);
+            }
         }
         if (context != null)
         {
-            if (keeperRestartSource != null && restartCarrier != null && context.Ball != null &&
-                context.Ball.transform.parent == keeperRestartSource.transform)
-            {
-                keeperRestartSource.OnBallStolen(); // clear its hold without making the ball live
-                context.GiveBallTo(restartCarrier, callingTeam);
-            }
             context.DelayTimedGameplayWindows(Time.time - timeoutStartedAt);
+            bool preservedPenalty = restartMode == RestartMode.Penalty &&
+                                    PenaltyManager.Instance != null &&
+                                    PenaltyManager.Instance.Active;
+            if (restoreControls && !preservedPenalty)
+            {
+                EnsureRestartCarrier();
+                PrepareOrdinaryFreeThrowRestart();
+            }
             context.EndWaterPoloStoppage(WaterPoloStoppageKind.Timeout);
         }
+        if (restoreControls) RefereeController.Instance?.TriggerFoul();
+        for (int i = 0; i < timeoutKeepers.Count; i++)
+            if (timeoutKeepers[i] != null) timeoutKeepers[i].EndTimeoutPositioning();
+        timeoutKeepers.Clear();
         if (MatchTeamManagementUI.Instance != null && MatchTeamManagementUI.Instance.IsOpen &&
             MatchTeamManagementUI.Instance.Mode == MatchTeamManagementMode.Timeout)
             MatchTeamManagementUI.Instance.ForceClose();
@@ -247,7 +318,6 @@ public sealed class TimeoutManager : MonoBehaviour
             TouchControls.Instance.SetGameplayVisible(true);
         callingTeam = null;
         restartCarrier = null;
-        keeperRestartSource = null;
     }
 
     void OpenTeamManagement()
@@ -262,24 +332,19 @@ public sealed class TimeoutManager : MonoBehaviour
         if (context != null) context.EndWaterPoloStoppage(WaterPoloStoppageKind.Timeout);
     }
 
-    // The awarded restart taker cannot be removed during timeout management: doing so would
-    // destroy a free-throw/goal-throw/penalty transaction owned by an existing match system.
+    // A penalty shooter owns a dedicated transaction and cannot be substituted before the throw.
+    // Ordinary timeout restarts may nominate another eligible field taker after a substitution.
     public bool IsProtectedRestartParticipant(MatchPlayerState player)
     {
         if (!active || player == null) return false;
-        if (restartMode == RestartMode.Penalty)
-            return PenaltyManager.Instance != null &&
-                   PenaltyManager.Instance.IsActiveShooter(player.transform);
-        return player.transform == restartCarrier;
+        return restartMode == RestartMode.Penalty && PenaltyManager.Instance != null &&
+               PenaltyManager.Instance.IsActiveShooter(player.transform);
     }
 
     void CaptureRestartState(TeamSide team)
     {
-        keeperRestartSource = null;
         restartCarrier = context != null && context.Ball != null
             ? context.Ball.transform.parent : null;
-        preservedRestartPoint = restartCarrier != null
-            ? (Vector2)restartCarrier.position : Vector2.zero;
 
         if (PenaltyManager.Instance != null && PenaltyManager.Instance.Active)
             restartMode = RestartMode.Penalty;
@@ -287,7 +352,6 @@ public sealed class TimeoutManager : MonoBehaviour
         {
             restartMode = RestartMode.OutOfBounds;
             restartCarrier = context.OutOfBoundsFetcher;
-            preservedRestartPoint = context.OutOfBoundsRestartPoint;
         }
         else if (context != null && context.FreeThrowActive)
             restartMode = RestartMode.FreeThrow;
@@ -296,18 +360,110 @@ public sealed class TimeoutManager : MonoBehaviour
         else
             restartMode = RestartMode.LivePossession;
 
-        // A keeper may call a timeout while holding the ball, but the live-possession restart is
-        // still taken on/behind halfway. Nominate a legal field taker now and transfer the dead
-        // ball only when the timeout ends; the swimmer gets there physically during the final 15.
-        if (restartMode == RestartMode.LivePossession && restartCarrier != null)
+        // A keeper may call a timeout while holding the ball, but every ordinary timeout restart
+        // is taken by a legal field swimmer on/behind halfway. Preserve a penalty shooter only.
+        if (restartMode != RestartMode.Penalty) EnsureRestartCarrier();
+    }
+
+    void EnsureRestartCarrier()
+    {
+        if (callingTeam == null) return;
+        bool currentLegal = restartCarrier != null && callingTeam.Contains(restartCarrier) &&
+                            MatchPlayerState.IsGameplayEligible(restartCarrier);
+        if (!currentLegal)
+            restartCarrier = ClosestEligibleMember(callingTeam, HalfwayRestartPoint(callingTeam));
+    }
+
+    Vector2 HalfwayRestartPoint(TeamSide team)
+    {
+        if (team == null || team.defendGoal == null || team.attackGoal == null) return Vector2.zero;
+        float halfwayX = MatchSquadManager.Instance != null
+            ? MatchSquadManager.Instance.Geometry.HalfwayX(team)
+            : (team.defendGoal.position.x + team.attackGoal.position.x) * 0.5f;
+        float forwardX = Mathf.Sign(team.attackGoal.position.x - team.defendGoal.position.x);
+        if (forwardX == 0f) forwardX = -Mathf.Sign(team.defendGoal.position.x);
+        return new Vector2(halfwayX - forwardX * Mathf.Max(positioningArrivalRadius,
+                                                            halfwayRestartInset), 0f);
+    }
+
+    bool RestartTakerReady()
+    {
+        // A penalty survives the timeout unchanged, but the shooter may have joined the first-45
+        // defensive-half gathering. Keep the timeout stoppage at 0:00 until that same shooter has
+        // physically returned to the existing penalty spot; PenaltyManager then resumes without a
+        // visible full-pool snap.
+        if (restartMode == RestartMode.Penalty)
         {
-            keeperRestartSource = restartCarrier.GetComponent<Goalkeeper>();
-            if (keeperRestartSource != null)
-            {
-                Transform fieldTaker = ClosestEligibleMember(team, Vector2.zero);
-                if (fieldTaker != null) restartCarrier = fieldTaker;
-                else keeperRestartSource = null;
-            }
+            if (PenaltyManager.Instance == null || !PenaltyManager.Instance.Active) return true;
+            if (restartCarrier == null ||
+                !PenaltyManager.Instance.TryGetTimeoutRestartTarget(restartCarrier,
+                                                                     out Vector2 penaltyTarget))
+                return true;
+            return Vector2.Distance(restartCarrier.position, penaltyTarget) <=
+                   positioningArrivalRadius;
+        }
+        EnsureRestartCarrier();
+        if (restartCarrier == null) return true; // forfeit/minimum-player flow owns this edge case
+        return Vector2.Distance(restartCarrier.position, HalfwayRestartPoint(callingTeam)) <=
+               positioningArrivalRadius;
+    }
+
+    void PrepareOrdinaryFreeThrowRestart()
+    {
+        if (context == null || callingTeam == null || restartCarrier == null) return;
+
+        // Retire any old OOB collision reservation/kickoff instruction before assigning the dead
+        // ball. GiveBallTo uses the normal holder implementations and deliberately runs before the
+        // timeout-only clock hold is armed, because SetPossession clears an older free throw.
+        context.ClearGrabBan();
+        context.ClearKickoffPass();
+        Transform oldHolder = context.Ball != null ? context.Ball.transform.parent : null;
+        if (oldHolder != null && oldHolder != restartCarrier)
+        {
+            Goalkeeper oldKeeper = oldHolder.GetComponent<Goalkeeper>();
+            if (oldKeeper != null) oldKeeper.OnBallStolen();
+            else context.ForceDropHeldBall();
+        }
+
+        if (context.Ball == null || context.Ball.transform.parent != restartCarrier)
+            context.GiveBallTo(restartCarrier, callingTeam);
+        else
+            context.SetPossession(callingTeam);
+        context.StartTimeoutFreeThrow(restartCarrier);
+    }
+
+    static int MissingLegalFieldPlayers(TeamSide team)
+    {
+        if (team == null || team.members == null) return 0;
+        int missing = 0;
+        for (int i = 0; i < team.members.Length; i++)
+            if (!MatchPlayerState.IsGameplayEligible(team.members[i])) missing++;
+        return missing;
+    }
+
+    void CacheAndCommandKeepers()
+    {
+        timeoutKeepers.Clear();
+        Goalkeeper[] keepers = Object.FindObjectsByType<Goalkeeper>(FindObjectsInactive.Include);
+        for (int i = 0; i < keepers.Length; i++)
+        {
+            Goalkeeper keeper = keepers[i];
+            if (keeper == null || keeper.DefendingTeam == null) continue;
+            timeoutKeepers.Add(keeper);
+        }
+        CommandKeepers();
+    }
+
+    void CommandKeepers()
+    {
+        MatchSquadManager squad = MatchSquadManager.Instance;
+        if (squad == null) return;
+        for (int i = 0; i < timeoutKeepers.Count; i++)
+        {
+            Goalkeeper keeper = timeoutKeepers[i];
+            if (keeper == null || keeper.DefendingTeam == null) continue;
+            keeper.BeginTimeoutPositioning(squad.Geometry.TimeoutKeeperPoint(keeper.DefendingTeam),
+                                           positioningSpeed);
         }
     }
 
@@ -324,6 +480,108 @@ public sealed class TimeoutManager : MonoBehaviour
             if (distance < bestDistance) { bestDistance = distance; best = member; }
         }
         return best;
+    }
+
+    void ObserveScoreMomentum()
+    {
+        ScoreManager score = ScoreManager.Instance;
+        if (score == null) return;
+        if (score.HomeScore > observedHomeScore)
+        {
+            humanUnansweredGoals += score.HomeScore - observedHomeScore;
+            observedHomeScore = score.HomeScore;
+        }
+        if (score.AwayScore > observedAwayScore)
+        {
+            humanUnansweredGoals = 0;
+            observedAwayScore = score.AwayScore;
+        }
+        // Defensive guard for a scene reset/replay restoring an earlier score.
+        if (score.HomeScore < observedHomeScore || score.AwayScore < observedAwayScore)
+        {
+            observedHomeScore = score.HomeScore;
+            observedAwayScore = score.AwayScore;
+            humanUnansweredGoals = 0;
+        }
+    }
+
+    void EvaluateBotTimeout()
+    {
+        if (Time.timeScale <= 0f || Time.time < nextBotEvaluationTime || context == null ||
+            context.BotTeam == null) return;
+        nextBotEvaluationTime = Time.time + Mathf.Max(0.25f, botEvaluationIntervalSeconds);
+        if (!CanCall(context.BotTeam)) return;
+
+        MatchTimer timer = MatchTimer.Instance;
+        ScoreManager scoreboard = ScoreManager.Instance;
+        if (timer == null || scoreboard == null || timer.CurrentQuarter <= 0) return;
+        float displayedRemaining = timer.QuarterDisplayedRemaining;
+        if (displayedRemaining < 10f) return; // no usable organized possession remains
+
+        int botMargin = scoreboard.AwayScore - scoreboard.HomeScore;
+        int absMargin = Mathf.Abs(botMargin);
+        bool close = absMargin <= 2;
+        int coachScore = 0;
+
+        // High-leverage Q4 possessions, particularly the last two displayed minutes.
+        if (timer.CurrentQuarter == 4 && close && botMargin <= 0) coachScore += 24;
+        if (timer.CurrentQuarter == 4 && close && displayedRemaining <= 150f)
+        {
+            coachScore += 30;
+            if (botMargin <= 0) coachScore += 16;
+            if (displayedRemaining <= 65f) coachScore += 14;
+        }
+
+        // An opponent exclusion is the strongest non-late-game signal: organize the man-up.
+        bool manUp = MissingLegalFieldPlayers(context.PlayerTeam) > 0;
+        if (manUp)
+        {
+            coachScore += 45;
+            if (timer.CurrentQuarter >= 3) coachScore += 12;
+            if (close) coachScore += 8;
+        }
+
+        if (humanUnansweredGoals >= 3) coachScore += 34;
+        else if (humanUnansweredGoals >= 2) coachScore += 20;
+
+        int severe = 0;
+        int tired = 0;
+        int activeCount = 0;
+        float staminaTotal = 0f;
+        MatchSquadManager squad = MatchSquadManager.Instance;
+        if (squad != null)
+        {
+            IReadOnlyList<MatchPlayerState> players = squad.Participants;
+            for (int i = 0; i < players.Count; i++)
+            {
+                MatchPlayerState player = players[i];
+                if (player == null || player.Team != context.BotTeam || !player.GameplayEligible)
+                    continue;
+                float stamina = player.StaminaPercent;
+                activeCount++;
+                staminaTotal += stamina;
+                if (stamina <= severeFatigueThreshold) severe++;
+                if (stamina <= tiredFatigueThreshold) tired++;
+            }
+        }
+        if (severe >= 2) coachScore += 18;
+        if (severe >= 3) coachScore += 8;
+        if (tired >= 4) coachScore += 12;
+        if (activeCount > 0 && staminaTotal / activeCount < tiredFatigueThreshold)
+            coachScore += 8;
+
+        // Preserve resources in low-value states. This is coaching policy, never a rules gate.
+        if (timer.CurrentQuarter == 1 && timer.QuarterRealElapsed < 30f)
+            coachScore -= manUp ? 20 : 50;
+        if (botMargin >= 3) coachScore -= 25;
+        if (botMargin >= 5 && (timer.CurrentQuarter < 4 || displayedRemaining < 180f)) return;
+        if (timer.CurrentQuarter <= 2 && !manUp && humanUnansweredGoals < 2 && severe < 2)
+            coachScore -= 15;
+
+        int threshold = botCallScoreThreshold + (UsedTimeouts(context.BotTeam) > 0 ? 5 : 0);
+        bool critical = coachScore >= 100;
+        if (!critical && Time.time - lastBotTimeoutTime < botCoachSpacingSeconds) return;
+        if (coachScore >= threshold) CallTimeout(context.BotTeam);
     }
 
     void UpdateHudButton()
@@ -346,9 +604,11 @@ public sealed class TimeoutManager : MonoBehaviour
         if (!active || countdownText == null) return;
         int displayed = Mathf.CeilToInt(timeoutClock.DisplayValue);
         countdownText.text = "TIMEOUT   " + (displayed / 60) + ":" + (displayed % 60).ToString("00");
-        phaseText.text = restartPreparation
-            ? "PREPARE TO RESTART"
-            : "ORGANIZE IN DEFENSIVE HALVES";
+        phaseText.text = timeoutClock.IsComplete
+            ? "READY FOR RESTART"
+            : restartPreparation
+                ? "FINAL 15 - MOVE TO RESTART SHAPE"
+                : "DEFENSIVE HALF - COACH SIDE";
     }
 
     void BuildUI()

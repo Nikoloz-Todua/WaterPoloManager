@@ -393,7 +393,10 @@ public class ScoreManager : MonoBehaviour
         if (ctx != null)
         {
             ctx.Unfreeze();
-            ctx.SetKickoffPass(concedingTeam);
+            // A timeout taken during this frozen goal-restart window converts the ordinary
+            // restart into the timeout's on/behind-halfway free throw. Do not layer the old
+            // forced kickoff-pass instruction on top of that rules transaction.
+            if (!ctx.TimeoutRestartPending) ctx.SetKickoffPass(concedingTeam);
             ctx.MarkBallTouched();               // camera eases back into the follow (Task 3)
         }
         if (TouchControls.Instance != null) TouchControls.Instance.SetGameplayVisible(true);

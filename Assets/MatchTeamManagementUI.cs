@@ -59,7 +59,7 @@ public sealed class MatchTeamManagementUI : MonoBehaviour
         selectedIn = null;
         statusText.text = mode == MatchTeamManagementMode.Pause
             ? "Select OUT and IN. The physical exchange begins after RESUME."
-            : "Timeout is live: confirmed players swim to the exchange area now.";
+            : "Timeout substitution: players swim directly to bench/restart positions.";
         root.SetActive(true);
         Refresh();
     }
@@ -175,7 +175,7 @@ public sealed class MatchTeamManagementUI : MonoBehaviour
         else if (Mode == MatchTeamManagementMode.Pause)
             accepted = substitutions.QueuePending(selectedOut, selectedIn, out message);
         else
-            accepted = substitutions.RequestLive(selectedOut, selectedIn, out message);
+            accepted = substitutions.RequestDuringTimeout(selectedOut, selectedIn, out message);
 
         if (!accepted)
         {

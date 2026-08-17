@@ -25,7 +25,6 @@ public class ExclusionManager : MonoBehaviour
 
     [Header("Ordinary exclusion (displayed/game seconds)")]
     [SerializeField] private float ordinaryExclusionDisplayedSeconds = 18f;
-    [SerializeField] private float exclusionExitSpeed = 4.2f;
     [SerializeField] private float exclusionEntrySpeed = 4.2f;
     [SerializeField] private float exclusionArrivalRadius = 0.16f;
 
@@ -43,7 +42,7 @@ public class ExclusionManager : MonoBehaviour
     [SerializeField] private TMP_Text exclusionText;
     [SerializeField] private int excludedSortingOrder = 75;
 
-    private enum ReentryPhase { Exiting, Waiting, MovingToGate, MovingToFormation }
+    private enum ReentryPhase { Waiting, MovingToGate, MovingToFormation }
 
     private sealed class TemporaryExclusion
     {
@@ -126,17 +125,6 @@ public class ExclusionManager : MonoBehaviour
         MatchSquadManager squad = MatchSquadManager.Instance;
         if (squad == null) return;
 
-        if (exclusion.phase == ReentryPhase.Exiting)
-        {
-            Vector2 area = squad.Geometry.ExclusionArea(exclusion.team);
-            exclusion.servingPlayer.Retarget(MatchMovePurpose.Exclusion, area);
-            if (!exclusion.servingPlayer.AtMoveTarget) return;
-            exclusion.servingPlayer.StopMove(MatchMovePurpose.Exclusion);
-            exclusion.servingPlayer.SetStatus(MatchPlayerStatus.ExclusionWaiting, false);
-            SetExcludedSorting(exclusion.servingPlayer.transform, true);
-            exclusion.phase = ReentryPhase.Waiting;
-        }
-
         if (exclusion.phase == ReentryPhase.Waiting && exclusion.releaseAuthorized &&
             !exclusion.replacementExchangePending)
             BeginLegalReentry(exclusion);
@@ -158,7 +146,8 @@ public class ExclusionManager : MonoBehaviour
                 SetExcludedSorting(exclusion.servingPlayer.transform, false);
             }
             entrant.BeginMove(MatchMovePurpose.Exclusion, squad.FormationPoint(entrant),
-                              exclusionEntrySpeed, 0.24f, true, true);
+                              exclusionEntrySpeed, 0.24f, true, true,
+                              MatchMoveAnchor.Formation);
             exclusion.phase = ReentryPhase.MovingToFormation;
         }
     }
@@ -171,8 +160,9 @@ public class ExclusionManager : MonoBehaviour
         exclusion.entrant = entrant;
         entrant.SetStatus(MatchPlayerStatus.SubstitutingIn, false);
         entrant.BeginMove(MatchMovePurpose.Exclusion,
-            MatchSquadManager.Instance.Geometry.ExclusionEntryInside(exclusion.team),
-            exclusionEntrySpeed, exclusionArrivalRadius, true, true);
+            MatchSquadManager.Instance.Geometry.ExclusionReentrySpot(exclusion.team),
+            exclusionEntrySpeed, exclusionArrivalRadius, true, true,
+            MatchMoveAnchor.ExclusionReentry);
         exclusion.phase = ReentryPhase.MovingToGate;
     }
 
@@ -286,10 +276,8 @@ public class ExclusionManager : MonoBehaviour
         {
             TemporaryExclusion exclusion = activeExclusions[i];
             if (exclusion == null || exclusion.servingPlayer == null) continue;
-            Vector2 area = squad.Geometry.ExclusionArea(exclusion.team);
-            if (exclusion.phase == ReentryPhase.Exiting)
-                exclusion.servingPlayer.Retarget(MatchMovePurpose.Exclusion, area);
-            else if (exclusion.phase == ReentryPhase.Waiting)
+            Vector2 area = squad.Geometry.ExclusionReentrySpot(exclusion.team);
+            if (exclusion.phase == ReentryPhase.Waiting)
             {
                 MatchPlayerState waiting = exclusion.entrant != null
                     ? exclusion.entrant : exclusion.servingPlayer;
@@ -302,12 +290,13 @@ public class ExclusionManager : MonoBehaviour
             else if (exclusion.phase == ReentryPhase.MovingToGate && exclusion.entrant != null)
             {
                 exclusion.entrant.Retarget(MatchMovePurpose.Exclusion,
-                    squad.Geometry.ExclusionEntryInside(exclusion.team));
+                    squad.Geometry.ExclusionReentrySpot(exclusion.team),
+                    MatchMoveAnchor.ExclusionReentry);
             }
             else if (exclusion.phase == ReentryPhase.MovingToFormation && exclusion.entrant != null)
             {
                 exclusion.entrant.Retarget(MatchMovePurpose.Exclusion,
-                    squad.FormationPoint(exclusion.entrant));
+                    squad.FormationPoint(exclusion.entrant), MatchMoveAnchor.Formation);
             }
         }
     }
@@ -360,7 +349,7 @@ public class ExclusionManager : MonoBehaviour
         }
 
         exclusion.replacementExchangePending = true;
-        Vector2 anchor = MatchSquadManager.Instance.Geometry.ExclusionArea(exclusion.team);
+        Vector2 anchor = MatchSquadManager.Instance.Geometry.ExclusionReentrySpot(exclusion.team);
         bool started = SubstitutionManager.Instance.BeginExclusionExchange(
             excluded, replacement, anchor,
             entrant => OnReplacementTouch(exclusion, entrant), out validationError);
@@ -494,11 +483,11 @@ public class ExclusionManager : MonoBehaviour
         if (slot < 0) slot = offender.RoleSlot;
         DropBallHeldBy(offender.transform);
         squad.RemoveFromField(offender);
-        offender.SetStatus(MatchPlayerStatus.ExclusionExit, false);
+        Vector2 reentrySpot = squad.Geometry.ExclusionReentrySpot(offenderTeam);
+        offender.StopMove();
+        offender.SetStatus(MatchPlayerStatus.ExclusionWaiting, false);
+        offender.PlaceAt(reentrySpot);
         SetExcludedSorting(offender.transform, true);
-        offender.BeginMove(MatchMovePurpose.Exclusion,
-            squad.Geometry.ExclusionArea(offenderTeam), exclusionExitSpeed,
-            exclusionArrivalRadius, true, true);
 
         float realSeconds = matchTimer != null
             ? matchTimer.RealSecondsForDisplayedSeconds(ordinaryExclusionDisplayedSeconds)
@@ -509,7 +498,7 @@ public class ExclusionManager : MonoBehaviour
             team = offenderTeam,
             slot = slot,
             timer = new CompressedTimer(ordinaryExclusionDisplayedSeconds, realSeconds),
-            phase = ReentryPhase.Exiting
+            phase = ReentryPhase.Waiting
         };
         activeExclusions.Add(exclusion);
 

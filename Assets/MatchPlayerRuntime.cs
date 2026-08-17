@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 // Match-only athlete state.  The saved Roster remains read-only: personal fouls, stamina,
 // eligibility and every in-water/bench transition live on this runtime identity instead.
@@ -31,6 +32,23 @@ public enum MatchMovePurpose
     Exclusion = 40
 }
 
+// Presentation ownership and destination meaning are separate. Keeping the anchor kind on the
+// runtime athlete makes an invalid cross-system target diagnosable and lets geometry reject, for
+// example, an exclusion exit accidentally pointed at a normal bench coordinate.
+public enum MatchMoveAnchor
+{
+    Unspecified,
+    Q1Huddle,
+    SprintStart,
+    TimeoutPosition,
+    FlyingSubstitutionExchange,
+    FlyingSubstitutionEntry,
+    ExclusionReentry,
+    ExclusionBenchApproach,
+    Bench,
+    Formation
+}
+
 [DefaultExecutionOrder(200)]
 public sealed class MatchPlayerState : MonoBehaviour
 {
@@ -53,6 +71,7 @@ public sealed class MatchPlayerState : MonoBehaviour
     public bool LegalOnField { get; private set; }
 
     public MatchMovePurpose MovePurpose { get; private set; }
+    public MatchMoveAnchor MoveAnchor { get; private set; }
     public Vector2 MoveTarget { get; private set; }
     public bool AtMoveTarget { get; private set; }
     public Vector2 ScriptedVelocity { get; private set; }
@@ -162,9 +181,18 @@ public sealed class MatchPlayerState : MonoBehaviour
 
     public bool BeginMove(MatchMovePurpose purpose, Vector2 target, float speed,
                           float arrivalRadius = 0.12f, bool allowDuringFullFreeze = false,
-                          bool ignorePoolBoundaries = false)
+                          bool ignorePoolBoundaries = false,
+                          MatchMoveAnchor anchor = MatchMoveAnchor.Unspecified)
     {
         if (purpose == MatchMovePurpose.None || (int)purpose < (int)MovePurpose) return false;
+        PoolMatchGeometry geometry = MatchSquadManager.Instance?.Geometry;
+        if (geometry != null &&
+            !geometry.ValidateScriptedDestination(this, purpose, anchor, target,
+                                                   out string invalidReason))
+        {
+            LogInvalidMove(purpose, anchor, target, invalidReason);
+            return false;
+        }
 
         if (moveIgnoresPoolBoundaries != ignorePoolBoundaries)
         {
@@ -173,6 +201,7 @@ public sealed class MatchPlayerState : MonoBehaviour
         }
 
         MovePurpose = purpose;
+        MoveAnchor = anchor;
         MoveTarget = target;
         moveSpeed = Mathf.Max(0.1f, speed);
         moveArrivalRadius = Mathf.Max(0.02f, arrivalRadius);
@@ -181,12 +210,29 @@ public sealed class MatchPlayerState : MonoBehaviour
         return true;
     }
 
-    public void Retarget(MatchMovePurpose purpose, Vector2 target)
+    public bool Retarget(MatchMovePurpose purpose, Vector2 target,
+                         MatchMoveAnchor anchor = MatchMoveAnchor.Unspecified)
     {
-        if (MovePurpose != purpose) return;
-        if ((MoveTarget - target).sqrMagnitude <= 0.0001f) return;
+        if (MovePurpose != purpose) return false;
+        MatchMoveAnchor resolvedAnchor = anchor == MatchMoveAnchor.Unspecified
+            ? MoveAnchor : anchor;
+        PoolMatchGeometry geometry = MatchSquadManager.Instance?.Geometry;
+        if (geometry != null &&
+            !geometry.ValidateScriptedDestination(this, purpose, resolvedAnchor, target,
+                                                   out string invalidReason))
+        {
+            LogInvalidMove(purpose, resolvedAnchor, target, invalidReason);
+            return false;
+        }
+        if ((MoveTarget - target).sqrMagnitude <= 0.0001f)
+        {
+            MoveAnchor = resolvedAnchor;
+            return true;
+        }
         MoveTarget = target;
+        MoveAnchor = resolvedAnchor;
         AtMoveTarget = false;
+        return true;
     }
 
     public void StopMove(MatchMovePurpose purpose = MatchMovePurpose.None)
@@ -196,6 +242,7 @@ public sealed class MatchPlayerState : MonoBehaviour
             MatchSquadManager.Instance?.Geometry.SetBoundaryCollisionIgnored(this, false);
         moveIgnoresPoolBoundaries = false;
         MovePurpose = MatchMovePurpose.None;
+        MoveAnchor = MatchMoveAnchor.Unspecified;
         MoveTarget = body != null ? body.position : (Vector2)transform.position;
         AtMoveTarget = false;
         ScriptedVelocity = Vector2.zero;
@@ -207,6 +254,16 @@ public sealed class MatchPlayerState : MonoBehaviour
             body.linearVelocity = Vector2.zero;
             body.angularVelocity = 0f;
         }
+    }
+
+    [System.Diagnostics.Conditional("UNITY_EDITOR")]
+    [System.Diagnostics.Conditional("DEVELOPMENT_BUILD")]
+    void LogInvalidMove(MatchMovePurpose purpose, MatchMoveAnchor anchor, Vector2 target,
+                        string reason)
+    {
+        Debug.LogError($"Rejected scripted match move: player={DisplayName ?? name}, " +
+                       $"team={(Team != null ? Team.teamName : "none")}, status={Status}, " +
+                       $"purpose={purpose}, anchor={anchor}, destination={target}. {reason}", this);
     }
 
     public void PlaceAt(Vector2 world)
@@ -300,18 +357,42 @@ public sealed class MatchPlayerState : MonoBehaviour
     }
 }
 
-// One-time scene-derived geometry.  No GameObject names are required for correct operation:
-// colliders establish the pool walls and the current defendGoal establishes each team's end.
-// Existing bench/exclusion transforms are used when present, with geometry fallbacks otherwise.
+// Centralized description of one team's legal flying-substitution section.  The points are
+// recomputed from the team's CURRENT defending end, so the same physical scene landmarks change
+// ownership automatically after the Q3 end swap.
+public struct FlyingSubstitutionArea
+{
+    public Vector2 BenchStaging;
+    public Vector2 ExchangeInside;
+    public Vector2 ExchangeOutside;
+    public Vector2 EntryInside;
+    public float OwnHalfMinX;
+    public float OwnHalfMaxX;
+
+    public Vector2 ClampToOwnHalf(Vector2 point)
+    {
+        point.x = Mathf.Clamp(point.x, OwnHalfMinX, OwnHalfMaxX);
+        return point;
+    }
+}
+
+// One-time scene-derived geometry. Colliders establish the pool walls, authored bench-side
+// landmarks refine the presentation, and the current defendGoal establishes each team's end.
+// Every named scene lookup is optional and geometrically validated; safe derived fallbacks keep
+// the system working if the PoolB art is renamed or replaced.
 public sealed class PoolMatchGeometry
 {
     private readonly MatchContext context;
     private readonly List<Collider2D> poolBoundaries = new List<Collider2D>();
     private readonly List<Transform> benchVisuals = new List<Transform>();
     private readonly List<Transform> exclusionMarkers = new List<Transform>();
+    private Collider2D benchSideBoundary;
+    private Transform negativeEndFlyingMarker;
+    private Transform positiveEndFlyingMarker;
+    private Transform halfwayMarker;
     private float topInsideY = 3.72f;
     private float topOutsideY = 4.18f;
-    private float bottomInsideY = -3.72f;
+    private bool exclusionMarkerRetryComplete;
 
     public PoolMatchGeometry(MatchContext context)
     {
@@ -322,7 +403,7 @@ public sealed class PoolMatchGeometry
     void Discover()
     {
         Collider2D top = null;
-        Collider2D bottom = null;
+        Collider2D namedBenchSide = null;
         PoolLineFloat[] lines = UnityEngine.Object.FindObjectsByType<PoolLineFloat>(
             FindObjectsInactive.Include);
         for (int i = 0; i < lines.Length; i++)
@@ -336,32 +417,63 @@ public sealed class PoolMatchGeometry
                 if (boundary == null || !boundary.enabled) continue;
                 if (!poolBoundaries.Contains(boundary)) poolBoundaries.Add(boundary);
                 if (boundary.bounds.size.x < 5f) continue;
+                if (lines[i].name == "horizontal-line_0" && boundary.bounds.center.y > 0f)
+                    namedBenchSide = boundary;
                 if (boundary.bounds.center.y > 0f &&
                     (top == null || boundary.bounds.center.y > top.bounds.center.y)) top = boundary;
-                if (boundary.bounds.center.y < 0f &&
-                    (bottom == null || boundary.bounds.center.y < bottom.bounds.center.y)) bottom = boundary;
             }
         }
 
-        if (top != null)
+        benchSideBoundary = namedBenchSide != null ? namedBenchSide : top;
+        if (benchSideBoundary != null)
         {
-            topInsideY = top.bounds.min.y - 0.16f;
-            topOutsideY = top.bounds.max.y + 0.20f;
+            // PoolB's observed legal waiting neighbourhood is y ~= 4.20.  Deriving from the
+            // actual line thickness gives that result without baking the scene coordinate in.
+            topInsideY = benchSideBoundary.bounds.min.y - 0.12f;
+            topOutsideY = benchSideBoundary.bounds.max.y + 0.12f;
         }
-        if (bottom != null) bottomInsideY = bottom.bounds.max.y + 0.20f;
+        DiscoverSceneLandmarks();
+    }
 
-        Transform[] all = UnityEngine.Object.FindObjectsByType<Transform>(
-            FindObjectsInactive.Include);
-        for (int i = 0; i < all.Length; i++)
+    void DiscoverSceneLandmarks()
+    {
+        Scene scene = context != null ? context.gameObject.scene : default;
+        if (scene.IsValid() && scene.isLoaded)
         {
-            Transform t = all[i];
-            if (t == null) continue;
-            string lower = t.name.ToLowerInvariant();
-            if (lower.Contains("exclusionspot") || lower.Contains("exclusion_spot"))
-                exclusionMarkers.Add(t);
-            else if (lower.Contains("players-bench") || lower.Contains("playerbench"))
-                benchVisuals.Add(t);
+            GameObject[] roots = scene.GetRootGameObjects();
+            for (int r = 0; r < roots.Length; r++)
+            {
+                Transform[] descendants = roots[r].GetComponentsInChildren<Transform>(true);
+                for (int i = 0; i < descendants.Length; i++) CacheSceneLandmark(descendants[i]);
+            }
+            return;
         }
+
+        Transform[] all = UnityEngine.Object.FindObjectsByType<Transform>(FindObjectsInactive.Include);
+        for (int i = 0; i < all.Length; i++) CacheSceneLandmark(all[i]);
+    }
+
+    void CacheSceneLandmark(Transform t)
+    {
+        if (t == null) return;
+        string lower = t.name.ToLowerInvariant();
+        if (lower.Contains("exclusionspot") || lower.Contains("exclusion_spot"))
+        {
+            if (!exclusionMarkers.Contains(t)) exclusionMarkers.Add(t);
+        }
+        else if (lower.Contains("players-bench") || lower.Contains("playerbench"))
+        {
+            if (!benchVisuals.Contains(t)) benchVisuals.Add(t);
+        }
+
+        // These are optional physical calibration cones found in the saved PoolB scene.
+        // Their X sign identifies a pool END only; team/kit colour is never consulted.
+        if (t.name == "green-conus-1_0" && t.position.x < 0f)
+            negativeEndFlyingMarker = t;
+        else if (t.name == "red-conus4 (1)" && t.position.x > 0f)
+            positiveEndFlyingMarker = t;
+        else if (t.name == "blue-conus2")
+            halfwayMarker = t;
     }
 
     float DefendSign(TeamSide team)
@@ -371,41 +483,138 @@ public sealed class PoolMatchGeometry
         return context != null && team == context.PlayerTeam ? -1f : 1f;
     }
 
-    float DefensiveExchangeX(TeamSide team)
+    void OwnHalfBounds(TeamSide team, out float goalX, out float halfwayX,
+                       out float minX, out float maxX)
     {
-        float goalX = team != null && team.defendGoal != null
+        goalX = team != null && team.defendGoal != null
             ? team.defendGoal.position.x : DefendSign(team) * 7f;
-        return goalX * 0.78f;
+        float attackX = team != null && team.attackGoal != null
+            ? team.attackGoal.position.x : -goalX;
+        halfwayX = (goalX + attackX) * 0.5f;
+
+        // PoolB authors the bench-side halfway cone at x ~= -0.01. Prefer it to the midpoint of
+        // slightly asymmetric goal art, but only after proving it lies between both goals and on
+        // the discovered bench-side boundary. Renamed/rebuilt pools retain the goal midpoint.
+        float endMin = Mathf.Min(goalX, attackX);
+        float endMax = Mathf.Max(goalX, attackX);
+        if (halfwayMarker != null && halfwayMarker.position.x > endMin + 0.5f &&
+            halfwayMarker.position.x < endMax - 0.5f &&
+            Mathf.Abs(halfwayMarker.position.y - topOutsideY) <= 1.2f)
+            halfwayX = halfwayMarker.position.x;
+
+        // Keep exchange/entry targets visibly inside the team's own legal half.  The small inset
+        // avoids a sprite straddling the goal/halfway line due to its visual width.
+        float rawMin = Mathf.Min(goalX, halfwayX);
+        float rawMax = Mathf.Max(goalX, halfwayX);
+        minX = rawMin + 0.18f;
+        maxX = rawMax - 0.18f;
+        if (minX > maxX)
+        {
+            float middle = (goalX + halfwayX) * 0.5f;
+            minX = maxX = middle;
+        }
+    }
+
+    public float HalfwayX(TeamSide team)
+    {
+        OwnHalfBounds(team, out _, out float halfwayX, out _, out _);
+        return halfwayX;
+    }
+
+    public FlyingSubstitutionArea GetFlyingSubstitutionArea(TeamSide team)
+    {
+        OwnHalfBounds(team, out float goalX, out float halfwayX,
+                      out float ownHalfMinX, out float ownHalfMaxX);
+        float sign = DefendSign(team);
+        Transform authored = sign < 0f ? negativeEndFlyingMarker : positiveEndFlyingMarker;
+
+        // Prefer the authored PoolB cone only when it is actually on the discovered bench-side
+        // line and between this team's goal line and halfway. Otherwise use the middle of that
+        // geometrically legal interval. No caller needs to know scene object names or coordinates.
+        float exchangeX = Mathf.Lerp(goalX, halfwayX, 0.45f);
+        if (authored != null && authored.position.x >= ownHalfMinX &&
+            authored.position.x <= ownHalfMaxX &&
+            Mathf.Abs(authored.position.y - topOutsideY) <= 1.2f)
+            exchangeX = authored.position.x;
+        exchangeX = Mathf.Clamp(exchangeX, ownHalfMinX, ownHalfMaxX);
+
+        Vector2 bench = BenchBase(team);
+        return new FlyingSubstitutionArea
+        {
+            BenchStaging = bench,
+            ExchangeInside = new Vector2(exchangeX, topInsideY),
+            ExchangeOutside = new Vector2(exchangeX, topOutsideY),
+            EntryInside = new Vector2(exchangeX, topInsideY - 0.38f),
+            OwnHalfMinX = ownHalfMinX,
+            OwnHalfMaxX = ownHalfMaxX
+        };
     }
 
     public Vector2 SubstitutionInside(TeamSide team)
-        => new Vector2(DefensiveExchangeX(team), topInsideY);
+        => GetFlyingSubstitutionArea(team).ExchangeInside;
 
     public Vector2 SubstitutionOutside(TeamSide team)
-        => new Vector2(DefensiveExchangeX(team), topOutsideY);
+        => GetFlyingSubstitutionArea(team).ExchangeOutside;
 
-    public Vector2 BenchPoint(TeamSide team, int ordinal)
+    Vector2 BenchBase(TeamSide team)
     {
         float sign = DefendSign(team);
         Transform best = null;
         float bestScore = float.PositiveInfinity;
+        float goalX = team != null && team.defendGoal != null
+            ? team.defendGoal.position.x : sign * 7f;
         for (int i = 0; i < benchVisuals.Count; i++)
         {
             Transform candidate = benchVisuals[i];
             if (candidate == null || Mathf.Sign(candidate.position.x) != sign) continue;
-            float score = Mathf.Abs(candidate.position.x - DefensiveExchangeX(team));
+            float score = Mathf.Abs(candidate.position.x - goalX);
             if (score < bestScore) { bestScore = score; best = candidate; }
         }
+        if (best != null)
+        {
+            Renderer renderer = best.GetComponent<Renderer>();
+            if (renderer == null) renderer = best.GetComponentInChildren<Renderer>();
+            return renderer != null ? (Vector2)renderer.bounds.center : (Vector2)best.position;
+        }
+        return new Vector2(Mathf.Lerp(goalX, 0f, 0.2f), topOutsideY + 1.05f);
+    }
 
-        Vector2 basePoint = best != null
-            ? (Vector2)best.position
-            : new Vector2(DefensiveExchangeX(team), topOutsideY + 1.05f);
+    public Vector2 BenchPoint(TeamSide team, int ordinal)
+    {
+        Vector2 basePoint = BenchBase(team);
         int row = ordinal / 4;
         int column = ordinal % 4;
         return basePoint + new Vector2((column - 1.5f) * 0.42f, row * 0.30f);
     }
 
-    public Vector2 ExclusionArea(TeamSide team)
+    // Timeout organization deliberately uses the same coach/bench side, but is a staggered
+    // tactical spread rather than the Q1 circle. Every target remains in the current defensive
+    // half and therefore swaps ends with defendGoal before Q3.
+    public Vector2 TimeoutGatheringPoint(TeamSide team, int ordinal, int participantCount)
+    {
+        OwnHalfBounds(team, out float goalX, out float halfwayX,
+                      out float ownHalfMinX, out float ownHalfMaxX);
+        float baseX = Mathf.Lerp(goalX, halfwayX, 0.38f);
+        int columns = Mathf.Clamp(participantCount, 1, 3);
+        int column = ordinal % columns;
+        int row = ordinal / columns;
+        float directionToHalf = Mathf.Sign(halfwayX - goalX);
+        float centeredColumn = column - (columns - 1) * 0.5f;
+        float x = baseX + directionToHalf * centeredColumn * 0.62f;
+        float y = topInsideY - 0.52f - row * 0.72f;
+        return new Vector2(Mathf.Clamp(x, ownHalfMinX, ownHalfMaxX), y);
+    }
+
+    public Vector2 TimeoutKeeperPoint(TeamSide team)
+    {
+        if (team == null || team.defendGoal == null) return Vector2.zero;
+        Vector2 goal = team.defendGoal.position;
+        float directionToField = team.attackGoal != null
+            ? Mathf.Sign(team.attackGoal.position.x - goal.x) : -Mathf.Sign(goal.x);
+        return new Vector2(goal.x + directionToField * 0.18f, goal.y);
+    }
+
+    Transform ResolveAuthoredExclusionSpot(TeamSide team)
     {
         float sign = DefendSign(team);
         Transform best = null;
@@ -418,30 +627,129 @@ public sealed class PoolMatchGeometry
                 ? Vector2.Distance(marker.position, team.defendGoal.position) : 0f;
             if (score < bestScore) { bestScore = score; best = marker; }
         }
-        if (best != null) return best.position;
+        if (best != null) return best;
 
-        float goalX = team != null && team.defendGoal != null
-            ? team.defendGoal.position.x : sign * 7f;
-        return new Vector2(goalX + sign * 0.18f, bottomInsideY - 0.42f);
+        // Geometry is constructed from a component added during MatchContext.Awake. If a scene
+        // landmark was not registered in that first lifecycle pass, retry against this scene's
+        // actual root hierarchy before ever accepting a generated corner fallback.
+        if (!exclusionMarkerRetryComplete)
+        {
+            exclusionMarkerRetryComplete = true;
+            DiscoverSceneLandmarks();
+            return ResolveAuthoredExclusionSpot(team);
+        }
+        return null;
     }
 
-    public Vector2 ExclusionEntryInside(TeamSide team)
+    public bool TryGetAuthoredExclusionSpot(TeamSide team, out Vector2 position)
     {
+        Transform marker = ResolveAuthoredExclusionSpot(team);
+        position = marker != null ? (Vector2)marker.position : default;
+        return marker != null;
+    }
+
+    public Vector2 ExclusionReentrySpot(TeamSide team)
+    {
+        if (TryGetAuthoredExclusionSpot(team, out Vector2 authored)) return authored;
+
+        // PoolB authors the physical re-entry spots on the bench-side edge beside each defensive
+        // goal. If a future scene omits those markers, stay on that same edge; never fall back to
+        // an unrelated bottom corner. The current defendGoal sign makes this swap with the teams
+        // before Q3 without tying the physical anchor to a kit colour or Home/Away label.
         float sign = DefendSign(team);
         float goalX = team != null && team.defendGoal != null
             ? team.defendGoal.position.x : sign * 7f;
-        float limit = context != null ? context.PlayerLimitX : 6.9f;
-        return new Vector2(Mathf.Clamp(goalX - sign * 0.55f, -limit + 0.1f, limit - 0.1f),
-                           bottomInsideY + 0.28f);
+        return new Vector2(goalX + sign * 0.055f, topInsideY - 0.04f);
     }
 
-    // Bench bodies are staged above the top wall while the authored re-entry markers sit by the
-    // bottom wall. Route a replacement behind its own goal line instead of cutting diagonally
-    // through live play as an ineligible ghost swimmer.
-    public Vector2 ExclusionBenchLane(TeamSide team)
+    // Bench bodies approach the authored bench-side re-entry point from outside active play.
+    public Vector2 ExclusionBenchApproach(TeamSide team)
     {
-        Vector2 area = ExclusionArea(team);
+        Vector2 area = ExclusionReentrySpot(team);
         return new Vector2(area.x, topOutsideY + 0.12f);
+    }
+
+    public bool ValidateScriptedDestination(MatchPlayerState player, MatchMovePurpose purpose,
+                                            MatchMoveAnchor anchor, Vector2 destination,
+                                            out string reason)
+    {
+        reason = string.Empty;
+        if (!float.IsFinite(destination.x) || !float.IsFinite(destination.y))
+        {
+            reason = "Destination is not finite.";
+            return false;
+        }
+        if (anchor == MatchMoveAnchor.Unspecified) return true;
+
+        bool compatible;
+        switch (anchor)
+        {
+            case MatchMoveAnchor.Q1Huddle:
+            case MatchMoveAnchor.SprintStart:
+                compatible = purpose == MatchMovePurpose.Q1Huddle;
+                break;
+            case MatchMoveAnchor.TimeoutPosition:
+                compatible = purpose == MatchMovePurpose.Timeout;
+                break;
+            case MatchMoveAnchor.FlyingSubstitutionExchange:
+            case MatchMoveAnchor.FlyingSubstitutionEntry:
+                compatible = purpose == MatchMovePurpose.Substitution;
+                break;
+            case MatchMoveAnchor.ExclusionReentry:
+            case MatchMoveAnchor.ExclusionBenchApproach:
+                compatible = purpose == MatchMovePurpose.Exclusion;
+                break;
+            case MatchMoveAnchor.Bench:
+                compatible = purpose == MatchMovePurpose.Substitution ||
+                             purpose == MatchMovePurpose.Exclusion ||
+                             purpose == MatchMovePurpose.Timeout;
+                break;
+            case MatchMoveAnchor.Formation:
+                compatible = purpose != MatchMovePurpose.None;
+                break;
+            default:
+                compatible = true;
+                break;
+        }
+        if (!compatible)
+        {
+            reason = $"Anchor {anchor} is incompatible with movement purpose {purpose}.";
+            return false;
+        }
+
+        if (player == null || player.Team == null) return true;
+        Vector2 expected;
+        float tolerance;
+        switch (anchor)
+        {
+            case MatchMoveAnchor.FlyingSubstitutionExchange:
+            {
+                FlyingSubstitutionArea area = GetFlyingSubstitutionArea(player.Team);
+                float insideDistance = (destination - area.ExchangeInside).sqrMagnitude;
+                float outsideDistance = (destination - area.ExchangeOutside).sqrMagnitude;
+                if (Mathf.Min(insideDistance, outsideDistance) <= 0.35f * 0.35f) return true;
+                reason = "Destination is outside the team's flying-substitution exchange anchors.";
+                return false;
+            }
+            case MatchMoveAnchor.FlyingSubstitutionEntry:
+                expected = GetFlyingSubstitutionArea(player.Team).EntryInside;
+                tolerance = 0.35f;
+                break;
+            case MatchMoveAnchor.ExclusionReentry:
+                expected = ExclusionReentrySpot(player.Team);
+                tolerance = 0.35f; // includes the short hand-touch offset above the marker
+                break;
+            case MatchMoveAnchor.ExclusionBenchApproach:
+                expected = ExclusionBenchApproach(player.Team);
+                tolerance = 0.35f;
+                break;
+            default:
+                return true;
+        }
+        if ((destination - expected).sqrMagnitude <= tolerance * tolerance) return true;
+
+        reason = $"Destination does not match the team's {anchor} anchor at {expected}.";
+        return false;
     }
 
     public void SetBoundaryCollisionIgnored(MatchPlayerState player, bool ignored)
@@ -459,6 +767,12 @@ public sealed class PoolMatchGeometry
 [DefaultExecutionOrder(-450)]
 public sealed class MatchSquadManager : MonoBehaviour
 {
+    private struct FieldTeamVisualIdentity
+    {
+        public Color capTint;
+        public Color swimwearTint;
+    }
+
     public static MatchSquadManager Instance { get; private set; }
     public PoolMatchGeometry Geometry { get; private set; }
     public IReadOnlyList<MatchPlayerState> Participants => participants;
@@ -466,6 +780,8 @@ public sealed class MatchSquadManager : MonoBehaviour
     private readonly List<MatchPlayerState> participants = new List<MatchPlayerState>();
     private readonly Dictionary<Transform, MatchPlayerState> byBody =
         new Dictionary<Transform, MatchPlayerState>();
+    private readonly Dictionary<TeamSide, FieldTeamVisualIdentity> teamVisualIdentities =
+        new Dictionary<TeamSide, FieldTeamVisualIdentity>();
     private MatchContext context;
     private bool initialized;
 
@@ -511,6 +827,8 @@ public sealed class MatchSquadManager : MonoBehaviour
         MatchPresentationContext.Restore(); // championship opponent identity before bot bench names
 
         PlayerData[] starters = RosterManager.Instance.GetStarters();
+        CaptureTeamVisualIdentity(context.PlayerTeam);
+        CaptureTeamVisualIdentity(context.BotTeam);
         BindStartingTeam(context.PlayerTeam, true, starters);
         BindStartingTeam(context.BotTeam, false, null);
         BuildHumanBench(starters);
@@ -534,6 +852,7 @@ public sealed class MatchSquadManager : MonoBehaviour
             state.Bind(data, prefix + "_starter_" + slot, fallbackName, position,
                        human ? 65 : 70, slot + 2, team, human, slot,
                        MatchPlayerStatus.OnField, true);
+            ApplyTeamVisualIdentity(body, team);
             AddParticipant(state);
         }
     }
@@ -589,6 +908,7 @@ public sealed class MatchSquadManager : MonoBehaviour
         GameObject clone = Instantiate(template.gameObject,
             new Vector3(point.x, point.y, template.position.z), template.rotation);
         clone.name = (human ? "Home" : "Away") + "Bench_" + id;
+        ApplyTeamVisualIdentity(clone.transform, team);
         PlayerMovement pm = clone.GetComponent<PlayerMovement>();
         if (pm != null) pm.IsActive = false;
         IAgentBody agent = clone.GetComponent<IAgentBody>();
@@ -659,7 +979,51 @@ public sealed class MatchSquadManager : MonoBehaviour
         player.Team.members[slot] = player.transform;
         player.SetRoleSlot(slot);
         player.SetStatus(status, true);
+        ApplyTeamVisualIdentity(player.transform, player.Team);
         return true;
+    }
+
+    // Capture once from the same authored field-body path that made starters look correct. The
+    // dictionary key is TeamSide identity, never defendGoal/left/right, so Q3 moves geometry only.
+    void CaptureTeamVisualIdentity(TeamSide team)
+    {
+        if (team == null || team.members == null || teamVisualIdentities.ContainsKey(team)) return;
+        for (int i = 0; i < team.members.Length; i++)
+        {
+            Transform body = team.members[i];
+            if (body == null) continue;
+            PlayerAnimator playerAnimator = body.GetComponent<PlayerAnimator>();
+            if (playerAnimator != null)
+            {
+                playerAnimator.GetConfiguredTeamPalette(out Color cap, out Color swimwear);
+                teamVisualIdentities[team] = new FieldTeamVisualIdentity
+                    { capTint = cap, swimwearTint = swimwear };
+                return;
+            }
+            BotAnimator botAnimator = body.GetComponent<BotAnimator>();
+            if (botAnimator == null) continue;
+            botAnimator.GetAuthoredTeamPalette(out Color botCap, out Color botSwimwear);
+            teamVisualIdentities[team] = new FieldTeamVisualIdentity
+                { capTint = botCap, swimwearTint = botSwimwear };
+            return;
+        }
+    }
+
+    void ApplyTeamVisualIdentity(Transform body, TeamSide team)
+    {
+        if (body == null || team == null) return;
+        if (!teamVisualIdentities.TryGetValue(team, out FieldTeamVisualIdentity identity))
+        {
+            CaptureTeamVisualIdentity(team);
+            if (!teamVisualIdentities.TryGetValue(team, out identity)) return;
+        }
+
+        PlayerAnimator playerAnimator = body.GetComponent<PlayerAnimator>();
+        if (playerAnimator != null)
+            playerAnimator.ApplyMatchTeamPalette(identity.capTint, identity.swimwearTint);
+        BotAnimator botAnimator = body.GetComponent<BotAnimator>();
+        if (botAnimator != null)
+            botAnimator.ApplyMatchTeamPalette(identity.capTint, identity.swimwearTint);
     }
 
     public bool IsCompatible(MatchPlayerState outgoing, MatchPlayerState incoming)

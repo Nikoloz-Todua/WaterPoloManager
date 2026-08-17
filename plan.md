@@ -2951,3 +2951,165 @@ Regulations page/PDF dated 18 February 2026; the task intentionally leaves the e
   `Assets/Resources/Fonts/GeorgianFallback SDF.asset`; this pass did not edit that asset. A fresh
   Unity Play Mode rerun is still required to confirm Q1 race completion/possession handoff visually
   and to check the reduced timeout button on the target phone aspect ratio.
+
+---
+
+## FOLLOW-UP — 2026-08-17 (bench-side substitutions, 2026 timeout flow, World Cup restart, data audit)
+
+### Flying-substitution geometry and end ownership
+
+- `PoolMatchGeometry.GetFlyingSubstitutionArea(team)` is now the single source for bench staging,
+  outside/inside exchange points, the first legal inside-entry point, and the team's own-half X
+  limits. Live substitutions no longer use the old defending-wall approximation.
+- PoolB discovery successfully found the upper `horizontal-line_0` collider. Its live renderer/
+  collider bounds determine the inside/outside Y values with **0.12u** visual clearance. It also
+  found both `players-bench_0` visuals; their renderer-bounds centres stage each physical bench.
+- The saved PoolB cones at X **-2.63** (`green-conus-1_0`) and **5.19** (`red-conus4 (1)`) are
+  optional, geometrically validated calibration landmarks for the two physical ends. The authored
+  `blue-conus2` at X **-0.01** supplies the actual halfway X instead of averaging slightly
+  asymmetric goal art. If a marker is absent/invalid, geometry falls back to the goal midpoint and
+  **45% from the defending goal toward halfway**. Every exchange/entry X is clamped **0.18u** inside
+  the defending-goal-to-halfway interval, so IN cannot cross the opponent's section before touch.
+- `SubstitutionManager` keeps OUT and IN ineligible during the approach, completes the visible
+  hand-touch on that bench-side line, atomically assigns the slot, then makes IN cross to the
+  derived inside-entry point before swimming to formation. OUT continues to the current-end bench.
+- Physical ownership is resolved from `TeamSide.defendGoal`, never kit colour. The existing Q3
+  `MatchContext.SwapEnds` changes goals first; all later flying areas, bench points, timeout points,
+  and exclusion gates therefore resolve to the opposite physical end. Existing active exclusion
+  migration and bench-body migration remain authoritative.
+
+### Official timeout choreography, substitutions, and restart
+
+- The first **45 displayed seconds** command eligible field swimmers into a staggered 3-column/
+  2-row tactical gathering near the coach-side boundary, clamped in each team's current defensive
+  half. Goalkeepers use a narrow timeout movement owner and remain at their physical defensive goal.
+- At **0:15**, both teams physically break formation. The entitled team uses existing
+  `AttackPositionFor` or `ManUpSpot`; opponents use `MarkAssignmentFor`/`MarkSpot` or `ManDownSpot`.
+  Null/excluded `TeamSide.members` slots remain null, so 6-on-5 is not accidentally restored.
+- A timeout substitution now uses its own dead-ball exchange path: the lineup slot changes
+  atomically, OUT swims to the bench, and IN swims directly to the current timeout/restart target.
+  It does not require the live flying-area hand-touch and does not write permanent starters.
+- Every non-penalty timeout resumes as an existing `MatchContext` free throw by a legal field taker
+  at a point **0.35u behind halfway**. Live possession, an existing free/OOB restart, and a frozen
+  goal restart preserve the entitled team but are normalized to this legal timeout restart; stale
+  OOB/kickoff reservations are cleared. `TimeoutRestartPending` keeps match and shot clocks stopped
+  until the human moves/passes/shoots or the bot completes the existing free-throw hold/action.
+- An awarded penalty remains owned by `PenaltyManager`; its shooter/ball transaction is preserved.
+  The final-15 phase reuses `TryGetTimeoutRestartTarget`, and 0:00 waits for the shooter to swim back
+  to the penalty spot before the penalty freeze resumes. Ordinary restarts likewise hold at 0:00
+  until their taker is within the **0.24u** positioning tolerance; no goalkeeper pass is forced.
+- Timeout duration remains **60 displayed seconds** through `MatchTimer.RealSecondsForDisplayedSeconds`
+  (about **11.25 real seconds** with 480 displayed / 90 real quarter tuning). Positioning speed is
+  **3.7u/s**; targets refresh every **0.5 real seconds** so late legal lineup changes join the phase.
+
+### Bot coaching and World Cup restart
+
+- The bot calls the same `TimeoutManager.CallTimeout` path and consumes the same two-timeout count.
+  It evaluates once per **1 real second** with a readable score: Q4 close/late possession (+24 to
+  +84 depending on margin/time), opponent exclusion (+45, plus Q3/Q4/close bonuses), two/three
+  unanswered human goals (+20/+34), and multi-player fatigue (22% severe, 36% tired thresholds).
+  Early Q1, comfortable leads, and low-value early-half states subtract/reject. Call thresholds are
+  **65** for the first and **70** for the second; **18 real seconds** is AI resource-spacing only
+  and is bypassed by a score of 100+, never an official rules cooldown. Presentation/restart is
+  identical for human and bot callers.
+- Active World Cup runs can now restart before recording a win. The dedicated screen always shows
+  `RESTART`, uses the requested destructive confirmation copy and `CANCEL` / `RESTART`, then calls
+  the existing World-Cup-only `StartNew` path. It preserves currencies, club/championship/profile
+  saves and the existing prior-draw-signature rejection. The separate club championship
+  `RESTART (WIN 1)` gate is intentionally unchanged.
+- Added root `PLAYER_DATA_AUDIT.md`: exact 36-country catalog/rates/tags/flags, World Cup simulation
+  and draw algorithms, current player/card/roster fields, pack odds/prices/guarantees, persistence,
+  live stat connections, portrait architecture, and the minimum next-task upload list. No national
+  players, Firebase fields, pack balancing, saves, scenes, or font assets were changed.
+
+### Files, validation, and remaining Play Mode coverage
+
+- Changed: `Goalkeeper.cs`, `MatchContext.cs`, `MatchPlayerRuntime.cs`,
+  `MatchTeamManagementUI.cs`, `MatchTimer.cs`, `ScoreManager.cs`, `SubstitutionManager.cs`,
+  `TimeoutManager.cs`, `Assets/Scripts/WorldCupSeason.cs`, `Assets/Scripts/WorldCupUI.cs`, and
+  `plan.md`. Created: `PLAYER_DATA_AUDIT.md`. There are no new scene/prefab edits or required
+  Inspector references; all new match owners/geometry remain runtime-resolved.
+- `dotnet build Assembly-CSharp.csproj --no-restore`: **0 warnings, 0 errors**.
+- `dotnet build Assembly-CSharp-Editor.csproj --no-restore`: **0 warnings, 0 errors**.
+- Final scoped diff whitespace check is clean. The full-tree check still reports only the known
+  pre-existing trailing spaces in the user-modified `GeorgianFallback SDF.asset`, which this pass
+  did not touch. No Unity batch instance was launched.
+- Still requires Play Mode: live exchange at both physical ends and after Q3; timeout from live,
+  free/OOB, goal-restart and pending-penalty states; 6-on-6 and 6-on-5 final shapes; very-late timeout
+  substitution; bot calls under staged Q4/man-up/momentum/fatigue states; and World Cup restart save
+  isolation plus fresh-draw behavior. Dedicated timeout coach animation/audio remains future art,
+  not a rules or state-machine dependency.
+
+---
+
+## REGRESSION FIX — 2026-08-17 (field-player team palette consistency)
+
+- Root cause: saved starters received their authored `PlayerAnimator`/`BotAnimator` palette, but
+  `MatchSquadManager.CreateBenchBody` only cloned a role body and later bound its rules identity.
+  `Instantiate` runs animator initialization before that bind, and there was no team-authoritative
+  palette application afterward. Runtime `HomeBench_*`/`AwayBench_*` bodies could therefore retain
+  clone/default per-body material state; only substitutes using those bodies exposed the mismatch.
+- `MatchSquadManager` now captures one cap/swimwear identity per `TeamSide` from the same authored
+  starter path (saved club profile for the human side; configured bot starter palette for the bot),
+  then applies it to every starter, newly created bench body, and every later field assignment.
+  `PlayerAnimator` and `BotAnimator` expose narrow palette hooks that update their existing private
+  palette-material instances; shared flipbooks, animation controllers and goalkeeper visuals are
+  unchanged. The cache is keyed by `TeamSide`, never `defendGoal`, so Q3 changes ends without
+  changing uniforms.
+- Changed only `MatchPlayerRuntime.cs`, `PlayerAnimator.cs`, `BotAnimator.cs`, and `plan.md`; no
+  scene/prefab/Inspector serialization changed. Both requested dotnet builds pass with **0 warnings,
+  0 errors**; scoped `git diff --check` is clean. Unity Play Mode still needs the original-team,
+  human/bot substitution, exclusion-replacement, and Q3 persistence checks.
+
+---
+
+## REGRESSION FIX - 2026-08-17 (mid-match palette fallback and exclusion anchors)
+
+- The remaining pink-to-blue change was not a late `_CapTint` material write. During normal bot
+  defence/steal/exclusion presentation, `BotAnimator.Update` selected the legacy animation path and
+  `SetFlipbookRendererVisible(false)` exposed the root renderer. `BotAnimator.Awake` had selected
+  `BlueAnimation.controller` solely from `BotMovement.isBlueTeam`, so the controller's pre-coloured
+  blue sprites replaced the correctly tinted flipbook. The earlier team-palette fix covered
+  material instances and cloned bodies, but not this legacy-controller renderer swap.
+- Bot TeamSide identity is now captured from the authored starter renderer material before animator
+  initialization. `ApplyMatchTeamPalette` applies the same cached cap/swimwear colours and selects
+  the matching red/blue legacy controller family; Play Mode `OnValidate` is forbidden from
+  reconstructing an assigned match swimmer from serialized defaults. The identity remains keyed by
+  `TeamSide`, so substitution, re-entry, role/control changes and Q3 end switching cannot alter it.
+- The observed approximately `(-6.7,-4.29)` / `(7.27,-4.29)` destinations were
+  `PoolMatchGeometry.ExclusionArea`'s generated goal/bottom-bound fallback, requested for
+  `MatchPlayerStatus.ExclusionExit` (`MovePurpose.Exclusion`) when the one-time landmark cache did
+  not resolve a marker. PoolB's saved scene markers are `ExclusionSpot_Home = (-7.2,-4.1)` and
+  `ExclusionSpot_Away = (7.2,-4.1)`. Geometry now walks the active scene-root hierarchy, retries
+  marker discovery before any fallback, resolves the marker by the team's current `defendGoal`, and
+  uses that same authored re-entry spot for exit, waiting and legal release.
+- Scripted moves now retain an explicit anchor kind alongside their purpose/target. The centralized
+  geometry guard rejects incompatible or mismatched exclusion/flying-sub anchors in Editor and
+  development builds; exclusion re-entry, exclusion bench approach, normal bench, timeout,
+  flying-sub exchange/entry, formation, and Q1 presentation destinations remain distinct. No
+  coordinate clamp, rule timing, formation, timeout, SprintDuel, or scene serialization changed.
+- Regression-pass files: `PlayerVisualRuntime.cs`, `BotAnimator.cs`, `MatchPlayerRuntime.cs`,
+  `ExclusionManager.cs`, `SubstitutionManager.cs`, `TimeoutManager.cs`, `Q1MatchIntro.cs`, and
+  `plan.md`. `PLAYER_DATA_AUDIT.md`, the saved scene, prefabs and `GeorgianFallback SDF.asset` were
+  not edited. Both requested dotnet builds pass with **0 warnings, 0 errors**, and the scoped
+  `git diff --check` is clean. The palette/exclusion/Q3 matrix remains for Unity Play Mode.
+
+---
+
+## EXCLUSION POSITION CORRECTION - 2026-08-17
+
+- Corrected the PoolB physical re-entry markers to the verified positions:
+  `ExclusionSpot_Home = (-6.65, 3.68)` at the negative-X end and
+  `ExclusionSpot_Away = (7.13, 3.63)` at the positive-X end. Their historical Home/Away names do
+  not bind them to a team: `PoolMatchGeometry` selects the physical marker from the team's current
+  `defendGoal`, so the human uses negative-X and the bot positive-X in Q1/Q2, then ownership swaps
+  automatically in Q3/Q4.
+- An exclusion now removes field eligibility, cancels any prior scripted velocity, and immediately
+  places the offender at the resolved marker in `ExclusionWaiting`. The obsolete exit-swim phase
+  was removed. Legal release/replacement still starts from that same marker and keeps the existing
+  18-displayed-second and early-release rules. The missing-marker fallback now remains on the
+  bench-side edge near the defending goal and can no longer generate a bottom-corner destination.
+- Changed only `Assets/Scenes/SampleScene_PoolB.unity`, `Assets/MatchPlayerRuntime.cs`,
+  `Assets/ExclusionManager.cs`, and this handoff note. Both requested dotnet builds pass with
+  **0 warnings, 0 errors**; scoped whitespace validation is clean. Play Mode still needs one
+  exclusion per team before halftime and one per team after the Q3 end swap.

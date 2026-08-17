@@ -58,7 +58,9 @@ public sealed class WorldCupSeason
     public bool PlayerIsChampion => IsComplete && Champion == playerIndex;
     public int GoalDiff(int team) => gf[team] - ga[team];
     public int Points(int team) => won[team] * 3 + drawn[team];
-    public bool CanRestart => PlayerMatchWins > 0;
+    // Active World Cup runs may be restarted at any time. This is intentionally local to the
+    // World Cup save and does not change club-championship progression gates.
+    public bool CanRestart => !IsComplete;
 
     public int PlayerMatchWins
     {
@@ -144,7 +146,7 @@ public sealed class WorldCupSeason
     public static bool Restart()
     {
         Ensure();
-        if (Current == null || !Current.CanRestart) return false;
+        if (Current == null || Current.IsComplete) return false;
         string country = Current.selectedCountry;
         StartNew(country);
         return true;

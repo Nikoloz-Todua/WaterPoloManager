@@ -402,8 +402,7 @@ public sealed class WorldCupUI : MonoBehaviour
         row.childControlWidth = true; row.childControlHeight = true;
         row.childForceExpandWidth = true; row.childForceExpandHeight = true;
 
-        Button restart = MakeUnifiedActionButton(rowGo.transform, "RESTART", RequestRestart);
-        if (!season.CanRestart) restart.gameObject.AddComponent<CanvasGroup>().alpha = 0.58f;
+        MakeUnifiedActionButton(rowGo.transform, "RESTART", RequestRestart);
         if (season.NextOpponent >= 0)
             MakeUnifiedActionButton(rowGo.transform,
                 "NEXT MATCH  vs. " + season.NextOpponentName.ToUpperInvariant(), OpenPreMatch);
@@ -456,23 +455,20 @@ public sealed class WorldCupUI : MonoBehaviour
     void RequestRestart()
     {
         WorldCupSeason season = WorldCupSeason.Current;
-        if (season == null) return;
-        if (!season.CanRestart)
-        {
-            ShowToast("WIN AT LEAST ONE WORLD CUP MATCH TO RESTART");
-            return;
-        }
-        BuildConfirmModal("RESET WORLD CUP PROGRESS?",
-            "This will erase every result and create a completely fresh group draw.",
+        if (season == null || season.IsComplete) return;
+        BuildConfirmModal("RESTART WORLD CUP?",
+            "Current World Cup tournament progress will be erased and a new tournament draw " +
+            "will be created. Your other progress/currencies remain.",
             () =>
             {
                 WorldCupSeason.Restart();
                 dashboardTab = 0;
                 BuildDashboard();
-            });
+            }, "CANCEL", "RESTART");
     }
 
-    void BuildConfirmModal(string title, string body, Action confirm)
+    void BuildConfirmModal(string title, string body, Action confirm,
+                           string cancelLabel = "NO", string confirmLabel = "YES")
     {
         GameObject modal = MakeModalBase("WorldCupConfirmation");
         Image card = MakePanel(modal.transform, "ConfirmCard", new Vector2(0.5f, 0.5f),
@@ -481,10 +477,10 @@ public sealed class WorldCupUI : MonoBehaviour
                  new Vector2(0f, -60f), new Vector2(580f, 40f), Color.white);
         MakeText(card.transform, body, 16f, new Vector2(0.5f, 0.5f),
                  new Vector2(0f, 24f), new Vector2(560f, 60f), Muted);
-        MakeButton(card.transform, "NO", new Vector2(0.5f, 0f),
+        MakeButton(card.transform, cancelLabel, new Vector2(0.5f, 0f),
                    new Vector2(-150f, 52f), new Vector2(240f, 58f),
                    new Color(0.25f, 0.33f, 0.44f, 1f), () => Destroy(modal));
-        MakeButton(card.transform, "YES", new Vector2(0.5f, 0f),
+        MakeButton(card.transform, confirmLabel, new Vector2(0.5f, 0f),
                    new Vector2(150f, 52f), new Vector2(240f, 58f), Red,
                    () => { Destroy(modal); confirm(); });
     }

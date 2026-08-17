@@ -34,6 +34,10 @@ public class MatchTimer : MonoBehaviour
     public float QuarterRealLength => quarterLength;
     public float QuarterDisplayLength => displayQuarterLength;
     public float QuarterRealElapsed => Mathf.Clamp(quarterLength - quarter.RealRemaining, 0f, quarterLength);
+    public float QuarterRealRemaining => Mathf.Max(0f, quarter.RealRemaining);
+    public float QuarterDisplayedRemaining => Mathf.Max(0f, quarter.DisplayValue);
+    public float QuarterDisplayedElapsed => Mathf.Clamp(displayQuarterLength - quarter.DisplayValue,
+                                                         0f, displayQuarterLength);
 
     // One central compression ratio for exclusions, timeouts and any later official game-time
     // duration.  With the current 480 displayed / 90 real tuning: 18 -> 3.375, 60 -> 11.25.

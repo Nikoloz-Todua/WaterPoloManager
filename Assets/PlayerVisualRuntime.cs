@@ -49,6 +49,21 @@ public static class PlayerPaletteSwapRuntime
         instance.SetColor(CapTintId, capTint);
         instance.SetColor(SwimwearTintId, swimwearTint);
     }
+
+    // Match startup runs before the animators create their private material instances. Reading
+    // the authored renderer material at that point preserves the colour the saved field body is
+    // actually presenting instead of inferring a team identity from its physical end or AI flag.
+    public static bool TryGetTints(Material material, out Color capTint, out Color swimwearTint)
+    {
+        capTint = Color.white;
+        swimwearTint = Color.white;
+        if (material == null || !material.HasProperty(CapTintId) ||
+            !material.HasProperty(SwimwearTintId)) return false;
+
+        capTint = material.GetColor(CapTintId);
+        swimwearTint = material.GetColor(SwimwearTintId);
+        return true;
+    }
 }
 
 // The flipbook state currently owning the SpriteRenderer. Keeping this presentation-only enum in

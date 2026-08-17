@@ -96,6 +96,9 @@ public class Goalkeeper : MonoBehaviour
     private float driftNextTime;            // when to pick the next drift target
     private float yBobPeriod = 2f;          // current Y micro-bob period (s)
     private float yBobNextTime;             // when to re-randomise the bob period
+    private bool timeoutPositioning;
+    private Vector2 timeoutTarget;
+    private float timeoutPositioningSpeed;
 
     // touch input mirrored from TouchControls while the human controls this keeper
     private Vector2 touchAxis;
@@ -253,6 +256,17 @@ public class Goalkeeper : MonoBehaviour
         // back out mid-celebration (stale keeper-hold state through the restart).
         bool defendingPenalty = PenaltyManager.Instance != null && PenaltyManager.Instance.Active &&
                                 ctx != null && ctx.PlayFrozen && !ctx.WaterPoloStoppageActive;
+        if (ctx != null && ctx.WaterPoloStoppage == WaterPoloStoppageKind.Timeout &&
+            timeoutPositioning)
+        {
+            Vector2 target = timeoutTarget;
+            target.x = startX; // a goalkeeper returns to its physical goal line, never another end
+            Vector2 next = Vector2.MoveTowards(rb.position, target,
+                timeoutPositioningSpeed * Time.fixedDeltaTime);
+            rb.MovePosition(next);
+            rb.linearVelocity = Vector2.zero;
+            return;
+        }
         if (ctx != null && ctx.CompetitivePlayStopped && !defendingPenalty)
         { rb.linearVelocity = Vector2.zero; return; }
         if (FoulStun.IsStunned(transform)) { rb.linearVelocity = Vector2.zero; return; }
@@ -788,5 +802,18 @@ public class Goalkeeper : MonoBehaviour
         chargingShot = false; currentPower = 0f;
         chargingPass = false; passPower = 0f;
         if (MatchContext.Instance != null) MatchContext.Instance.ClearKeeperHold();
+    }
+
+    public void BeginTimeoutPositioning(Vector2 target, float speed)
+    {
+        timeoutTarget = target;
+        timeoutPositioningSpeed = Mathf.Max(0.1f, speed);
+        timeoutPositioning = true;
+    }
+
+    public void EndTimeoutPositioning()
+    {
+        timeoutPositioning = false;
+        if (rb != null) rb.linearVelocity = Vector2.zero;
     }
 }

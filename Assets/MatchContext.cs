@@ -80,8 +80,12 @@ public class MatchContext : MonoBehaviour
     public TeamSide StoppageRestartTeam { get; private set; }
     public bool WaterPoloStoppageActive => WaterPoloStoppage != WaterPoloStoppageKind.None;
     public bool CompetitivePlayStopped => PlayFrozen || WaterPoloStoppageActive;
-    public bool ClocksStopped => PlayFrozen || WaterPoloStoppageActive;
-    public bool BallLive => !CompetitivePlayStopped;
+    // An ordinary timeout ends with a free throw. The timeout presentation has finished at that
+    // point, so players may act, but actual-play clocks remain stopped until the taker moves,
+    // passes or shoots through the existing FreeThrow contract.
+    public bool TimeoutRestartPending { get; private set; }
+    public bool ClocksStopped => PlayFrozen || WaterPoloStoppageActive || TimeoutRestartPending;
+    public bool BallLive => !CompetitivePlayStopped && !TimeoutRestartPending;
 
     // A team banned from grabbing the loose ball until the OTHER team touches it
     // (shot-clock turnover). null = no ban.
@@ -355,10 +359,17 @@ public class MatchContext : MonoBehaviour
         FreeThrowStartTime = Time.time;
     }
 
+    public void StartTimeoutFreeThrow(Transform carrier)
+    {
+        TimeoutRestartPending = carrier != null;
+        StartFreeThrow(carrier);
+    }
+
     public void ClearFreeThrow()
     {
         FreeThrowActive = false;
         FreeThrowCarrier = null;
+        TimeoutRestartPending = false;
     }
 
     // ---- post-foul protection (2026-07-09f) ----

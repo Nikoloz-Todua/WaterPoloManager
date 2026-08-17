@@ -65,6 +65,9 @@ public class BotAnimator : MonoBehaviour
     private SpriteRenderer flipbookRenderer;
     private BotMovement botMovement;
     private Material paletteMaterialInstance;
+    private bool hasMatchTeamPalette;
+    private Color matchTeamCapTint;
+    private Color matchTeamSwimwearTint;
     private readonly PlayerFlipbookPlayback flipbookPlayback = new PlayerFlipbookPlayback();
 
     private bool wasHolding;      // last frame's IsHolding, for the shoot edge
@@ -92,14 +95,10 @@ public class BotAnimator : MonoBehaviour
         lastFacingLeft = spriteRenderer != null && spriteRenderer.flipX;
         ApplyPaletteMaterial();
 
-        // Blue-team bots swap to the blue controller BEFORE anything plays, so every
-        // state/clip that follows is the blue set. Null slots leave the assigned
-        // controller untouched (safe until the blue assets exist).
-        if (animator != null && botMovement != null)
-        {
-            RuntimeAnimatorController wanted = botMovement.isBlueTeam ? blueController : redController;
-            if (wanted != null) animator.runtimeAnimatorController = wanted;
-        }
+        // Legacy defend/steal/excluded clips are pre-coloured red or blue. They must follow the
+        // match-owned TeamSide palette just like the generic flipbooks; otherwise switching the
+        // visible renderer mid-play also appears to switch the swimmer's cap colour.
+        ApplyLegacyControllerForPalette();
 
         // Keep the legacy controller on its idle state underneath the flipbook fallback.
         if (animator != null) animator.Play("idle", 0, 0f);
@@ -372,15 +371,85 @@ public class BotAnimator : MonoBehaviour
 
     void ApplyPaletteMaterial()
     {
-        bool blueTeam = botMovement == null || botMovement.isBlueTeam;
-        Color cap = blueTeam ? blueTeamCapTint : redTeamCapTint;
-        Color swimwear = blueTeam ? blueTeamSwimwearTint : redTeamSwimwearTint;
+        ResolvePaletteTints(out Color cap, out Color swimwear);
 
         if (paletteMaterialInstance == null)
             paletteMaterialInstance = PlayerPaletteSwapRuntime.CreateInstance(
                 this, cap, swimwear, spriteRenderer, flipbookRenderer);
         else
             PlayerPaletteSwapRuntime.SetTints(paletteMaterialInstance, cap, swimwear);
+    }
+
+    void ResolvePaletteTints(out Color capTint, out Color swimwearTint)
+    {
+        if (hasMatchTeamPalette)
+        {
+            capTint = matchTeamCapTint;
+            swimwearTint = matchTeamSwimwearTint;
+            return;
+        }
+
+        BotMovement movement = botMovement != null ? botMovement : GetComponent<BotMovement>();
+        bool blueTeam = movement == null || movement.isBlueTeam;
+        capTint = blueTeam ? blueTeamCapTint : redTeamCapTint;
+        swimwearTint = blueTeam ? blueTeamSwimwearTint : redTeamSwimwearTint;
+    }
+
+    // MatchSquadManager captures this from an authored starter before creating bench clones.
+    public void GetConfiguredTeamPalette(out Color capTint, out Color swimwearTint)
+        => ResolvePaletteTints(out capTint, out swimwearTint);
+
+    // MatchSquadManager calls this before BotAnimator.Awake. The saved starter renderer is the
+    // authoritative visual identity; BotMovement.isBlueTeam remains an AI/controller fallback,
+    // never a substitute for the match team's presentation palette.
+    public void GetAuthoredTeamPalette(out Color capTint, out Color swimwearTint)
+    {
+        SpriteRenderer authoredRenderer = spriteRenderer != null
+            ? spriteRenderer : GetComponent<SpriteRenderer>();
+        if (authoredRenderer != null && PlayerPaletteSwapRuntime.TryGetTints(
+                authoredRenderer.sharedMaterial, out capTint, out swimwearTint)) return;
+        ResolvePaletteTints(out capTint, out swimwearTint);
+    }
+
+    public void ApplyMatchTeamPalette(Color capTint, Color swimwearTint)
+    {
+        hasMatchTeamPalette = true;
+        matchTeamCapTint = capTint;
+        matchTeamSwimwearTint = swimwearTint;
+        if (paletteMaterialInstance != null)
+            PlayerPaletteSwapRuntime.SetTints(paletteMaterialInstance, capTint, swimwearTint);
+        ApplyLegacyControllerForPalette();
+    }
+
+    void ApplyLegacyControllerForPalette()
+    {
+        if (animator == null) return;
+
+        RuntimeAnimatorController wanted;
+        if (hasMatchTeamPalette)
+        {
+            float redDistance = PaletteDistance(matchTeamCapTint, redTeamCapTint) +
+                                PaletteDistance(matchTeamSwimwearTint, redTeamSwimwearTint);
+            float blueDistance = PaletteDistance(matchTeamCapTint, blueTeamCapTint) +
+                                 PaletteDistance(matchTeamSwimwearTint, blueTeamSwimwearTint);
+            wanted = blueDistance < redDistance ? blueController : redController;
+        }
+        else
+        {
+            BotMovement movement = botMovement != null ? botMovement : GetComponent<BotMovement>();
+            wanted = movement == null || movement.isBlueTeam ? blueController : redController;
+        }
+
+        if (wanted != null && animator.runtimeAnimatorController != wanted)
+            animator.runtimeAnimatorController = wanted;
+    }
+
+    static float PaletteDistance(Color a, Color b)
+    {
+        float r = a.r - b.r;
+        float g = a.g - b.g;
+        float blue = a.b - b.b;
+        return r * r + g * g + blue * blue;
     }
 
     // Called by WaterPoloBrain on every steal ATTEMPT (success or failure).
@@ -427,7 +496,13 @@ public class BotAnimator : MonoBehaviour
         ClampSize(ref swimmingDownSizeMultiplier);
         ClampSize(ref holdingSizeMultiplier);
         ClampSize(ref throwingSizeMultiplier);
-        if (Application.isPlaying) ApplyPaletteMaterial();
+        // OnValidate can run while Play Mode is active. Never let it reconstruct an in-match
+        // swimmer from the serialized blue/red fallback after TeamSide has supplied its palette.
+        if (Application.isPlaying && hasMatchTeamPalette)
+        {
+            ApplyPaletteMaterial();
+            ApplyLegacyControllerForPalette();
+        }
     }
 
     static void ClampSize(ref Vector2 value)
