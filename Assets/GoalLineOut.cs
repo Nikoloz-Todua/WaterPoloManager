@@ -32,7 +32,7 @@ public class GoalLineOut : MonoBehaviour
         if (ctx == null || ctx.Ball == null) return;
         if (ctx.OutOfBoundsRestartActive) return;
 
-        if (ctx.PlayFrozen) return; // sprint duel / goal settle / penalty setup
+        if (ctx.CompetitivePlayStopped) return; // full freeze or water-polo stoppage
         if (PenaltyManager.Instance != null && PenaltyManager.Instance.Active) return;
 
         // (b) HELD ball: a carrier pressing against the goal line → corner turnover (any y).
@@ -56,7 +56,7 @@ public class GoalLineOut : MonoBehaviour
     // airborne/physics-off ball remains owned by BallFlight or another match-flow system.
     public bool OwnsLooseOut(MatchContext ctx, Vector2 p)
     {
-        if (ctx == null || ctx.Ball == null || ctx.PlayFrozen) return false;
+        if (ctx == null || ctx.Ball == null || ctx.CompetitivePlayStopped) return false;
         if (PenaltyManager.Instance != null && PenaltyManager.Instance.Active) return false;
         if (!ctx.BallIsLoose || ctx.Ball.transform.parent != null || !ctx.Ball.simulated) return false;
         if (Mathf.Abs(p.x) - BallRadiusX(ctx.Ball) < goalLineX ||
@@ -138,6 +138,8 @@ public class GoalLineOut : MonoBehaviour
         ctx.SetPossession(null);
         Transform fetcher = awarded.ClosestMemberTo(point);
         ctx.BeginOutOfBoundsRestart(awarded, offending, point, fetcher);
+        if (ExclusionManager.Instance != null)
+            ExclusionManager.Instance.ReleaseForAward(awarded, "goal throw awarded");
         if (ShotClock.Instance != null) ShotClock.Instance.ResetClock();
     }
 }

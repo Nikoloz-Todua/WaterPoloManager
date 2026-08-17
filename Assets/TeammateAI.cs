@@ -48,7 +48,12 @@ public class TeammateAI : MonoBehaviour, IAgentBody
         MatchContext ctx = MatchContext.Instance;
 
         // Play frozen (sprint duel / goal settle) → inert. Sprinters are moved by SprintDuel.
-        if (ctx != null && ctx.PlayFrozen) { rb.linearVelocity = Vector2.zero; return; }
+        if (ctx != null && ctx.CompetitivePlayStopped) { rb.linearVelocity = Vector2.zero; return; }
+
+        // A bench, inbound, outbound or scripted-transition body is not part of normal play.
+        // MatchPlayerState's later FixedUpdate owns its visible choreography when applicable.
+        if (!MatchPlayerState.AllowsNormalControl(transform))
+        { rb.linearVelocity = Vector2.zero; return; }
 
         // Excluded → fully inert (frozen in the corner), brain does not run.
         if (ExclusionManager.Instance != null && ExclusionManager.Instance.IsExcluded(transform))

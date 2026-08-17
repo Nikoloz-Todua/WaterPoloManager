@@ -40,10 +40,31 @@ public class PauseMenuUI : MonoBehaviour
 
     void Resume()
     {
+        MatchTeamManagementUI.Instance?.ForceClose();
         Time.timeScale = 1f;
         confirmPanel.SetActive(false);
         panel.SetActive(false);
         pauseButton.SetActive(true);
+        MatchContext context = MatchContext.Instance;
+        if (context != null)
+            SubstitutionManager.Instance?.StartPending(context.PlayerTeam);
+    }
+
+    void OpenTeamManagement()
+    {
+        MatchContext context = MatchContext.Instance;
+        if (context == null || MatchTeamManagementUI.Instance == null) return;
+        confirmPanel.SetActive(false);
+        panel.SetActive(false);
+        MatchTeamManagementUI.Instance.Show(context.PlayerTeam, MatchTeamManagementMode.Pause,
+            () =>
+            {
+                if (Time.timeScale <= 0f && panel != null)
+                {
+                    panel.SetActive(true);
+                    pauseButton.SetActive(false);
+                }
+            });
     }
 
     static void LoadScene(string sceneName)
@@ -112,9 +133,8 @@ public class PauseMenuUI : MonoBehaviour
 
         MakeButton(box.transform, "RESUME", new Vector2(0f, 45f), Resume);
         MakeButton(box.transform, "QUIT", new Vector2(0f, -30f), () => confirmPanel.SetActive(true));
-        // Placeholder — no functionality yet; just makes sure no stale confirm is showing.
         MakeButton(box.transform, "TEAM MANAGEMENT", new Vector2(0f, -105f),
-                   () => confirmPanel.SetActive(false));
+                   OpenTeamManagement);
 
         // --- Quit confirmation, covers the whole pause box until answered ---
         confirmPanel = new GameObject("QuitConfirm");

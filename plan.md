@@ -70,9 +70,9 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 | `Goal.cs` | Existing scoring component on each goal root. The saved scoring trigger is now the child `GoalLine`; `Goal` relays callbacks from that child and reports `goalSide` + the root transform to the existing `ScoreManager`. No second scoring system. |
 | `ScoreManager.cs` | Team-based score (credits the team attacking that net → survives the halftime swap) shown on **separate `playerScoreText` + `botScoreText`** TMP fields; **ignores held-ball goals**; exposes `HomeScore`/`AwayScore`. **FRAME-ACCURACY GATE:** only an inward path crossing the child `GoalLine` inside |y| ≤ 1.5 scores. **SCORED-BALL ABSORPTION (2026-08-08b):** once accepted, physics is disabled before any queued back-net callback can reflect the ball; its current pose eases 0.30–0.50u farther into that same net over 0.38s, then the established bob/hang/replay/restart continues—no outward rebound and no fixed-position teleport. **LOCAL NET REACTION:** physical net hits and scored impacts share one 1.10s speed-scaled yellow-only overlay; the original goal material/sprite remains permanently visible, eliminating the blue transparency flash. Posts/frame, root transform, colliders and `PoolLineFloat` remain rigid/unchanged; the white ring remains scoring-only. Before restart formations, unfinished temporary exclusions end through the existing `ExclusionManager` return path; permanent removals remain out. |
 | `GoalReplaySystem.cs` | Existing preallocated rolling pose recorder/player, upgraded to a **two-pass sports replay**. Records 5s at 20 fps, uses the real shooter-release timestamp, and appends up to 1.2s of frozen post-goal absorption/net/settle frames without running match physics. Pass 1 begins 1.5s before release where history permits, frames shooter+ball+goal, stays at 1× when possible, and guarantees a 3.0s minimum for unusually fast clips. Pass 2 starts 0.12s before release, uses an offset/angled shooter-side camera, runs early action at 0.9×, final 0.72s approach at 0.42×, post-goal at 0.58×, then holds 0.58s. Goal roots and localized shader parameters are captured/applied, so the real stretch and settle replay. Existing freeze-safe pose/body/camera restoration, skip, letterbox UI, real championship club names and score overlay remain intact. |
-| `MatchTimer.cs` | Quarters (90s) + win/lose/draw; pauses during freezes; sprint duel each quarter; halftime swap. Every unfinished **temporary** exclusion ends before the next-quarter lineup/duel; permanently removed players remain out. Full time submits the real score once through `MatchPresentationContext`, then runs reward-slot/mission/ranking/pass hooks and `MatchResultUI.Show()`. `ForfeitMatch()` also consumes a championship fixture with a forced one-goal winner if the live score does not match the forced outcome. |
+| `MatchTimer.cs` | Quarters (90s real / 8:00 displayed) + win/lose/draw; pauses during full freezes and water-polo stoppages; Q1 huddle then sprint duel, direct sprint duel in Q2-Q4; halftime swap. Temporary exclusions carry across quarter breaks with only actual-play time served; permanently removed players remain out. Exposes the one display/real compression ratio used by exclusions and timeouts. Full time submits the real score once through `MatchPresentationContext`, then runs reward-slot/mission/ranking/pass hooks and `MatchResultUI.Show()`. `ForfeitMatch()` also consumes a championship fixture with a forced one-goal winner if the live score does not match the forced outcome. |
 | `ShotClock.cs` | 30s per-possession clock (singleton): resets on possession change / goal / defensive exclusion; turnover + grab-ban at 0; pauses when frozen, **during a free throw**, or match over; **a keeper hold does NOT reset it (keeps ticking until the keeper distributes)**. |
-| `ExclusionManager.cs` | Fouls + exclusions (singleton): failed steal = foul → **free throw** to the fouled team; 2 fouls in 10s → temporary exclusion (roster slot nulled → AI auto-adapts) **or a PENALTY if the victim was in the 2m zone**; 3rd → permanent removal; forfeit < 4 players; HUD countdowns. `EndTemporaryExclusionsForRestart()` reuses the normal reliable `ReturnToPlay` path at a goal restart or quarter boundary. It never restores `permanentlyOut` players. 🟡 New: **virtual foul** when the victim is an inside-water Centre (Centres draw exclusions/penalties faster; toggle `centerFoulBoost` — may be too hot, watch in testing). |
+| `ExclusionManager.cs` | Match-identity personal fouls + exclusions (singleton): failed steal = foul → free throw; an exclusion foul or penalty foul adds one personal foul; the third permanently removes that athlete. Ordinary exclusion is **18 displayed seconds of actual play** (3.375 real at 90/480), with early release on goal, true possession regain, or free/goal/penalty award. Excluded swimmers physically reach the derived re-entry area; replacements physically arrive, wait ineligible, then enter through the gate when legal. Third-foul penalty replacements enter immediately; third-foul exclusion replacements wait. Permanent removals never return and forfeit logic remains integrated. |
 | `SprintDuel.cs` | Quarter-start duel (singleton), fully rebuilt. Builds its OWN screen-space UI in code (no wiring): a big centred **"5 → 4 → 3 → 2 → 1 → GO!" countdown** (1s each, scale-pulse per number; `countdownStart` 5) + a "TAP SPACE / TAP SPRINT FOR SPEED" hint, then a tall **vertical SPEED bar on the left** (red→orange→green, fills with the human's speed) under a pulsing "TAP FASTER!". Ball is pinned to EXACT (0,0,0) with physics OFF during the countdown, goes live at GO. At GO! the two sprinters race (bot fixed speed; human base speed + each **Space / LeftShift tap OR a tap anywhere on screen** boosts toward a cap, decays) AND **every other swimmer immediately jogs into formation at ~60% speed** (`formationMoveSpeed`, both teams alike — `RestartFormationSpot`, position-based so it ignores the freeze; no statues, no waiting for possession). The designated sprinter starts slightly ahead of its line (`sprinterForwardOffset`) so it's clearly the sprinter, not the keeper, and is made the **active player**. Runs at **quarter starts ONLY** (Q1 via `MatchTimer.Start`, Q2–Q4 via `AdvanceToNextQuarter`) — **never after goals/penalties/turnovers** (a goal restart is a separate, duel-free system in `ScoreManager`). `StartDuel` calls `ctx.ResetBallTouch()` so the camera holds the wide overview until a sprinter grabs. The old separate 1.0u duel win radius is retired: the first shared front contact wins; if both contact in one physics step, pickup-point proximity resolves it, the short secure motion plays, then the existing `GiveBallTo`/unfreeze/kickoff sequence runs. **Hides the gameplay touch UI** (`TouchControls.SetGameplayVisible(false)`) for the duel's duration and restores it on finish. The TAP-for-speed mechanic lives ONLY here — regular play is hold-to-sprint. |
 | `EventFeed.cs` | Rolling last-5 event log (singleton): goals, exclusions, turnovers, out-of-bounds, forfeit, halftime. |
 | `BallOutOfBounds.cs` | Top/bottom-wall out rule: a loose ball at the edge → possession to the nearest player of the team that didn't touch it last. |
@@ -96,9 +96,14 @@ Auth is set up (Git Credential Manager). `.gitignore` excludes `Library/`, `Temp
 | `SamplePlayerGenerator.cs` | **(NEW, Editor — `Assets/Editor/`)** **Tools → Generate Sample Players**: writes 21 sample `PlayerData` assets to `Resources/Players/` (all 7 positions, mixed rarities/ratings/prices; deterministic → idempotent). Run once so the Team screen has data. |
 | `MatchResultUI.cs` | Full-time/forfeit result screen, built in code. Championship scores use the real two club names and CONTINUE returns to HubScene/its persistent competition; casual CONTINUE reloads PoolB. Colored outcome line + MAIN MENU; 0.5s unscaled fade (timeScale is 0). Singleton. |
 | `QuarterBreakUI.cs` | Between-quarters pause screen (built in code, **self-bootstrapping** via `Get()` — no scene object needed). `MatchTimer` raises it when a quarter ends (but the match isn't over): dimmed overlay + centred dark panel with **"QUARTER N COMPLETE"**, the score, and **RESUME** (→ next quarter's sprint duel) / **QUIT** (→ MainMenu if present, else stop play). Play freezes via `MatchContext.FreezeAll` until RESUME. Singleton. |
-| `PauseMenuUI.cs` | Pause system, built in code: pause button → `Time.timeScale = 0` + PAUSED / RESUME / QUIT / TEAM MANAGEMENT. QUIT confirms that the match counts as a loss; YES QUIT now calls the championship-aware `MatchTimer.ForfeitMatch(false)` before loading HubScene, so the fixture and simulated round advance. TEAM MANAGEMENT is still a placeholder. |
+| `PauseMenuUI.cs` | Pause system, built in code: pause button → `Time.timeScale = 0` + PAUSED / RESUME / QUIT / TEAM MANAGEMENT. QUIT retains the championship-aware forfeit handoff. TEAM MANAGEMENT opens the match-only water/bench selector; confirmation creates a pending transaction and RESUME starts the physical exchange. |
+| `MatchPlayerRuntime.cs` | Match-only athlete identities and explicit eligibility/status/movement states, `MatchSquadManager`, and one scene-derived `PoolMatchGeometry`. Saved starters are read-only. `TeamSide.members` remains the legal in-water list; bench bodies are runtime clones with persistent match stamina/fouls. Geometry uses PoolB walls, goals, bench visuals and exclusion markers with centralized fallbacks, and follows the defending end after halftime. |
+| `SubstitutionManager.cs` | One unlimited substitution state machine for human/bot live exchanges and exclusion replacements. It owns physical edge approach, 0.45s hand touch, legal slot handoff, bench/formation swims, pending pause transactions, deterministic interruption cleanup, and stamina/role-aware coach suggestions (maximum 2 routine prompts per quarter, 20s UI cooldown only). |
+| `MatchTeamManagementUI.cs` | Runtime mobile Team Management shared by hard pause and official timeout: current-water/bench lists with identity, role, stamina, personal fouls and status; validated OUT/IN selection; pending cancellation; ordinary and exclusion-replacement routing. |
+| `TimeoutManager.cs` | Two one-game-minute timeouts per team, legality based on live/restart possession, 60 displayed seconds compressed through `MatchTimer` (11.25 real at current tuning), first-45 defensive-half organization, final-15 restart positioning, preserved free/goal/OOB/penalty/keeper restart ownership, timeout HUD and in-timeout Team Management. This is a water-polo stoppage, not a full player freeze. |
+| `Q1MatchIntro.cs` | Q1-only physical two-team huddle before the existing SprintDuel: stable presentation captain, swim to circles, 4.0s float/idle hold, then swim to the exact existing duel positions. Q2-Q4 and goal restarts remain unchanged. |
 | `CameraFollow.cs` | **FIFA-style follow camera** on **Main Camera** — self-contained, no Inspector wiring (pulls `TeamManager.ActivePlayer` + `MatchContext`). **Start/post-goal overview (Task 1):** until the ball is first touched after any reset (game start, after a goal, between quarters — `MatchContext.BallTouchedSinceReset`) it holds the wide pool overview centred on (0,0) at **maxSize 5.0**, no following; the first grab eases it smoothly into the normal follow. Tracks a weighted point between the active player (60%) and the ball (40%) — 70/30 when the ball is loose — via `SmoothDamp` (speeds up to `switchSpeed` 8 for 0.5s on a player switch). **Dynamic orthographic zoom** (`Mathf.Lerp`): 4.2 base → 5.0 (player/ball far) → 4.5 (`SprintHeld`) → 3.8 (you control the keeper). HARD pool-boundary clamps on the camera centre (X ±5.5, Y ±3.2); Z locked −10. **Screen shake** (additive): goal 0.15/0.4s (polls `ScoreManager` total), powerful shot (ball >10 u/s) 0.05/0.15s. Managers missing → parks at (0,0,−10) size 5, no errors. All tunables serialized. |
-| `StaminaSystem.cs` | FIFA-style stamina on every field swimmer + keeper. **Auto-installs at runtime** (`RuntimeInitializeOnLoadMethod`) onto any `PlayerMovement`/`IAgentBody`/`Goalkeeper` lacking one → 14 objects (6 players, 6 bots, 2 keepers), zero wiring (the 2 keepers keep a hand-tuned copy). **Field drain/recovery per sec:** idle +8% (×2 after 5s rest), swim −3%, hold+move −5%, sprint −12% (−18% after 3s fatigue), excluded +15%; **second wind** at 0% (ease off sprint 2s → +15% burst). **Effects:** <40% speed ×0.8; <20% speed ×0.6 + steal ×0.8; 0% sprint disabled. **Keeper:** track −2%, hold −1%, idle +10%; tired = worse saves, no sprint at 0%. Writes only neutral hooks (deleting it leaves the game identical); HUD lives in `TouchControls`. |
+| `StaminaSystem.cs` | FIFA-style stamina on every field swimmer, runtime bench body and keeper. **Auto-installs at runtime** onto any `PlayerMovement`/`IAgentBody`/`Goalkeeper` lacking one, including the match-only bench created before Start; zero wiring. Existing drain/recovery and fatigue effects remain authoritative. Bench/exclusion-wait states use the existing +15% sideline recovery, match history stays on the identity/body across repeat substitutions, transition swims still exert normally, and the Q1 pre-match presentation does not consume stamina. |
 | `BallFlight.cs` | Ball VFX + **the airborne-arc system**, **auto-added to the Ball at runtime** by `PlayerMovement` (no wiring), singleton. **ALL passes and HIGH shots fly as arcs** with colliders off and land at their established safe point before normal collision resumes. **Physical goal response:** normal loose/grounded shots reflect firmly from post children (0.72 velocity retention); non-scored outer/back-net contacts absorb most pace (0.22 retention) and forward exact contact/speed to ScoreManager's one presentation method. Once `ScoreManager.GoalRestartInProgress` is true, a queued outer-net callback is ignored before reflection, so an accepted ball cannot be kicked back toward the field. `GoalLine` remains trigger-only. Existing pass/shot arcs, skip bounce, keeper timing, spin, trail, landing protection and `BallGrabbable` behavior remain intact. |
 | `GoalColliderFixer.cs` | **Legacy/retired editor helper. Do not run for the current goal hierarchy.** It expected a root trigger `BoxCollider2D`; the current manually saved architecture uses a solid root net edge plus separate child goal-line/post boxes. |
 | `Resources/Shaders/LocalizedGoalNet.shader` | Lightweight URP 2D sprite-lit **overlay** used by `ScoreManager`; Resources ownership guarantees player-build inclusion without wiring. It outputs only filtered warm yellow/orange samples, with three displacement samples forming a readable elastic bridge and distance phase lag around the real impact. The untouched original goal sprite remains below it, so transparent displaced pixels reveal the original—not blue pool—and red/white frame pixels never enter the overlay. No bones, mesh rebuild, persistent material asset, root movement or frame/post deformation. |
@@ -864,27 +869,54 @@ and alternate competition-specific pool art are also intentionally deferred.
 
 ### B16.5 Match Structure ✅ DONE (shot clock + halftime side-switch built)
 - 4 quarters, **90s each** (tunable), win/lose/draw at full time. **30s shot clock** per possession — resets on possession change / goal / defensive exclusion; at 0 → turnover with a grab-ban on the violating team until the other side touches the ball. **Halftime side-switch** after the middle quarter: attack/defend goals swap, scoring stays correct, keepers keep their physical goal. Each quarter restarts through the sprint duel; the clock pauses during freezes.
+- **Q1 presentation:** before Q1's unchanged SprintDuel only, both field teams physically form and
+  hold separate huddles, then swim to the duel's exact existing start positions. No Q2-Q4/goal huddle.
+- **Timeouts:** 2 per team per match, no cooldown, callable only by the live/restart possession owner.
+  Each displays 1:00 over 11.25 real seconds at current compression, stops competitive play/clocks
+  without freezing transition swimmers, and preserves live, free-throw, goal-throw/OOB and penalty
+  restart ownership. The timeout HUD and Team Management are runtime-built for touch.
 
 ### B16.6 HUD 🟡 MOSTLY DONE (championship names/logos + split score + score-tab art + stamina + pause done; broader layout polish later)
 - Split score (PlayerScoreText/BotScoreText) on a `score-tab.png` board ✅; the absent serialized
   PlayerScoreText is rebuilt/mirrored at runtime ✅; championship club names + white-backed crests
   replace You/Bot beside the timer ✅; quarter indicator; match timer; **stamina HUD** (P#/GK + bar,
-  in `TouchControls`) ✅; pause button ✅ (`PauseMenuUI`, top-right); exclusion countdown.
+  in `TouchControls`) ✅; pause button ✅ (`PauseMenuUI`, top-right); 2-dot legal-state timeout
+  control/countdown; 18-second exclusion countdown; personal-foul-out and coach-suggestion cards.
 
-### B16.7 Pause Menu 🟡 PARTIAL (core + championship loss handoff DONE; Team Management not)
+### B16.7 Pause Menu 🟡 PARTIAL (core + championship loss handoff + Team Management DONE)
 - ✅ **DONE:** pause button (top-right, below the scoreboard) → `Time.timeScale = 0` + centered panel
   with PAUSED + RESUME / QUIT / TEAM MANAGEMENT (`PauseMenuUI.cs`, all built in code). QUIT confirms
   "counts as a loss"; YES QUIT now routes through `MatchTimer.ForfeitMatch(false)`, records the
   championship loss, simulates the round, clears the pending fixture, and returns to HubScene.
-  TEAM MANAGEMENT remains a placeholder. Timer/clock stop automatically. Full-time/forfeit result
+  TEAM MANAGEMENT now opens the match-only water/bench selector. Confirmed ordinary swaps remain
+  `SUBSTITUTION PENDING` until RESUME, then run the physical live exchange. Exclusion replacements
+  route through their legal re-entry path. Timer/clock stop automatically. Full-time/forfeit result
   screen with championship-aware CONTINUE + MAIN MENU is done.
-- **Still future:** score/time/event summary inside pause; Team Management with substitutions.
+- **Still future:** score/time/event summary inside pause.
 
-### B16.8 In-Game Substitutions ⬜
-- Players tap hands at pool edge; outgoing player must fully exit before new one enters; excluded/benched players uncontrollable during transition.
+### B16.8 In-Game Substitutions ✅ DONE (field-player match squad, physical exchanges, coach UI)
+- Unlimited match-only substitutions use one explicit state machine. OUT leaves legal selection and
+  `TeamSide.members` immediately, both bodies swim to the defending-end substitution wall, hold a
+  **0.45s visible hand-touch**, IN becomes the sole legal slot owner at that gate, OUT continues to
+  the bench and IN swims into formation. No permanent starter data changes. Invalid bodies are
+  centrally unavailable to control, passing, marking, stealing, pickup, possession and SprintDuel.
+- Human fatigue prompts begin after **32.5 real seconds**, use 40%/20% stamina thresholds and
+  18%/10% minimum freshness gains, expire after 8s, cap at 2 routine prompts per quarter and use a
+  20s popup cooldown only. Bot swaps use the same deterministic role/stamina scoring without UI.
+- Exclusion replacements share the choreography but approach behind the defending goal to the
+  authored/derived re-entry area, remain ineligible until release, and physically enter through the
+  gate. An automatically chosen mandatory replacement may be revised before its hand-touch.
 
-### B16.9 Exclusion System ✅ DONE (man-up/man-down via roster auto-adapt, not special-cased)
-- A failed steal = foul (offender locked out, carrier keeps the ball). **2 fouls within 10s → temporary exclusion:** the player leaves its `TeamSide.members` slot (set null → formation + marking auto-adapt to the extra/missing man), parks in its goal corner, and becomes inert. The current inspector defaults are **20 displayed seconds / 7.5 real live-play seconds**. Any unfinished temporary exclusion ends on a **goal restart** or **quarter boundary**, before the new formation/lineup begins; this reuses the normal slot/sorting/AI-state `ReturnToPlay` path. **3rd exclusion → permanent removal** (GameObject disabled), and permanent removals are never restored by these resets. If a team drops **below 4 players → forfeit** (other team wins, via `MatchTimer.ForfeitMatch`). HUD shows exclusion countdowns; event feed logs each. (`ExclusionManager.cs`.) Other tunables: Foul Window 10, Fouls 2, Max 3, Min Players 4.
+### B16.9 Exclusion / Personal-Foul System ✅ DONE (identity discipline + legal re-entry)
+- An exclusion foul or penalty foul records one **personal foul on the match athlete identity**.
+  At three, a mandatory `3 PERSONAL FOULS / PLAYER OUT` banner appears and that identity cannot
+  return. A third penalty foul gets an immediate best legal bench replacement; a third exclusion
+  foul gets a replacement that waits for normal release. Existing below-four forfeit handling stays.
+- Ordinary exclusion is **18 displayed seconds of actual play**: **3.375 real seconds** at the
+  current 90-real/480-displayed quarter ratio. Earliest release is timer completion, a goal, the
+  excluded team truly regaining possession, or that team receiving a free/goal/penalty throw.
+  Clocks/full freezes/timeouts do not consume exclusion time. Quarter breaks do **not** release it;
+  the remaining displayed time and correct re-entry end carry across, including halftime swaps.
 
 ### B16.10 AI Behaviour 🟡 PARTIAL (full defensive AI DONE in C#; only exclusion-based repositioning NOT yet)
 - With ball → attack positions; lose ball → defensive positions; players hold assigned positions; opponent excluded → exploit extra man; own exclusion → shorthanded defense.
@@ -2725,3 +2757,197 @@ control transfer; it does not add another possession manager.
 - Runtime and editor assemblies both build with **0 warnings, 0 errors**; `git diff --check` is
   clean apart from informational LF→CRLF notices. Focused Play Mode feel/rules validation remains
   required in the saved PoolB scene because command-line assembly builds do not simulate gameplay.
+
+---
+
+## SESSION LOG — 2026-08-17 (professional match squad, substitutions, discipline, timeouts, Q1 huddle)
+
+This pass was implemented after a full audit of `plan.md`, the current source, PoolB YAML/geometry,
+the match flow and the newest handoffs. It extends the existing `MatchContext` / `TeamSide.members`
+/ `WaterPoloBrain` architecture rather than creating another simulation. Permanent roster starters
+remain read-only. Current rule details were cross-checked against the World Aquatics Competition
+Regulations page/PDF dated 18 February 2026; the task intentionally leaves the existing shot clock.
+
+### Match-only identity and stoppage architecture
+
+- `MatchPlayerState` is one athlete identity for the match: roster id/data, display name, cap,
+  natural position/overall, team, current role slot/body, personal fouls, permanent eligibility,
+  pending transaction, legal field status and scripted move ownership. Statuses cover field,
+  bench, flying exchange, exclusion exit/wait/replacement and permanent removal. Fouls and stamina
+  therefore survive bench time and repeat entry; all state is destroyed/reset with the match.
+- `MatchSquadManager` binds the six existing field bodies to saved human starters and deterministic
+  opponent identities, then creates visible match-only bench clones (owned nonstarting human field
+  cards and six role-balanced bot cards). It never calls `RosterManager.SetStarter` or saves a lineup.
+  `TeamSide.members` remains the one legal in-water list: OUT/null continues to drive existing
+  man-up/down formation, marking, pass, goalkeeper-distribution and sprint selection behavior.
+- `MatchContext.PlayFrozen` remains the full-freeze owner for SprintDuel/goal/penalty/Q1 setup.
+  New `WaterPoloStoppage` / `CompetitivePlayStopped` / `ClocksStopped` gates stop competitive
+  actions and clocks while per-athlete transition motors keep swimming. `Time.timeScale = 0` remains
+  the genuinely hard user pause. Timed gameplay windows are shifted across a timeout.
+- Central eligibility now feeds control, pickup and every existing system that consumes the legal
+  `TeamSide.members` array. Committed OUT, bench, excluded, waiting and permanent bodies have their
+  gameplay colliders disabled but remain active/visible for animation and Rigidbody choreography.
+
+### Physical substitution and exclusion-replacement flow
+
+- `SubstitutionManager` owns unlimited live exchanges. OUT drops a held ball if necessary, leaves
+  the legal slot immediately and hands off human control/camera. OUT swims to the inside edge and
+  IN from the staged bench to the outside edge. Both hold a **0.45s hand-touch beat**; only then does
+  IN own the one legal slot. OUT swims onward to the bench and IN swims into formation. Goal/quarter
+  interruptions atomically settle one legal slot; match end stops every motor. Pause selections are
+  pending until RESUME and can be cancelled/replaced before they start.
+- Exclusion replacements reuse the same exchange owner. A substitute travels from the top bench to
+  a behind-goal outside lane, then along that lane to the bottom re-entry marker rather than ghosting
+  diagonally through play. The excluded athlete meets them, proceeds to bench, and the replacement
+  waits collider-off/ineligible until release. On release it swims to the inside gate, gains the
+  legal slot there, then swims to formation. A mandatory auto-choice can be revised before touch;
+  the cancelled candidate physically returns to the bench.
+- `PoolMatchGeometry` discovers wide `PoolLineFloat` collider bounds once, uses current defend goals,
+  and prefers existing `players-bench_*` and `ExclusionSpot_Home/Away` transforms. It derives stable
+  centralized fallbacks when markers are absent. Defending-end anchors and resting bodies update on
+  halftime swap; no scattered match coordinates or new scene markers were added.
+
+### Personal fouls, exclusion release and stamina
+
+- Every exclusion foul or penalty foul calls `MatchPlayerState.AddPersonalFoul`. Three produces the
+  non-optional `3 PERSONAL FOULS / PLAYER OUT` banner and permanent match removal. A third penalty
+  foul installs the best legal bench player immediately; a third exclusion selects a replacement
+  that must wait for ordinary release. Natural-role match and overall/stamina rank candidates;
+  mandatory selection accepts any legal bench stamina. Existing below-four forfeit handoff remains.
+- Ordinary exclusion is **18 displayed seconds of actual play**, derived centrally through
+  `MatchTimer.RealSecondsForDisplayedSeconds`: **3.375 real seconds** at 90/480. The HUD prints the
+  displayed countdown. Release is authorized by timer completion, awarded goal, true possession
+  regain, or free/goal/penalty throw award. Timeouts/full freezes/quarter breaks consume no timer;
+  unfinished exclusions carry to later quarters and retarget correctly through halftime.
+- The existing `StaminaSystem` remains authoritative. Bench/exclusion-wait/permanent sideline states
+  use its existing **+15%/real-second** rest recovery; transition swims exert normally; Q1's purely
+  pre-match huddle costs nothing. A returning body retains the same match stamina instance/history.
+
+### Coach suggestions, Team Management and timeouts
+
+- Human coach card: OUT/IN cap/name/position/stamina with red/green direction cues and ACCEPT/IGNORE.
+  First routine evaluation **32.5s** into a quarter; routine/urgent thresholds **40% / 20%**;
+  freshness gains **18% / 10%**; maximum **2** routine prompts/quarter; **20s** popup-spam cooldown;
+  **8s** auto-expiry; **1s** evaluation cadence. No value limits legal substitutions. Bot coaching
+  uses the same deterministic stamina/role/overall selection without showing the card.
+- `MatchTeamManagementUI` is a 1280x720-scaled touch surface shared by Pause and Timeout. Water and
+  bench rows show cap/name/position, stamina, PF 0-3 and exact status. It validates duplicate,
+  permanent, excluded, busy, unavailable, goalkeeper/field and protected-restart cases. Pause mode
+  queues `SUBSTITUTION PENDING`; timeout mode starts its physical choreography immediately.
+- `TimeoutManager`: **2 per team per match**, no rule cooldown; **60 displayed seconds** derived to
+  **11.25 real seconds** at current compression. The HUD shows two filled/used dots and is enabled
+  only for the live possession owner or the team owning a free/OOB/goal/penalty restart. First
+  **45 displayed seconds** organize both teams in their defensive halves; final 15 physically
+  prepares the exact restart. Match/shot/exclusion clocks and normal play stop, controls hide, but
+  swimmers/substitutions continue. Live restart taker goes on/behind halfway; free throw, OOB/goal
+  throw, post-goal and penalty ownership/positions remain intact. A keeper-called live timeout
+  nominates a legal field restart taker and transfers the dead ball only at timeout completion.
+
+### Q1-only intro and safety integrations
+
+- `Q1MatchIntro` runs only before Q1's existing duel: both legal field teams swim into own-half
+  circles (**4.5u/s**, **0.78u radius**, stable first starter in the centre), float for **4.0s**, then
+  swim to `SprintDuel.StartPositionFor`'s current lineup targets (**0.025u handoff tolerance**, then
+  an imperceptible exact settle onto those same authoritative coordinates). The
+  wide camera and hidden controls remain; `StartPreparedDuel` then runs the unchanged countdown/tap
+  race without a lineup teleport. Q2-Q4 and goal restarts do not invoke the intro.
+- `PlayerMovement`, `TeammateAI`, `BotMovement`, `Goalkeeper`, ball/OOB/goal-line/replay, shot clock,
+  camera, touch controls and `TeamManager` now respect the correct stoppage/eligibility layer. The
+  penalty keeper exemption is retained unless a timeout is active. Active human control always
+  transfers off an illegal body; the HUD uses the match cap. Goal/quarter/replay cleanup cannot
+  revive a bench or permanent athlete, and championship result/forfeit/Hub handoff is unchanged.
+
+### Files added / changed and runtime wiring
+
+- Added (plus matching `.meta`): `MatchPlayerRuntime.cs`, `SubstitutionManager.cs`,
+  `MatchTeamManagementUI.cs`, `TimeoutManager.cs`, `Q1MatchIntro.cs`.
+- Changed: `MatchContext.cs`, `MatchTimer.cs`, `CompressedTimer.cs`, `SprintDuel.cs`,
+  `ExclusionManager.cs`, `PenaltyManager.cs`, `ScoreManager.cs`, `ShotClock.cs`, `TeamManager.cs`,
+  `StaminaSystem.cs`, `PlayerMovement.cs`, `TeammateAI.cs`, `BotMovement.cs`, `Goalkeeper.cs`,
+  `TouchControls.cs`, `PauseMenuUI.cs`, `CameraFollow.cs`, `BallFlight.cs`, `BallOutOfBounds.cs`,
+  `GoalLineOut.cs`, `GoalReplaySystem.cs`, and `plan.md`.
+- No scene/prefab was edited and there are no new Inspector reference slots. `MatchContext.Awake`
+  attaches the five runtime owners; they build canvases, match bench bodies and derived anchors.
+  The existing PoolB `ExclusionManager.matchTimer`, `exclusionText`, `excludedSortingOrder` and foul
+  tunings retain their field names. `maxExclusionsPerPlayer` migrates to `personalFoulsToRemove`.
+  Old 20/7.5 exclusion duration and magic-corner fields intentionally do not migrate.
+
+### Verification and remaining Play Mode checks
+
+- `dotnet build Assembly-CSharp.csproj --no-restore`: **0 warnings, 0 errors**.
+- `dotnet restore Assembly-CSharp-Editor.csproj` was needed once because its generated assets file
+  was absent; subsequent `dotnet build Assembly-CSharp-Editor.csproj --no-restore`: **0 warnings,
+  0 errors**.
+- Scoped `git diff --check` for implementation files is clean (only informational LF→CRLF notices).
+  The full command still reports three trailing-space lines in the pre-existing user-modified
+  `Assets/Resources/Fonts/GeorgianFallback SDF.asset`; that unrelated asset was not touched here.
+- Unity 6000.4.7f1 is already open, so no competing batch editor was launched. The editor log still
+  ends at an earlier intermediate compile and has not imported the final files; do not treat it as
+  final verification. Required Play Mode coverage: Q1 movement/duel handoff and Q2 no-huddle;
+  suggested/manual repeat substitutions and control handoff; bench stamina return; exclusion
+  replacement plus every release path/quarter carry/third PF split; both legal timeouts including
+  live, free/OOB, post-goal and penalty restart; replay/goal interruption; casual/championship full
+  time and pause-quit forfeit.
+
+### Known limitations / later polish
+
+- Dedicated climb-out, jump-in, hand-slap, huddle-talk and coach portrait art is not present in the
+  project. Current production fallback is existing swim/float animation, cap/name/position text and
+  the visible contact hold. Replace presentation assets later without changing rule state machines.
+- Match substitution identities currently cover the existing six `TeamSide.members` field slots.
+  The two goalkeepers are physical-end-owned objects that swap team responsibility when ends swap,
+  not roster-body-owned members; goalkeeper bench exchanges are therefore not exposed in Team
+  Management. Field/GK mixing is explicitly rejected. A true goalkeeper exchange needs a separate
+  end-safe keeper identity/body migration pass rather than pretending a field clone is a keeper.
+- The timeout service enforces counts/legality for either team, but only the human HUD calls one;
+  autonomous opponent timeout coaching is a future AI policy. Opponent fatigue substitutions are
+  implemented now. Final phone safe-area/legibility and choreography speed/anchor feel need device
+  Play Mode tuning; no code or scene wiring is required to begin those tests.
+
+---
+
+## FOLLOW-UP — 2026-08-17 (first Play Mode Q1/SprintDuel polish)
+
+### Exact SprintDuel root cause and fix
+
+- The downward-motion regression was not a surviving huddle coroutine or a bad pool coordinate.
+  The match-stoppage pass had added `!CompetitivePlayStopped` to the shared `BallGrabbable` gate.
+  SprintDuel deliberately keeps `PlayFrozen == true` throughout its race so normal player control
+  and both AI wrappers remain inert. Consequently both duel contact checks were always rejected,
+  neither racer could reserve the centre ball, `SprintDuel.Finish` never ran, and the two bodies
+  continued being position-driven into the same live ball/contact. Rigidbody2D depenetration then
+  displaced both racers down the pool, producing the shared vertical movement seen in Play Mode.
+- `MatchContext` now retains the strict stopped-play gate for every normal pickup and exposes a
+  narrow SprintDuel-only contact/reservation path. It permits pickup through `PlayFrozen` only,
+  never through a water-polo timeout, and SprintDuel calls it only for its two selected racers.
+  The proven tap/speed/centre-race logic and Q2-Q4 `StartDuel` path are otherwise unchanged.
+- The Q1 handoff was hardened as a separate safety polish: every swimmer now returns to
+  `SprintDuel.StartPositionFor` within **0.025u**, settles the imperceptible remainder exactly,
+  clears Q1 move purpose/target/velocity/freeze flags, and is removed from the intro's working list
+  before its completion callback. `StartPreparedDuel` defensively reclaims both sprinters and zeros
+  their Rigidbody2D linear/angular velocity before countdown. `PlayFrozen` continues to keep normal
+  `PlayerMovement`, `TeammateAI` and `BotMovement` from competing during the race.
+
+### Presentation and warning audit
+
+- Stationary/floating huddle hold: **2.7s -> 4.0s**. Q2-Q4 still bypass the huddle.
+- Timeout HUD button: **270x54 -> 210x44** reference pixels; label **20 -> 17pt**. The left/top
+  anchor and 1280x720 scaling are unchanged, and the 44px height preserves a practical touch target.
+- The U+2605/U+2606 warnings are unrelated to the match systems. The only project source creating
+  those glyphs is the pre-existing `NavigationManager.StarString` championship rating at
+  `NavigationManager.cs:2723` (`new string('★', n)` / `new string('☆', 5 - n)`). None of
+  `TimeoutManager`, `SubstitutionManager` or `MatchTeamManagementUI` contains star glyphs, so the
+  font asset and unrelated championship UI were intentionally left unchanged.
+
+### Files and validation
+
+- Follow-up changed: `MatchContext.cs`, `SprintDuel.cs`, `MatchPlayerRuntime.cs`,
+  `Q1MatchIntro.cs`, `TimeoutManager.cs`, and `plan.md`. No scene, prefab, font asset or Inspector
+  serialization was changed; all affected managers remain runtime-created/wired as before.
+- `dotnet build Assembly-CSharp.csproj --no-restore`: **0 warnings, 0 errors**.
+- `dotnet build Assembly-CSharp-Editor.csproj --no-restore`: **0 warnings, 0 errors**.
+- Scoped `git diff --check` for the six follow-up files is clean. The full command still reports
+  only the three pre-existing trailing-space lines in the user-modified
+  `Assets/Resources/Fonts/GeorgianFallback SDF.asset`; this pass did not edit that asset. A fresh
+  Unity Play Mode rerun is still required to confirm Q1 race completion/possession handoff visually
+  and to check the reduced timeout button on the target phone aspect ratio.

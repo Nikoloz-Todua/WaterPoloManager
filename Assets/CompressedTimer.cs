@@ -5,9 +5,9 @@ using UnityEngine;
 // only `realDuration` real seconds actually pass — the FIFA-style faster-ticking big clock.
 //
 // RULE: all gameplay decisions keep reading REAL time (Tick / RealRemaining / IsComplete);
-// only text that gets PRINTED uses DisplayValue / DisplayElapsed. Used by MatchTimer
-// (shows 8:00 over 90s real), ShotClock (shows 30 over 15s real) and ExclusionManager
-// (shows 20 over 7.5s real) — one scale conversion, not three hand-rolled factors.
+// only text that gets PRINTED uses DisplayValue / DisplayElapsed. Used by MatchTimer,
+// ShotClock, ExclusionManager and TimeoutManager; official displayed durations share the
+// one MatchTimer compression ratio instead of scattering hand-rolled factors.
 public struct CompressedTimer
 {
     private readonly float displayDuration;

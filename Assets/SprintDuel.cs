@@ -87,6 +87,33 @@ public class SprintDuel : MonoBehaviour
     // Begin a fresh duel: ball dead-centre + frozen, everyone lined up, countdown pending.
     public void StartDuel()
     {
+        StartDuelInternal(true);
+    }
+
+    // Q1MatchIntro has already swum every available athlete to these exact authored duel spots.
+    // Skip the ordinary lineup snap so the cinematic hand-off has no visible teleport.
+    public void StartPreparedDuel()
+    {
+        StartDuelInternal(false);
+    }
+
+    public void PrepareForIntro()
+    {
+        MatchContext ctx = MatchContext.Instance;
+        if (ctx == null) return;
+        state = State.Idle;
+        presentationVelocities.Clear();
+        CenterBall(ctx, false);
+        ctx.SetPossession(null);
+        ctx.ClearGrabBan();
+        ctx.ResetBallTouch();
+        ctx.FreezeAll();
+        if (duelCanvas != null) duelCanvas.SetActive(false);
+        if (TouchControls.Instance != null) TouchControls.Instance.SetGameplayVisible(false);
+    }
+
+    void StartDuelInternal(bool arrangeLineup)
+    {
         MatchContext ctx = MatchContext.Instance;
         if (ctx == null) return;
 
@@ -101,16 +128,30 @@ public class SprintDuel : MonoBehaviour
         ctx.ClearGrabBan();
         ctx.ResetBallTouch(); // camera holds the wide overview until a sprinter grabs (Task 1)
 
-        LineUp(pt);
-        LineUp(bt);
+        if (arrangeLineup)
+        {
+            LineUp(pt);
+            LineUp(bt);
+        }
 
         humanSprinter = FirstMember(pt);
         botSprinter = FirstMember(bt);
-        PlaceSprinterCentre(pt, humanSprinter);
-        PlaceSprinterCentre(bt, botSprinter);
+        if (arrangeLineup)
+        {
+            PlaceSprinterCentre(pt, humanSprinter);
+            PlaceSprinterCentre(bt, botSprinter);
+        }
+        else
+        {
+            // Q1 has already arrived at these positions physically. Explicitly revoke the intro
+            // motor before the countdown so SprintDuel is the only position owner at GO.
+            ClaimPreparedSprinter(humanSprinter);
+            ClaimPreparedSprinter(botSprinter);
+        }
 
         // nobody to race → just play on (no UI, no freeze)
-        if (humanSprinter == null && botSprinter == null) { state = State.Idle; return; }
+        if (humanSprinter == null && botSprinter == null)
+        { state = State.Idle; ctx.Unfreeze(); return; }
 
         // camera + control follow the human sprinter through the duel
         if (humanSprinter != null) TeamManager.ActivatePlayer(humanSprinter);
@@ -216,8 +257,8 @@ public class SprintDuel : MonoBehaviour
 
         Vector2 humanFacing = DirectionToBall(humanSprinter, ballPos);
         Vector2 botFacing = DirectionToBall(botSprinter, ballPos);
-        bool humanContact = ctx.CanBeginLooseBallPickup(humanSprinter, ctx.PlayerTeam, humanFacing);
-        bool botContact = ctx.CanBeginLooseBallPickup(botSprinter, ctx.BotTeam, botFacing);
+        bool humanContact = ctx.CanBeginSprintDuelPickup(humanSprinter, ctx.PlayerTeam, humanFacing);
+        bool botContact = ctx.CanBeginSprintDuelPickup(botSprinter, ctx.BotTeam, botFacing);
         if (!humanContact && !botContact) return;
 
         // If both front contact zones arrive in the same physics step, actual pickup-point
@@ -251,8 +292,19 @@ public class SprintDuel : MonoBehaviour
         else if (agent != null) holdTarget = () => WaterPoloBrain.HeldBallWorldPosition(agent);
         else holdTarget = () => (Vector2)winner.position + facing * 0.4f;
 
-        ctx.TryBeginLooseBallPickup(winner, team, facing, holdTarget,
-                                    () => Finish(ctx, winner, team));
+        ctx.TryBeginSprintDuelPickup(winner, team, facing, holdTarget,
+                                     () => Finish(ctx, winner, team));
+    }
+
+    static void ClaimPreparedSprinter(Transform sprinter)
+    {
+        if (sprinter == null) return;
+        MatchPlayerState state = MatchPlayerState.For(sprinter);
+        if (state != null) state.StopMove(MatchMovePurpose.Q1Huddle);
+        Rigidbody2D body = sprinter.GetComponent<Rigidbody2D>();
+        if (body == null) return;
+        body.linearVelocity = Vector2.zero;
+        body.angularVelocity = 0f;
     }
 
     void Finish(MatchContext ctx, Transform winner, TeamSide team)
@@ -355,6 +407,31 @@ public class SprintDuel : MonoBehaviour
         float goalX = team.defendGoal.position.x;
         float sign = goalX == 0f ? 1f : Mathf.Sign(goalX);
         return goalX - sign * lineInset; // pulled slightly inward toward centre
+    }
+
+    // Authoritative target used by the Q1 intro.  It is calculated from the same fields and
+    // member order as LineUp/PlaceSprinterCentre, so later tuning of the duel remains in one place.
+    public Vector2 StartPositionFor(TeamSide team, Transform member)
+    {
+        if (team == null || member == null || team.members == null || team.defendGoal == null)
+            return member != null ? (Vector2)member.position : Vector2.zero;
+        int index = -1;
+        Transform first = null;
+        for (int i = 0; i < team.members.Length; i++)
+        {
+            if (first == null && team.members[i] != null) first = team.members[i];
+            if (team.members[i] == member) index = i;
+        }
+        if (member == first)
+        {
+            float goalX = team.defendGoal.position.x;
+            float sign = goalX == 0f ? 1f : Mathf.Sign(goalX);
+            return new Vector2(goalX - sign * (lineInset + sprinterForwardOffset), 0f);
+        }
+        int count = team.members.Length;
+        float normalized = count > 1 && index >= 0
+            ? ((float)index / (count - 1)) * 2f - 1f : 0f;
+        return new Vector2(GoalLineX(team), normalized * lineupYSpread);
     }
 
     Transform FirstMember(TeamSide team)

@@ -545,7 +545,8 @@ public class BallFlight : MonoBehaviour
         if (!settleRippleEnabled) return;
         bool loose = transform.parent == null && rb != null && rb.simulated;
         MatchContext ctx = MatchContext.Instance;
-        if (!loose || highBallActive || (skipActive && !bounced) || (ctx != null && ctx.PlayFrozen))
+        if (!loose || highBallActive || (skipActive && !bounced) ||
+            (ctx != null && ctx.CompetitivePlayStopped))
         {
             settleArmed = false;
             StopSettleRipple();

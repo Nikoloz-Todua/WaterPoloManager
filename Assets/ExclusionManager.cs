@@ -1,304 +1,409 @@
 using System.Collections;
 using System.Collections.Generic;
-using UnityEngine;
 using TMPro;
+using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.Serialization;
+using UnityEngine.UI;
 
-// Water-polo fouls + exclusions (plan B16.9). Singleton like MatchContext.
-//
-// - A FAILED steal is an ordinary foul: the carrier keeps the ball and the offender
-//   gets a short steal lockout.
-// - `foulsForExclusion` fouls within `foulWindowSeconds` → the offender is EXCLUDED
-//   for `exclusionRealSeconds` of live play (the HUD displays `exclusionDisplaySeconds`
-//   counting down — a CompressedTimer): removed from its TeamSide.members (formation +
-//   AI auto-adapt — no special man-up/man-down code), parked at its pen, inert.
-// - After `maxExclusionsPerPlayer` exclusions the player is removed for good (disabled).
-// - If permanent removals drop a team below `minPlayersToContinue`, the match is
-//   forfeited via MatchTimer (the other team wins).
+// Match discipline and temporary exclusions.  Personal fouls belong to MatchPlayerState (the
+// athlete identity), while TeamSide.members remains the one authoritative legal-player list used
+// by every existing pass/mark/formation system.
 public class ExclusionManager : MonoBehaviour
 {
     public static ExclusionManager Instance { get; private set; }
 
-    [Header("Foul / exclusion rules")]
-    [SerializeField] private float foulWindowSeconds = 10f;   // fouls are counted within this window
-    [SerializeField] private int foulsForExclusion = 2;       // this many fouls in the window → exclusion
-    [SerializeField] private float exclusionDisplaySeconds = 20f; // the HUD counts down from this
-    [SerializeField] private float exclusionRealSeconds = 7.5f;   // REAL live-play seconds actually served
-    [SerializeField] private int maxExclusionsPerPlayer = 3;  // this many exclusions → permanent removal
-    [SerializeField] private int minPlayersToContinue = 4;    // below this (after removals) → forfeit
-    [SerializeField] private float foulStealLockout = 1.5f;   // steal lockout applied to a fouling agent
-    [SerializeField] private float penaltyZoneX = 4.28f;      // victim |x| ≥ this (goal-side) → penalty, not exclusion
-    [SerializeField] private bool centerFoulBoost = false;    // optional virtual-foul double-count; off by default to prevent first-contact penalties
+    [Header("Foul escalation")]
+    [SerializeField] private float foulWindowSeconds = 10f;
+    [SerializeField] private int foulsForExclusion = 2;
+    [FormerlySerializedAs("maxExclusionsPerPlayer")]
+    [SerializeField] private int personalFoulsToRemove = 3;
+    [SerializeField] private int minPlayersToContinue = 4;
+    [SerializeField] private float foulStealLockout = 1.5f;
+    [SerializeField] private float penaltyZoneX = 4.28f;
+    [SerializeField] private bool centerFoulBoost = false;
 
-    [Header("Ordinary-foul presentation (2026-07-09f)")]
-    [Tooltip("REAL seconds after an ordinary foul during which nobody may steal from the fouled carrier. Other players keep moving and marking normally. Lapses early if they release the ball.")]
+    [Header("Ordinary exclusion (displayed/game seconds)")]
+    [SerializeField] private float ordinaryExclusionDisplayedSeconds = 18f;
+    [SerializeField] private float exclusionExitSpeed = 4.2f;
+    [SerializeField] private float exclusionEntrySpeed = 4.2f;
+    [SerializeField] private float exclusionArrivalRadius = 0.16f;
+
+    [Header("Ordinary-foul presentation")]
     [SerializeField] private float foulProtectSeconds = 5f;
-    [Tooltip("If the protected carrier neither moves nor releases the ball, protection lapses after this many seconds instead of lasting the full window.")]
     [SerializeField] private float foulIdleProtectSeconds = 2.5f;
-    [Tooltip("Brief referee-whistle pause on an ordinary foul: play freezes this long so the foul visibly registers. 0 = no pause.")]
     [SerializeField] private float foulWhistleFreezeSeconds = 0.7f;
 
     [Header("Successful-steal stun")]
-    [Tooltip("Every carrier who actually loses the ball to a close-range steal is visibly stunned for this long. No chance, aggression, or repeat-cooldown gate.")]
     [SerializeField, Range(0.1f, 2f)] private float successfulStealStunSeconds = 1.4f;
     private const float DefaultSuccessfulStealStunSeconds = 1.4f;
 
     [Header("References")]
-    [SerializeField] private MatchTimer matchTimer;           // to end the match on a forfeit
-    [SerializeField] private TMP_Text exclusionText;          // HUD countdowns, e.g. "YOU EXC: 4.2"
-
-    [Header("Exclusion positions")]
-    [Tooltip("Penalty-box position for the team currently defending the left end.")]
-    [SerializeField] private Vector2 leftExclusionPosition = new Vector2(-6.7f, 3.6f);
-    [Tooltip("Penalty-box position for the team currently defending the right end.")]
-    [SerializeField] private Vector2 rightExclusionPosition = new Vector2(7.1f, 3.6f);
-    [Tooltip("Safe in-water re-entry point for the team currently defending the left end.")]
-    [SerializeField] private Vector2 leftReentryPosition = new Vector2(-5.8f, 3.5f);
-    [Tooltip("Safe in-water re-entry point for the team currently defending the right end.")]
-    [SerializeField] private Vector2 rightReentryPosition = new Vector2(6.1f, 3.5f);
-    [SerializeField, Min(0.05f)] private float simultaneousReentryOffset = 0.18f;
-    [Tooltip("Sorting order used only while a player is parked at an exclusion coordinate.")]
+    [SerializeField] private MatchTimer matchTimer;
+    [SerializeField] private TMP_Text exclusionText;
     [SerializeField] private int excludedSortingOrder = 75;
 
-    // cached from MatchContext (so no extra Inspector wiring of teams)
+    private enum ReentryPhase { Exiting, Waiting, MovingToGate, MovingToFormation }
+
+    private sealed class TemporaryExclusion
+    {
+        public MatchPlayerState servingPlayer;
+        public MatchPlayerState entrant;
+        public TeamSide team;
+        public int slot;
+        public CompressedTimer timer;
+        public ReentryPhase phase;
+        public bool releaseAuthorized;
+        public bool replacementExchangePending;
+        public bool replacementRevisionInProgress;
+    }
+
+    private readonly List<TemporaryExclusion> activeExclusions =
+        new List<TemporaryExclusion>();
+    private readonly Dictionary<MatchPlayerState, List<float>> foulTimes =
+        new Dictionary<MatchPlayerState, List<float>>();
+    private readonly Dictionary<SpriteRenderer, int> regularSortingOrders =
+        new Dictionary<SpriteRenderer, int>();
+
+    private MatchContext context;
     private TeamSide playerTeam;
     private TeamSide botTeam;
 
-    // one active temporary exclusion (the player returns once its timer runs out)
-    private class Exclusion
-    {
-        public Transform agent;
-        public TeamSide team;
-        public int memberIndex;        // original slot in team.members, restored on return
-        public CompressedTimer timer;  // REAL live-play countdown (paused while frozen); HUD prints DisplayValue
-    }
-
-    private readonly List<Exclusion> activeExclusions = new List<Exclusion>();
-    private readonly Dictionary<Transform, List<float>> foulTimes = new Dictionary<Transform, List<float>>();
-    private readonly Dictionary<Transform, int> exclusionCount = new Dictionary<Transform, int>();
-    private readonly HashSet<Transform> excludedNow = new HashSet<Transform>();    // temporarily out
-    private readonly HashSet<Transform> permanentlyOut = new HashSet<Transform>(); // gone for good
-    private readonly Dictionary<TeamSide, Transform[]> originalRoster = new Dictionary<TeamSide, Transform[]>();
-    private readonly Dictionary<SpriteRenderer, int> regularSortingOrders = new Dictionary<SpriteRenderer, int>();
-
-    void Awake()
-    {
-        Instance = this;
-    }
+    void Awake() { Instance = this; }
 
     void Start()
     {
-        MatchContext ctx = MatchContext.Instance;
-        if (ctx != null)
+        context = MatchContext.Instance;
+        if (context != null)
         {
-            playerTeam = ctx.PlayerTeam;
-            botTeam = ctx.BotTeam;
-            Snapshot(playerTeam);
-            Snapshot(botTeam);
+            playerTeam = context.PlayerTeam;
+            botTeam = context.BotTeam;
         }
+        if (matchTimer == null) matchTimer = MatchTimer.Instance;
+        if (exclusionText == null) exclusionText = BuildFallbackExclusionHud();
         if (exclusionText != null) exclusionText.enabled = false;
+        PersonalFoulOutUI.Ensure(gameObject);
     }
 
-    // A team's current end is the end it defends. MatchContext swaps defendGoal at halftime,
-    // so these coordinate choices automatically swap with it without relying on scene names.
-    bool IsOnLeftSide(TeamSide team)
+    void OnDestroy()
     {
-        if (team != null && team.defendGoal != null)
-            return team.defendGoal.position.x < 0f;
-        return team == playerTeam;
-    }
-
-    Vector2 ExclusionPositionFor(TeamSide team)
-        => IsOnLeftSide(team) ? leftExclusionPosition : rightExclusionPosition;
-
-    Vector2 ReentryPositionFor(TeamSide team)
-        => IsOnLeftSide(team) ? leftReentryPosition : rightReentryPosition;
-
-    void Snapshot(TeamSide team)
-    {
-        if (team != null && team.members != null)
-            originalRoster[team] = (Transform[])team.members.Clone();
+        if (Instance == this) Instance = null;
     }
 
     void Update()
     {
-        // The exclusion countdown only advances during LIVE play. It is PAUSED while play is
-        // frozen — both a hard Time.timeScale = 0 stop (pause / quarter break / full time,
-        // where deltaTime is already 0) AND a soft MatchContext.PlayFrozen freeze (goal
-        // restart / penalty / sprint duel, where Time.time keeps running). The old code
-        // compared against an absolute Time.time deadline, so a soft freeze silently "served"
-        // the exclusion during a goal celebration the player couldn't be seen returning from —
-        // one of the ways a returning player ended up stranded in the corner. Counting only
-        // live play makes an exclusion a true `exclusionRealSeconds` of gameplay.
-        MatchContext ctx = MatchContext.Instance;
-        bool frozen = ctx != null && ctx.PlayFrozen;
-
-        Dictionary<int, int> returnsPerSide = null;
+        bool actualPlay = context != null && !context.ClocksStopped && Time.timeScale > 0f &&
+                          (matchTimer == null || !matchTimer.MatchOver);
         for (int i = activeExclusions.Count - 1; i >= 0; i--)
         {
-            Exclusion e = activeExclusions[i];
-            if (!frozen) e.timer.Tick(Time.deltaTime);
-            if (!e.timer.IsComplete) continue;
+            TemporaryExclusion exclusion = activeExclusions[i];
+            if (exclusion == null || exclusion.servingPlayer == null)
+            { activeExclusions.RemoveAt(i); continue; }
 
-            if (returnsPerSide == null) returnsPerSide = new Dictionary<int, int>();
-            int side = IsOnLeftSide(e.team) ? -1 : 1;
-            returnsPerSide.TryGetValue(side, out int returnIndex);
-            returnsPerSide[side] = returnIndex + 1;
+            if (actualPlay && !exclusion.releaseAuthorized)
+            {
+                exclusion.timer.Tick(Time.deltaTime);
+                if (exclusion.timer.IsComplete) AuthorizeRelease(exclusion, "18 seconds");
+            }
 
-            ReturnToPlay(e, returnIndex); // restore roster slot + use a safe, non-overlapping entry
-            activeExclusions.RemoveAt(i);
+            UpdateExclusionMovement(exclusion);
+            if (exclusion.phase == ReentryPhase.MovingToFormation && exclusion.entrant != null &&
+                (exclusion.entrant.AtMoveTarget ||
+                 exclusion.entrant.MovePurpose == MatchMovePurpose.None))
+            {
+                exclusion.entrant.StopMove(MatchMovePurpose.Exclusion);
+                exclusion.entrant.SetStatus(MatchPlayerStatus.OnField, true);
+                SetExcludedSorting(exclusion.entrant.transform, false);
+                activeExclusions.RemoveAt(i);
+                TeamManager.EnsureValidActive();
+            }
         }
-
         UpdateHud();
     }
 
-    // Bring a temporarily-excluded player back into the match. The old re-entry only nulled the
-    // roster slot back in and left the body dumped in the goal corner (|x| = 7, PAST the
-    // playerLimitX 6.9 clamp), relying entirely on the AI brain to swim it all the way across the
-    // pool — which is what "sometimes doesn't re-enter, stuck outside play" was. Now it:
-    //   1) restores the ORIGINAL roster slot (falling back to the Start() snapshot so a stale
-    //      index can never silently drop the player OUT of the roster for good),
-    //   2) clears the excluded flag so the brain drives it again, and
-    //   3) teleports it to the fixed safe in-water coordinate for its current side, with a small
-    //      offset for same-frame returns, so it cannot overlap a teammate or catch a wall.
-    void ReturnToPlay(Exclusion e, int simultaneousIndex)
+    void UpdateExclusionMovement(TemporaryExclusion exclusion)
     {
-        Transform agent = e.agent;
-        TeamSide team = e.team;
-        if (agent == null) return;
+        MatchSquadManager squad = MatchSquadManager.Instance;
+        if (squad == null) return;
 
-        int idx = (team != null && team.members != null &&
-                   e.memberIndex >= 0 && e.memberIndex < team.members.Length)
-                  ? e.memberIndex : SnapshotIndex(team, agent);
-        if (idx >= 0 && team != null && team.members != null && idx < team.members.Length)
-            team.members[idx] = agent;   // restore FIRST so DefendSpot's role lookup finds it
-
-        excludedNow.Remove(agent);       // IsExcluded → false → the brain resumes control
-        SetExcludedSorting(agent, false);
-
-        Vector2 spot = ReentryPositionFor(team);
-        if (simultaneousIndex > 0)
+        if (exclusion.phase == ReentryPhase.Exiting)
         {
-            int step = (simultaneousIndex + 1) / 2;
-            float direction = (simultaneousIndex & 1) == 1 ? 1f : -1f;
-            spot.y += direction * step * simultaneousReentryOffset;
-        }
-        agent.position = new Vector3(spot.x, spot.y, agent.position.z);
-
-        // Stale AI intent from BEFORE the exclusion (an old mark, a half-finished drive or
-        // screen) must not steer the first frames back — hand the brain a clean slate.
-        IAgentBody body = agent.GetComponent<IAgentBody>();
-        if (body != null)
-        {
-            body.CurrentMark = null;
-            body.IsDriving = false;
-            body.IsSettingScreen = false;
+            Vector2 area = squad.Geometry.ExclusionArea(exclusion.team);
+            exclusion.servingPlayer.Retarget(MatchMovePurpose.Exclusion, area);
+            if (!exclusion.servingPlayer.AtMoveTarget) return;
+            exclusion.servingPlayer.StopMove(MatchMovePurpose.Exclusion);
+            exclusion.servingPlayer.SetStatus(MatchPlayerStatus.ExclusionWaiting, false);
+            SetExcludedSorting(exclusion.servingPlayer.transform, true);
+            exclusion.phase = ReentryPhase.Waiting;
         }
 
-        Rigidbody2D rb = agent.GetComponent<Rigidbody2D>();
-        if (rb != null)
-        {
-            rb.position = spot;
-            rb.linearVelocity = Vector2.zero;
-            rb.angularVelocity = 0f;
-        }
-    }
+        if (exclusion.phase == ReentryPhase.Waiting && exclusion.releaseAuthorized &&
+            !exclusion.replacementExchangePending)
+            BeginLegalReentry(exclusion);
 
-    // MatchContext calls this immediately after the halftime end swap. Players already serving
-    // an exclusion move with their team's new visual side instead of remaining in the old pen.
-    public void OnEndsSwapped()
-    {
-        foreach (Exclusion e in activeExclusions)
-            if (e != null && e.agent != null) PlaceAtCorner(e.agent, e.team);
-    }
-
-    // Keep the authored sprite colors/alpha completely unchanged. Only lift render order while
-    // parked at the pen so pool-line water shaders cannot draw over and blue-tint the player.
-    void SetExcludedSorting(Transform agent, bool excluded)
-    {
-        if (agent == null) return;
-        foreach (SpriteRenderer sr in agent.GetComponentsInChildren<SpriteRenderer>(true))
+        if (exclusion.phase == ReentryPhase.MovingToGate && exclusion.entrant != null &&
+            exclusion.entrant.AtMoveTarget)
         {
-            if (sr == null) continue;
-            if (excluded)
+            MatchPlayerState entrant = exclusion.entrant;
+            entrant.StopMove(MatchMovePurpose.Exclusion);
+            if (!squad.AssignToField(entrant, exclusion.slot, MatchPlayerStatus.SubstitutingIn))
+                return; // deterministic safety: keep waiting instead of creating a duplicate slot
+
+            if (exclusion.servingPlayer != entrant)
             {
-                if (!regularSortingOrders.ContainsKey(sr)) regularSortingOrders[sr] = sr.sortingOrder;
-                sr.sortingOrder = Mathf.Max(sr.sortingOrder, excludedSortingOrder);
+                if (exclusion.servingPlayer.PermanentlyDisqualified)
+                    exclusion.servingPlayer.SetStatus(MatchPlayerStatus.PermanentlyOut, false);
+                else
+                    exclusion.servingPlayer.SetStatus(MatchPlayerStatus.Bench, false);
+                SetExcludedSorting(exclusion.servingPlayer.transform, false);
             }
-            else if (regularSortingOrders.TryGetValue(sr, out int regularOrder))
-            {
-                sr.sortingOrder = regularOrder;
-                regularSortingOrders.Remove(sr);
-            }
+            entrant.BeginMove(MatchMovePurpose.Exclusion, squad.FormationPoint(entrant),
+                              exclusionEntrySpeed, 0.24f, true, true);
+            exclusion.phase = ReentryPhase.MovingToFormation;
         }
     }
 
-    // The agent's ORIGINAL slot from the Start() roster snapshot — the restore fallback when the
-    // captured member index is somehow out of range, so re-entry can never fail to seat a player.
-    int SnapshotIndex(TeamSide team, Transform agent)
+    void BeginLegalReentry(TemporaryExclusion exclusion)
     {
-        if (team == null || !originalRoster.TryGetValue(team, out Transform[] roster)) return -1;
-        for (int i = 0; i < roster.Length; i++)
-            if (roster[i] == agent) return i;
-        return -1;
+        MatchPlayerState entrant = exclusion.entrant != null
+            ? exclusion.entrant : exclusion.servingPlayer;
+        if (entrant == null || entrant.PermanentlyDisqualified) return;
+        exclusion.entrant = entrant;
+        entrant.SetStatus(MatchPlayerStatus.SubstitutingIn, false);
+        entrant.BeginMove(MatchMovePurpose.Exclusion,
+            MatchSquadManager.Instance.Geometry.ExclusionEntryInside(exclusion.team),
+            exclusionEntrySpeed, exclusionArrivalRadius, true, true);
+        exclusion.phase = ReentryPhase.MovingToGate;
     }
 
-    // ---------- public API ----------
+    // ---------- public eligibility / release API ----------
 
-    // True while an agent is excluded (temporarily) or permanently removed.
-    public bool IsExcluded(Transform t)
-        => t != null && (excludedNow.Contains(t) || permanentlyOut.Contains(t));
+    public bool IsExcluded(Transform body)
+    {
+        MatchPlayerState player = MatchPlayerState.For(body);
+        if (player == null) return false;
+        switch (player.Status)
+        {
+            case MatchPlayerStatus.ExclusionExit:
+            case MatchPlayerStatus.ExclusionWaiting:
+            case MatchPlayerStatus.ExclusionReplacementApproach:
+            case MatchPlayerStatus.ExclusionReplacementWaiting:
+            case MatchPlayerStatus.ExcludedReplacedBench:
+            case MatchPlayerStatus.PermanentlyOut:
+                return true;
+            default:
+                return player.PermanentlyDisqualified;
+        }
+    }
 
-    // How many of `team`'s original roster are currently out — used by the brain for
-    // man-up (enemy short) / man-down (we're short) tactical shapes.
     public int ExcludedCount(TeamSide team)
     {
-        if (team == null || !originalRoster.TryGetValue(team, out Transform[] roster)) return 0;
-        int n = 0;
-        foreach (Transform t in roster)
-            if (t != null && (excludedNow.Contains(t) || permanentlyOut.Contains(t))) n++;
-        return n;
+        if (team == null || team.members == null) return 0;
+        int missing = 0;
+        for (int i = 0; i < team.members.Length; i++)
+            if (team.members[i] == null) missing++;
+        return missing;
     }
 
-    // A dead-ball restart (goal or new quarter) cancels every unfinished TEMPORARY exclusion.
-    // Reuse the proven single-player return path so roster slots, sorting and AI state are restored
-    // identically to a timer expiry. Permanent removals are never in activeExclusions and remain
-    // disabled/null in their roster slots.
+    public void NotifyPossessionChanged(TeamSide previousPossession, TeamSide newPossession,
+                                        TeamSide previousTouch)
+    {
+        if (newPossession == null) return;
+        bool trueRegain = (previousPossession != null && previousPossession != newPossession) ||
+                          (previousPossession == null && previousTouch != null &&
+                           previousTouch != newPossession);
+        if (trueRegain) ReleaseForAward(newPossession, "possession regained");
+    }
+
+    public void ReleaseForAward(TeamSide team, string reason)
+    {
+        if (team == null) return;
+        for (int i = 0; i < activeExclusions.Count; i++)
+            if (activeExclusions[i].team == team) AuthorizeRelease(activeExclusions[i], reason);
+    }
+
+    public void NotifyGoalAwarded()
+    {
+        for (int i = 0; i < activeExclusions.Count; i++)
+            AuthorizeRelease(activeExclusions[i], "goal");
+    }
+
+    void AuthorizeRelease(TemporaryExclusion exclusion, string reason)
+    {
+        if (exclusion == null || exclusion.releaseAuthorized) return;
+        exclusion.releaseAuthorized = true;
+        if (EventFeed.Instance != null)
+            EventFeed.Instance.AddEvent("Exclusion released - " + reason);
+    }
+
+    // A goal includes a full dead-ball reset and is an explicit release condition. Resolve each
+    // entrant into exactly one slot before that formation snaps, while permanent removals stay out.
     public void EndTemporaryExclusionsForRestart()
     {
-        Dictionary<int, int> returnsPerSide = null;
-        for (int i = activeExclusions.Count - 1; i >= 0; i--)
+        MatchSquadManager squad = MatchSquadManager.Instance;
+        if (squad == null) { activeExclusions.Clear(); UpdateHud(); return; }
+
+        for (int i = 0; i < activeExclusions.Count; i++)
         {
-            Exclusion exclusion = activeExclusions[i];
-            if (exclusion == null || exclusion.agent == null ||
-                permanentlyOut.Contains(exclusion.agent))
+            TemporaryExclusion exclusion = activeExclusions[i];
+            if (exclusion == null || exclusion.servingPlayer == null) continue;
+            MatchPlayerState entrant = exclusion.entrant;
+            if (entrant == null || entrant.PermanentlyDisqualified)
             {
-                if (exclusion != null && exclusion.agent != null)
-                    excludedNow.Remove(exclusion.agent);
-                activeExclusions.RemoveAt(i);
-                continue;
+                if (!exclusion.servingPlayer.PermanentlyDisqualified)
+                    entrant = exclusion.servingPlayer;
+                else
+                    entrant = squad.BestBenchReplacement(exclusion.servingPlayer);
             }
 
-            if (returnsPerSide == null) returnsPerSide = new Dictionary<int, int>();
-            int side = IsOnLeftSide(exclusion.team) ? -1 : 1;
-            returnsPerSide.TryGetValue(side, out int returnIndex);
-            returnsPerSide[side] = returnIndex + 1;
+            if (entrant != null && !entrant.PermanentlyDisqualified)
+            {
+                entrant.StopMove();
+                squad.AssignToField(entrant, exclusion.slot, MatchPlayerStatus.OnField);
+                entrant.PlaceAt(squad.FormationPoint(entrant));
+                SetExcludedSorting(entrant.transform, false);
+            }
+            if (exclusion.servingPlayer != entrant)
+            {
+                exclusion.servingPlayer.StopMove();
+                exclusion.servingPlayer.SetStatus(exclusion.servingPlayer.PermanentlyDisqualified
+                    ? MatchPlayerStatus.PermanentlyOut : MatchPlayerStatus.Bench, false);
+                exclusion.servingPlayer.PlaceAt(squad.Geometry.BenchPoint(exclusion.team,
+                                                        exclusion.servingPlayer.CapNumber));
+                SetExcludedSorting(exclusion.servingPlayer.transform, false);
+            }
+        }
+        activeExclusions.Clear();
+        UpdateHud();
+        TeamManager.EnsureValidActive();
+    }
 
-            ReturnToPlay(exclusion, returnIndex);
+    public void OnEndsSwapped()
+    {
+        MatchSquadManager squad = MatchSquadManager.Instance;
+        if (squad == null) return;
+        for (int i = 0; i < activeExclusions.Count; i++)
+        {
+            TemporaryExclusion exclusion = activeExclusions[i];
+            if (exclusion == null || exclusion.servingPlayer == null) continue;
+            Vector2 area = squad.Geometry.ExclusionArea(exclusion.team);
+            if (exclusion.phase == ReentryPhase.Exiting)
+                exclusion.servingPlayer.Retarget(MatchMovePurpose.Exclusion, area);
+            else if (exclusion.phase == ReentryPhase.Waiting)
+            {
+                MatchPlayerState waiting = exclusion.entrant != null
+                    ? exclusion.entrant : exclusion.servingPlayer;
+                waiting.PlaceAt(area);
+                SetExcludedSorting(waiting.transform, true);
+                if (waiting != exclusion.servingPlayer)
+                    exclusion.servingPlayer.PlaceAt(squad.Geometry.BenchPoint(
+                        exclusion.team, exclusion.servingPlayer.CapNumber));
+            }
+            else if (exclusion.phase == ReentryPhase.MovingToGate && exclusion.entrant != null)
+            {
+                exclusion.entrant.Retarget(MatchMovePurpose.Exclusion,
+                    squad.Geometry.ExclusionEntryInside(exclusion.team));
+            }
+            else if (exclusion.phase == ReentryPhase.MovingToFormation && exclusion.entrant != null)
+            {
+                exclusion.entrant.Retarget(MatchMovePurpose.Exclusion,
+                    squad.FormationPoint(exclusion.entrant));
+            }
+        }
+    }
+
+    public void OnQuarterEnded()
+    {
+        // Crossing the legal re-entry gate already restored the slot. If the horn sounds during
+        // only the cosmetic swim to formation, finish that state now so SprintDuel owns the next
+        // lineup. Unserved exclusions and entrants still outside the gate remain pending.
+        for (int i = activeExclusions.Count - 1; i >= 0; i--)
+        {
+            TemporaryExclusion exclusion = activeExclusions[i];
+            if (exclusion == null || exclusion.phase != ReentryPhase.MovingToFormation ||
+                exclusion.entrant == null) continue;
+            exclusion.entrant.StopMove(MatchMovePurpose.Exclusion);
+            exclusion.entrant.SetStatus(MatchPlayerStatus.OnField, true);
+            SetExcludedSorting(exclusion.entrant.transform, false);
             activeExclusions.RemoveAt(i);
         }
         UpdateHud();
     }
 
-    // Called on EVERY failed steal. `victim` = the carrier that was fouled. Carrier keeps
-    // the ball; offender is locked out. An ordinary foul gives the victim a FREE THROW;
-    // enough fouls escalate to an exclusion — or a PENALTY if the victim was in the 2m zone.
-    public void ReportFoul(Transform offender, TeamSide team, Transform victim)
+    public bool RequestReplacement(MatchPlayerState excluded, MatchPlayerState replacement,
+                                   out string validationError)
     {
-        if (offender == null) return;
+        validationError = string.Empty;
+        TemporaryExclusion exclusion = FindExclusion(excluded);
+        if (exclusion == null)
+        { validationError = "Player is not serving an exclusion"; return false; }
+        if (exclusion.entrant != null)
+        { validationError = "Replacement has already completed the exchange"; return false; }
+        if (replacement == null || !replacement.AvailableOnBench ||
+            replacement.Team != exclusion.team || replacement.PermanentlyDisqualified)
+        { validationError = "Replacement is not available"; return false; }
+        if (MatchSquadManager.Instance == null ||
+            !MatchSquadManager.Instance.IsCompatible(excluded, replacement))
+        { validationError = "Incompatible position"; return false; }
+        if (SubstitutionManager.Instance == null)
+        { validationError = "Substitution service unavailable"; return false; }
+        if (exclusion.replacementExchangePending)
+        {
+            exclusion.replacementRevisionInProgress = true;
+            if (!SubstitutionManager.Instance.CancelUncompletedExclusionExchange(excluded))
+            {
+                exclusion.replacementRevisionInProgress = false;
+                validationError = "Replacement exchange is already in progress";
+                return false;
+            }
+            // The cancellation callback clears replacementExchangePending synchronously.
+        }
 
-        ApplyStealLockout(offender);
-        if (RefereeController.Instance != null)
-            RefereeController.Instance.TriggerFoul();
+        exclusion.replacementExchangePending = true;
+        Vector2 anchor = MatchSquadManager.Instance.Geometry.ExclusionArea(exclusion.team);
+        bool started = SubstitutionManager.Instance.BeginExclusionExchange(
+            excluded, replacement, anchor,
+            entrant => OnReplacementTouch(exclusion, entrant), out validationError);
+        exclusion.replacementRevisionInProgress = false;
+        if (!started)
+        {
+            exclusion.replacementExchangePending = false;
+            if (exclusion.releaseAuthorized && exclusion.phase == ReentryPhase.Waiting)
+                BeginLegalReentry(exclusion);
+        }
+        return started;
+    }
+
+    void OnReplacementTouch(TemporaryExclusion exclusion, MatchPlayerState entrant)
+    {
+        if (exclusion == null || !activeExclusions.Contains(exclusion)) return;
+        if (entrant != null)
+        {
+            exclusion.entrant = entrant;
+            SetExcludedSorting(entrant.transform, true);
+        }
+        exclusion.replacementExchangePending = false;
+        if (!exclusion.replacementRevisionInProgress && exclusion.releaseAuthorized &&
+            exclusion.phase == ReentryPhase.Waiting)
+            BeginLegalReentry(exclusion);
+    }
+
+    TemporaryExclusion FindExclusion(MatchPlayerState serving)
+    {
+        if (serving == null) return null;
+        for (int i = 0; i < activeExclusions.Count; i++)
+            if (activeExclusions[i].servingPlayer == serving) return activeExclusions[i];
+        return null;
+    }
+
+    // ---------- foul entry points ----------
+
+    public void ReportFoul(Transform offenderBody, TeamSide offenderTeam, Transform victim)
+    {
+        MatchPlayerState offender = MatchPlayerState.For(offenderBody);
+        if (offender == null || offender.PermanentlyDisqualified) return;
+        ApplyStealLockout(offenderBody);
+        RefereeController.Instance?.TriggerFoul();
 
         if (!foulTimes.TryGetValue(offender, out List<float> times))
         {
@@ -306,319 +411,383 @@ public class ExclusionManager : MonoBehaviour
             foulTimes[offender] = times;
         }
         times.Add(Time.time);
-        times.RemoveAll(t => Time.time - t > foulWindowSeconds);
+        for (int i = times.Count - 1; i >= 0; i--)
+            if (Time.time - times[i] > foulWindowSeconds) times.RemoveAt(i);
 
-        // Feature 5: fouling the enemy CENTRE while he holds inside water counts as an
-        // extra (virtual) foul, so Centres draw exclusions/penalties faster — the payoff
-        // for fighting for (and feeding) inside position.
-        if (centerFoulBoost && victim != null)
+        if (centerFoulBoost && victim != null && context != null)
         {
-            MatchContext mctx = MatchContext.Instance;
-            TeamSide victimTeam = mctx != null ? mctx.EnemyOf(team) : null;
+            TeamSide victimTeam = context.EnemyOf(offenderTeam);
             if (victimTeam != null && victimTeam.Contains(victim) &&
                 victimTeam.RoleOf(victim) == TeamSide.Role.Center &&
                 TeamSide.IsInsideTwoMeter(victim, victimTeam))
-                times.Add(Time.time - 0.1f); // a virtual foul just inside the window
+                times.Add(Time.time - 0.1f);
         }
 
-        if (times.Count >= foulsForExclusion)
-            Escalate(offender, team, victim); // exclusion, or penalty if in the 2m zone
-        else
-        {
-            FreeThrow(team, victim);           // ordinary foul
-        }
+        if (times.Count >= foulsForExclusion) Escalate(offender, offenderTeam, victim);
+        else FreeThrow(offenderTeam, victim);
     }
 
-    // Blindside/rear contact is already inside the same genuine close-range gate as a normal steal,
-    // but it is never allowed to roll for possession. It goes straight to the existing exclusion-
-    // level owner: temporary/permanent exclusion, or a penalty when the victim is in the 2m zone.
-    public void ReportExclusionFoul(Transform offender, TeamSide team, Transform victim)
+    public void ReportExclusionFoul(Transform offenderBody, TeamSide offenderTeam,
+                                    Transform victim)
     {
-        if (offender == null) return;
-        ApplyStealLockout(offender);
-        if (RefereeController.Instance != null)
-            RefereeController.Instance.TriggerFoul();
-        Escalate(offender, team, victim);
+        MatchPlayerState offender = MatchPlayerState.For(offenderBody);
+        if (offender == null || offender.PermanentlyDisqualified) return;
+        ApplyStealLockout(offenderBody);
+        RefereeController.Instance?.TriggerFoul();
+        Escalate(offender, offenderTeam, victim);
     }
 
-    // Called only after a real close-range steal has succeeded. The callers already enforce their
-    // established reach checks, so the outcome has exactly one gate: proximity. This intentionally
-    // has no random chance, "aggressive" flag, or per-victim cooldown. The fallback keeps the visual
-    // working in a stripped-down test scene that happens to omit ExclusionManager.
-    public static void StunSuccessfulStealVictim(Transform victim)
+    void Escalate(MatchPlayerState offender, TeamSide offenderTeam, Transform victim)
     {
-        float seconds = Instance != null
-            ? Instance.successfulStealStunSeconds
-            : DefaultSuccessfulStealStunSeconds;
-        FoulStun.Apply(victim, seconds);
-    }
-
-    // Ordinary foul → free throw to the fouled (victim's) team: shot clock pauses and the
-    // carrier can't be stolen from until they act. 2026-07-09f made the foul VISIBLE — the
-    // old version registered only as an event-feed line, so live play looked like nothing
-    // happened. Now: a short referee-whistle freeze + a floating "FOUL!" popup at the victim,
-    // and a `foulProtectSeconds` protection window during which nobody can steal from them
-    // and AI defenders keep their distance (the free-throw stand-off used to end the moment
-    // the carrier moved — the protection window persists so the fouled player actually gets
-    // the uncontested beat real water polo gives them).
-    void FreeThrow(TeamSide offenderTeam, Transform victim)
-    {
-        MatchContext ctx = MatchContext.Instance;
-        if (ctx != null && victim != null)
-        {
-            ctx.StartFreeThrow(victim);
-            ctx.StartFoulProtection(victim, foulProtectSeconds, foulIdleProtectSeconds);
-            SpawnFoulPopup(victim.position);
-            if (!ctx.PlayFrozen && foulWhistleFreezeSeconds > 0f)
-                StartCoroutine(FoulWhistleRoutine(ctx));
-        }
-
-        TeamSide victimTeam = ctx != null ? ctx.EnemyOf(offenderTeam) : null;
-        if (EventFeed.Instance != null)
-            EventFeed.Instance.AddEvent("Foul - free throw " + (victimTeam == playerTeam ? "YOU" : "BOT"));
-    }
-
-    // Referee whistle: freeze live play for a beat so the foul reads, then resume. Steal
-    // rolls only ever happen during LIVE play (every roll path bails while PlayFrozen), so
-    // no other freeze owner (goal restart / penalty / duel) can start during this window —
-    // the unconditional Unfreeze can't stomp another system's freeze.
-    IEnumerator FoulWhistleRoutine(MatchContext ctx)
-    {
-        ctx.FreezeAll();
-        yield return new WaitForSeconds(foulWhistleFreezeSeconds);
-        ctx.Unfreeze();
-    }
-
-    // Floating "FOUL!" text at the foul spot — rises and fades over ~1.1s. Built from a
-    // legacy TextMesh so it needs no canvas/TMP wiring and renders in world space.
-    void SpawnFoulPopup(Vector3 pos)
-    {
-        GameObject go = new GameObject("FoulPopup");
-        go.transform.position = pos + Vector3.up * 0.9f;
-        TextMesh tm = go.AddComponent<TextMesh>();
-        tm.text = "FOUL!";
-        tm.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        tm.fontSize = 64;
-        tm.fontStyle = FontStyle.Bold;
-        tm.characterSize = 0.035f;
-        tm.anchor = TextAnchor.MiddleCenter;
-        tm.alignment = TextAlignment.Center;
-        tm.color = new Color(1f, 0.85f, 0.15f); // referee yellow
-        MeshRenderer mr = go.GetComponent<MeshRenderer>();
-        if (tm.font != null) mr.material = tm.font.material;
-        mr.sortingOrder = 90; // above swimmers + ball
-        StartCoroutine(FoulPopupRoutine(go.transform, tm));
-    }
-
-    IEnumerator FoulPopupRoutine(Transform popup, TextMesh tm)
-    {
-        const float Seconds = 1.1f;
-        Color c = tm.color;
-        float t0 = Time.time;
-        while (Time.time - t0 < Seconds && popup != null)
-        {
-            float k = (Time.time - t0) / Seconds;
-            popup.position += Vector3.up * (0.35f * Time.deltaTime); // slow rise
-            tm.color = new Color(c.r, c.g, c.b, 1f - k * k);         // ease-out fade
-            yield return null;
-        }
-        if (popup != null) Destroy(popup.gameObject);
-    }
-
-    // Exclusion-level foul: a PENALTY if the victim was inside the attacking 2m zone,
-    // otherwise the usual temporary/permanent exclusion.
-    void Escalate(Transform offender, TeamSide team, Transform victim)
-    {
+        if (offender == null || offenderTeam == null || FindExclusion(offender) != null) return;
+        foulTimes.Remove(offender);
         bool penalty = false;
-        if (victim != null && team != null && team.defendGoal != null)
+        if (victim != null && offenderTeam.defendGoal != null)
         {
-            float sign = Mathf.Sign(team.defendGoal.position.x);
+            float sign = Mathf.Sign(offenderTeam.defendGoal.position.x);
             if (sign == 0f) sign = 1f;
             penalty = victim.position.x * sign >= penaltyZoneX;
         }
 
-        if (penalty) AwardPenalty(offender, team, victim);
-        else Exclude(offender, team);
+        int personalFouls = offender.AddPersonalFoul();
+        bool thirdFoul = personalFouls >= personalFoulsToRemove;
+        if (thirdFoul)
+        {
+            offender.MarkPermanentlyDisqualified();
+            PersonalFoulOutUI.Instance?.Show(offender);
+            if (EventFeed.Instance != null)
+                EventFeed.Instance.AddEvent("3 PERSONAL FOULS - " + offender.DisplayName + " OUT");
+        }
+
+        if (penalty) AwardPenalty(offender, offenderTeam, victim, thirdFoul);
+        else Exclude(offender, offenderTeam, thirdFoul);
     }
 
-    // Penalty: the offender does NOT sit out (the penalty shot is the punishment), but the
-    // exclusion bookkeeping — count, foul reset, permanent-removal-at-max + forfeit — still
-    // applies exactly as a normal exclusion would.
-    void AwardPenalty(Transform offender, TeamSide team, Transform victim)
+    void AwardPenalty(MatchPlayerState offender, TeamSide offenderTeam, Transform victim,
+                      bool thirdFoul)
     {
-        foulTimes.Remove(offender);
+        TeamSide attackingTeam = context != null ? context.EnemyOf(offenderTeam) : null;
+        ReleaseForAward(attackingTeam, "penalty throw awarded");
 
-        int count = (exclusionCount.TryGetValue(offender, out int c) ? c : 0) + 1;
-        exclusionCount[offender] = count;
-
-        if (count >= maxExclusionsPerPlayer)
+        if (thirdFoul)
         {
-            // max reached → permanent removal still applies (roster slot null + disable + forfeit)
-            permanentlyOut.Add(offender);
-            int idx = MemberIndex(team, offender);
-            if (idx >= 0) team.members[idx] = null;
-            offender.gameObject.SetActive(false);
-            if (ActiveCount(team) < minPlayersToContinue) Forfeit(team);
+            SubstitutionManager.Instance?.OnPlayerExcluded(offender);
+            MatchPlayerState replacement =
+                SubstitutionManager.Instance?.InstallImmediateMandatoryReplacement(offender);
+            if (replacement == null) CheckForfeit(offenderTeam);
         }
-        // else: NO temporary exclusion — no roster null, no corner, no excludedNow entry.
-
-        MatchContext ctx = MatchContext.Instance;
-        TeamSide attackingTeam = ctx != null ? ctx.EnemyOf(team) : null;
 
         if (EventFeed.Instance != null)
-            EventFeed.Instance.AddEvent("PENALTY - " + (attackingTeam == playerTeam ? "YOU" : "BOT"));
-
+            EventFeed.Instance.AddEvent("PENALTY - " +
+                (attackingTeam == playerTeam ? "YOU" : "BOT") +
+                " | PF " + offender.PersonalFouls);
         if (PenaltyManager.Instance != null && attackingTeam != null && victim != null)
             PenaltyManager.Instance.StartPenalty(victim, attackingTeam);
     }
 
-    // ---------- internals ----------
+    void Exclude(MatchPlayerState offender, TeamSide offenderTeam, bool thirdFoul)
+    {
+        MatchSquadManager squad = MatchSquadManager.Instance;
+        if (offender == null || offenderTeam == null || squad == null) return;
+        SubstitutionManager.Instance?.OnPlayerExcluded(offender);
+        int slot = squad.MemberIndex(offenderTeam, offender.transform);
+        if (slot < 0) slot = offender.RoleSlot;
+        DropBallHeldBy(offender.transform);
+        squad.RemoveFromField(offender);
+        offender.SetStatus(MatchPlayerStatus.ExclusionExit, false);
+        SetExcludedSorting(offender.transform, true);
+        offender.BeginMove(MatchMovePurpose.Exclusion,
+            squad.Geometry.ExclusionArea(offenderTeam), exclusionExitSpeed,
+            exclusionArrivalRadius, true, true);
+
+        float realSeconds = matchTimer != null
+            ? matchTimer.RealSecondsForDisplayedSeconds(ordinaryExclusionDisplayedSeconds)
+            : ordinaryExclusionDisplayedSeconds * (90f / 480f);
+        TemporaryExclusion exclusion = new TemporaryExclusion
+        {
+            servingPlayer = offender,
+            team = offenderTeam,
+            slot = slot,
+            timer = new CompressedTimer(ordinaryExclusionDisplayedSeconds, realSeconds),
+            phase = ReentryPhase.Exiting
+        };
+        activeExclusions.Add(exclusion);
+
+        if (EventFeed.Instance != null)
+            EventFeed.Instance.AddEvent("Exclusion - " + offender.DisplayName +
+                                        " | PF " + offender.PersonalFouls);
+        if (context != null && context.PossessingTeam != null &&
+            context.PossessingTeam != offenderTeam && ShotClock.Instance != null)
+            ShotClock.Instance.ResetClock();
+
+        // Third-foul replacement is mandatory and must wait for this exclusion's normal release.
+        // The bot also chooses a deterministic substitute immediately; the human may choose one
+        // through Team Management before the automatic fallback is needed.
+        if (thirdFoul || offenderTeam == botTeam)
+        {
+            MatchPlayerState replacement = squad.BestBenchReplacement(offender);
+            if (replacement != null)
+                RequestReplacement(offender, replacement, out _);
+            else if (thirdFoul)
+                CheckForfeit(offenderTeam);
+        }
+        TeamManager.EnsureValidActive();
+    }
+
+    void FreeThrow(TeamSide offenderTeam, Transform victim)
+    {
+        if (context != null && victim != null)
+        {
+            context.StartFreeThrow(victim);
+            context.StartFoulProtection(victim, foulProtectSeconds, foulIdleProtectSeconds);
+            SpawnFoulPopup(victim.position);
+            if (!context.PlayFrozen && foulWhistleFreezeSeconds > 0f)
+                StartCoroutine(FoulWhistleRoutine(context));
+        }
+        TeamSide victimTeam = context != null ? context.EnemyOf(offenderTeam) : null;
+        ReleaseForAward(victimTeam, "free throw awarded");
+        if (EventFeed.Instance != null)
+            EventFeed.Instance.AddEvent("Foul - free throw " +
+                                        (victimTeam == playerTeam ? "YOU" : "BOT"));
+    }
+
+    IEnumerator FoulWhistleRoutine(MatchContext ctx)
+    {
+        ctx.FreezeAll();
+        yield return new WaitForSeconds(foulWhistleFreezeSeconds);
+        if (ctx != null) ctx.Unfreeze();
+    }
+
+    public static void StunSuccessfulStealVictim(Transform victim)
+    {
+        float seconds = Instance != null
+            ? Instance.successfulStealStunSeconds : DefaultSuccessfulStealStunSeconds;
+        FoulStun.Apply(victim, seconds);
+    }
+
+    // ---------- helpers / presentation ----------
 
     void ApplyStealLockout(Transform offender)
     {
-        IAgentBody body = offender.GetComponent<IAgentBody>();
+        IAgentBody body = offender != null ? offender.GetComponent<IAgentBody>() : null;
         if (body != null) body.NextStealTime = Time.time + foulStealLockout;
-
-        PlayerMovement pm = offender.GetComponent<PlayerMovement>();
-        if (pm != null) pm.ApplyStealLockout(foulStealLockout);
-    }
-
-    void Exclude(Transform agent, TeamSide team)
-    {
-        if (agent == null || team == null) return;
-        if (excludedNow.Contains(agent) || permanentlyOut.Contains(agent)) return; // already out
-
-        int idx = MemberIndex(team, agent);
-
-        DropBallHeldBy(agent);                  // drop the ball in place if carrying
-        if (idx >= 0) team.members[idx] = null; // leave the roster (AI + formation auto-adapt)
-        PlaceAtCorner(agent, team);             // park in the goal corner, stop moving
-        foulTimes.Remove(agent);                // fresh foul slate after serving
-
-        int count = (exclusionCount.TryGetValue(agent, out int c) ? c : 0) + 1;
-        exclusionCount[agent] = count;
-
-        if (count >= maxExclusionsPerPlayer)
-        {
-            // permanent removal: never returns, fully disabled
-            permanentlyOut.Add(agent);
-            agent.gameObject.SetActive(false);
-
-            if (ActiveCount(team) < minPlayersToContinue)
-                Forfeit(team);
-        }
-        else
-        {
-            excludedNow.Add(agent);
-            activeExclusions.Add(new Exclusion
-            {
-                agent = agent,
-                team = team,
-                memberIndex = idx,
-                timer = new CompressedTimer(exclusionDisplaySeconds, exclusionRealSeconds)
-            });
-        }
-
-        if (EventFeed.Instance != null)
-            EventFeed.Instance.AddEvent("Exclusion - " + team.teamName);
-
-        // An exclusion by the DEFENDING team (the team without the ball) gives the
-        // attacking team a fresh shot clock.
-        MatchContext mc = MatchContext.Instance;
-        if (mc != null && mc.PossessingTeam != null && mc.PossessingTeam != team &&
-            ShotClock.Instance != null)
-            ShotClock.Instance.ResetClock();
+        PlayerMovement player = offender != null ? offender.GetComponent<PlayerMovement>() : null;
+        if (player != null) player.ApplyStealLockout(foulStealLockout);
     }
 
     void DropBallHeldBy(Transform agent)
     {
-        MatchContext ctx = MatchContext.Instance;
-        if (ctx == null || ctx.Ball == null) return;
-        if (ctx.Ball.transform.parent != agent) return; // not carrying
-
-        IAgentBody body = agent.GetComponent<IAgentBody>();
-        if (body != null) body.IsHolding = false;
-
-        PlayerMovement pm = agent.GetComponent<PlayerMovement>();
-        if (pm != null) { pm.ReleaseBall(); return; } // detaches the ball + clears possession
-
-        // pure AI body: detach manually
-        ctx.Ball.transform.SetParent(null);
-        ctx.Ball.simulated = true;
-        ctx.Ball.linearVelocity = Vector2.zero;
-        ctx.SetPossession(null);
+        if (context == null || context.Ball == null || agent == null ||
+            !context.Ball.transform.IsChildOf(agent)) return;
+        context.ForceDropHeldBall();
     }
 
-    // Park at the fixed penalty-box coordinate for the side the team currently defends.
-    void PlaceAtCorner(Transform agent, TeamSide team)
+    void CheckForfeit(TeamSide losingTeam)
     {
-        Vector2 p = ExclusionPositionFor(team);
-        agent.position = new Vector3(p.x, p.y, agent.position.z);
-        SetExcludedSorting(agent, true);
-
-        Rigidbody2D rb = agent.GetComponent<Rigidbody2D>();
-        if (rb != null)
-        {
-            rb.position = p;
-            rb.linearVelocity = Vector2.zero;
-            rb.angularVelocity = 0f;
-        }
-    }
-
-    int MemberIndex(TeamSide team, Transform agent)
-    {
-        if (team == null || team.members == null) return -1;
-        for (int i = 0; i < team.members.Length; i++)
-            if (team.members[i] == agent) return i;
-        return -1;
-    }
-
-    // Players still available to a team = original roster minus permanent removals.
-    int ActiveCount(TeamSide team)
-    {
-        if (team == null || !originalRoster.TryGetValue(team, out Transform[] roster)) return int.MaxValue;
-        int n = 0;
-        foreach (Transform t in roster)
-            if (t != null && !permanentlyOut.Contains(t)) n++;
-        return n;
-    }
-
-    void Forfeit(TeamSide losingTeam)
-    {
+        MatchSquadManager squad = MatchSquadManager.Instance;
+        if (squad == null || squad.AvailableNonDisqualifiedCount(losingTeam) >= minPlayersToContinue)
+            return;
         if (EventFeed.Instance != null)
             EventFeed.Instance.AddEvent("Forfeit - " + (losingTeam != null ? losingTeam.teamName : "?"));
+        if (matchTimer != null) matchTimer.ForfeitMatch(losingTeam != playerTeam);
+    }
 
-        if (matchTimer == null) return;
-        bool playerWins = losingTeam != playerTeam; // the OTHER team wins
-        matchTimer.ForfeitMatch(playerWins);
+    void SetExcludedSorting(Transform agent, bool excluded)
+    {
+        if (agent == null) return;
+        SpriteRenderer[] renderers = agent.GetComponentsInChildren<SpriteRenderer>(true);
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            SpriteRenderer renderer = renderers[i];
+            if (renderer == null) continue;
+            if (excluded)
+            {
+                if (!regularSortingOrders.ContainsKey(renderer))
+                    regularSortingOrders[renderer] = renderer.sortingOrder;
+                renderer.sortingOrder = Mathf.Max(renderer.sortingOrder, excludedSortingOrder);
+            }
+            else if (regularSortingOrders.TryGetValue(renderer, out int original))
+            {
+                renderer.sortingOrder = original;
+                regularSortingOrders.Remove(renderer);
+            }
+        }
     }
 
     void UpdateHud()
     {
         if (exclusionText == null) return;
-
-        float youMax = -1f, botMax = -1f;
-        foreach (Exclusion e in activeExclusions)
+        float you = -1f;
+        float bot = -1f;
+        for (int i = 0; i < activeExclusions.Count; i++)
         {
-            float rem = e.timer.DisplayValue; // HUD prints the compressed scale (20 → 0)
-            if (e.timer.IsComplete) continue;
-            if (e.team == playerTeam) { if (rem > youMax) youMax = rem; }
-            else if (e.team == botTeam) { if (rem > botMax) botMax = rem; }
+            TemporaryExclusion exclusion = activeExclusions[i];
+            float remaining = exclusion.releaseAuthorized ? 0f : exclusion.timer.DisplayValue;
+            if (exclusion.team == playerTeam) you = Mathf.Max(you, remaining);
+            else if (exclusion.team == botTeam) bot = Mathf.Max(bot, remaining);
         }
-
-        if (youMax < 0f && botMax < 0f) { exclusionText.enabled = false; return; }
-
-        string s = "";
-        if (youMax >= 0f) s += "YOU EXC: " + youMax.ToString("0.0");
-        if (botMax >= 0f) { if (s.Length > 0) s += "   "; s += "BOT EXC: " + botMax.ToString("0.0"); }
-
+        if (you < 0f && bot < 0f) { exclusionText.enabled = false; return; }
+        string value = string.Empty;
+        if (you >= 0f) value = "YOU EXC  0:" + Mathf.CeilToInt(you).ToString("00");
+        if (bot >= 0f)
+        {
+            if (value.Length > 0) value += "     ";
+            value += "BOT EXC  0:" + Mathf.CeilToInt(bot).ToString("00");
+        }
         exclusionText.enabled = true;
-        exclusionText.text = s;
+        exclusionText.text = value;
+    }
+
+    TMP_Text BuildFallbackExclusionHud()
+    {
+        GameObject canvasObject = new GameObject("ExclusionHudCanvas");
+        canvasObject.transform.SetParent(transform, false);
+        Canvas canvas = canvasObject.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 94;
+        CanvasScaler scaler = canvasObject.AddComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1280f, 720f);
+        GameObject labelObject = new GameObject("ExclusionCountdown");
+        labelObject.transform.SetParent(canvasObject.transform, false);
+        TextMeshProUGUI label = labelObject.AddComponent<TextMeshProUGUI>();
+        label.fontSize = 22f;
+        label.fontStyle = FontStyles.Bold;
+        label.color = new Color(1f, 0.80f, 0.23f);
+        label.alignment = TextAlignmentOptions.Left;
+        label.raycastTarget = false;
+        RectTransform rect = label.rectTransform;
+        rect.anchorMin = rect.anchorMax = new Vector2(0f, 1f);
+        rect.pivot = new Vector2(0f, 1f);
+        rect.anchoredPosition = new Vector2(24f, -145f);
+        rect.sizeDelta = new Vector2(500f, 42f);
+        return label;
+    }
+
+    void SpawnFoulPopup(Vector3 position)
+    {
+        GameObject popup = new GameObject("FoulPopup");
+        popup.transform.position = position + Vector3.up * 0.9f;
+        TextMesh text = popup.AddComponent<TextMesh>();
+        text.text = "FOUL!";
+        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        text.fontSize = 64;
+        text.fontStyle = FontStyle.Bold;
+        text.characterSize = 0.035f;
+        text.anchor = TextAnchor.MiddleCenter;
+        text.alignment = TextAlignment.Center;
+        text.color = new Color(1f, 0.85f, 0.15f);
+        MeshRenderer renderer = popup.GetComponent<MeshRenderer>();
+        if (text.font != null) renderer.material = text.font.material;
+        renderer.sortingOrder = 90;
+        StartCoroutine(FoulPopupRoutine(popup.transform, text));
+    }
+
+    IEnumerator FoulPopupRoutine(Transform popup, TextMesh text)
+    {
+        const float seconds = 1.1f;
+        Color color = text.color;
+        float elapsed = 0f;
+        while (elapsed < seconds && popup != null)
+        {
+            elapsed += Time.deltaTime;
+            float progress = Mathf.Clamp01(elapsed / seconds);
+            popup.position += Vector3.up * (0.35f * Time.deltaTime);
+            text.color = new Color(color.r, color.g, color.b, 1f - progress * progress);
+            yield return null;
+        }
+        if (popup != null) Destroy(popup.gameObject);
+    }
+}
+
+// Clear mandatory notification.  It is informational only: a third foul is never offered as an
+// ACCEPT/IGNORE choice.
+sealed class PersonalFoulOutUI : MonoBehaviour
+{
+    public static PersonalFoulOutUI Instance { get; private set; }
+    private GameObject root;
+    private TMP_Text detail;
+    private float remaining;
+
+    public static PersonalFoulOutUI Ensure(GameObject owner)
+    {
+        if (Instance != null) return Instance;
+        PersonalFoulOutUI ui = owner.GetComponent<PersonalFoulOutUI>();
+        if (ui == null) ui = owner.AddComponent<PersonalFoulOutUI>();
+        return ui;
+    }
+
+    void Awake()
+    {
+        Instance = this;
+        Build();
+        root.SetActive(false);
+    }
+
+    void OnDestroy() { if (Instance == this) Instance = null; }
+
+    public void Show(MatchPlayerState player)
+    {
+        if (player == null) return;
+        detail.text = "3 PERSONAL FOULS\n<color=#FF5A66>PLAYER OUT</color>\n<size=65%>#" +
+                      player.CapNumber + "  " + player.DisplayName + "</size>";
+        remaining = 2.6f;
+        root.SetActive(true);
+    }
+
+    void Update()
+    {
+        if (!root.activeSelf || Time.timeScale <= 0f) return;
+        remaining -= Time.deltaTime;
+        if (remaining <= 0f) root.SetActive(false);
+    }
+
+    void Build()
+    {
+        if (Object.FindAnyObjectByType<EventSystem>() == null)
+        {
+            GameObject events = new GameObject("EventSystem");
+            events.AddComponent<EventSystem>();
+            events.AddComponent<StandaloneInputModule>();
+        }
+        root = new GameObject("PersonalFoulOutCanvas");
+        root.transform.SetParent(transform, false);
+        Canvas canvas = root.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 116;
+        CanvasScaler scaler = root.AddComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1280f, 720f);
+
+        GameObject panel = new GameObject("MandatoryRemovalBanner");
+        panel.transform.SetParent(root.transform, false);
+        RectTransform panelRect = panel.AddComponent<RectTransform>();
+        panelRect.anchorMin = panelRect.anchorMax = new Vector2(0.5f, 0.5f);
+        panelRect.sizeDelta = new Vector2(560f, 205f);
+        Image image = panel.AddComponent<Image>();
+        image.color = new Color(0.025f, 0.075f, 0.17f, 0.97f);
+        Outline outline = panel.AddComponent<Outline>();
+        outline.effectColor = new Color(1f, 0.77f, 0.20f, 1f);
+        outline.effectDistance = new Vector2(3f, -3f);
+
+        GameObject textObject = new GameObject("Message");
+        textObject.transform.SetParent(panel.transform, false);
+        detail = textObject.AddComponent<TextMeshProUGUI>();
+        detail.fontSize = 34f;
+        detail.fontStyle = FontStyles.Bold;
+        detail.alignment = TextAlignmentOptions.Center;
+        detail.color = Color.white;
+        detail.raycastTarget = false;
+        RectTransform textRect = detail.rectTransform;
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        textRect.offsetMin = new Vector2(15f, 12f);
+        textRect.offsetMax = new Vector2(-15f, -12f);
     }
 }
 
 // Short visual/action lock applied whenever a carrier actually loses the ball to a close-range
-// steal. Kept in this file so the existing foul/steal owner supplies the visual with no wiring.
+// steal.  This remains independent of disciplinary state.
 sealed class FoulStun : MonoBehaviour
 {
     private float stunnedUntil;
@@ -658,20 +827,16 @@ sealed class FoulStun : MonoBehaviour
             enabled = false;
             return;
         }
-
         if (stars == null) return;
-        float t = Time.time - startedAt;
-        stars.localPosition = new Vector3(Mathf.Sin(t * 9f) * 0.07f,
-                                          0.78f + Mathf.Sin(t * 6f) * 0.04f, 0f);
-        stars.localRotation = Quaternion.Euler(0f, 0f, t * 220f);
-        float pulse = 1f + Mathf.Sin(t * 12f) * 0.12f;
+        float elapsed = Time.time - startedAt;
+        stars.localPosition = new Vector3(Mathf.Sin(elapsed * 9f) * 0.07f,
+                                          0.78f + Mathf.Sin(elapsed * 6f) * 0.04f, 0f);
+        stars.localRotation = Quaternion.Euler(0f, 0f, elapsed * 220f);
+        float pulse = 1f + Mathf.Sin(elapsed * 12f) * 0.12f;
         stars.localScale = new Vector3(pulse, pulse, 1f);
     }
 
-    void OnDisable()
-    {
-        if (stars != null) stars.gameObject.SetActive(false);
-    }
+    void OnDisable() { if (stars != null) stars.gameObject.SetActive(false); }
 
     void BuildStars()
     {
@@ -679,13 +844,11 @@ sealed class FoulStun : MonoBehaviour
         root.hideFlags = HideFlags.DontSave;
         root.transform.SetParent(transform, false);
         stars = root.transform;
-
         if (starMaterial == null)
         {
             starMaterial = new Material(Shader.Find("Sprites/Default"));
             starMaterial.hideFlags = HideFlags.DontSave;
         }
-
         for (int i = 0; i < 3; i++)
         {
             float angle = i * Mathf.PI * 2f / 3f;
@@ -694,7 +857,6 @@ sealed class FoulStun : MonoBehaviour
             star.transform.SetParent(stars, false);
             star.transform.localPosition = new Vector3(Mathf.Cos(angle) * 0.34f,
                                                        Mathf.Sin(angle) * 0.12f, 0f);
-
             LineRenderer line = star.AddComponent<LineRenderer>();
             line.useWorldSpace = false;
             line.loop = true;
@@ -704,11 +866,12 @@ sealed class FoulStun : MonoBehaviour
             line.sortingOrder = 95;
             line.startColor = new Color(1f, 0.9f, 0.15f, 1f);
             line.endColor = new Color(1f, 0.55f, 0.05f, 1f);
-            for (int p = 0; p < 10; p++)
+            for (int point = 0; point < 10; point++)
             {
-                float a = Mathf.PI * 0.5f + p * Mathf.PI / 5f;
-                float r = (p & 1) == 0 ? 0.105f : 0.045f;
-                line.SetPosition(p, new Vector3(Mathf.Cos(a) * r, Mathf.Sin(a) * r, 0f));
+                float pointAngle = Mathf.PI * 0.5f + point * Mathf.PI / 5f;
+                float radius = (point & 1) == 0 ? 0.105f : 0.045f;
+                line.SetPosition(point, new Vector3(Mathf.Cos(pointAngle) * radius,
+                                                    Mathf.Sin(pointAngle) * radius, 0f));
             }
         }
     }

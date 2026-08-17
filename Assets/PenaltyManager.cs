@@ -8,7 +8,7 @@ using TMPro;
 // The fouled team's shooter takes a 1-on-keeper shot from the penalty spot. A human
 // shooter charges with Space (PlayerMovement grants a frozen-shooter exemption); an AI
 // shooter auto-fires after a short delay (with a miss chance). The keeper keeps tracking
-// the ball during the freeze (Goalkeeper does not gate on PlayFrozen), so it can defend.
+// the ball during the penalty freeze (but stands down if a timeout is layered over it).
 // On the shot's release the freeze lifts and a goal flows through the normal Goal path.
 public class PenaltyManager : MonoBehaviour
 {
@@ -40,7 +40,7 @@ public class PenaltyManager : MonoBehaviour
     private Rigidbody2D shooterRb;
     private Vector3 spotPos;
     private TeamSide attackingTeam;
-    private float startTime;
+    private float activeElapsed;
 
     void Awake() { Instance = this; }
 
@@ -50,8 +50,36 @@ public class PenaltyManager : MonoBehaviour
     }
 
     public bool Active => active;
+    public TeamSide AttackingTeam => attackingTeam;
     public bool IsActiveShooter(Transform t) => active && t != null && t == shooter;
     public float AimCone => penaltyAimCone;
+
+    // TimeoutManager uses these exact existing penalty coordinates for the final 15 displayed
+    // seconds, but moves swimmers there through MatchPlayerState instead of snapping them.
+    public bool TryGetTimeoutRestartTarget(Transform player, out Vector2 target)
+    {
+        target = player != null ? (Vector2)player.position : Vector2.zero;
+        if (!active || player == null || attackingTeam == null || attackingTeam.attackGoal == null)
+            return false;
+        if (player == shooter)
+        {
+            target = spotPos;
+            return true;
+        }
+
+        MatchContext ctx = MatchContext.Instance;
+        bool fieldPlayer = ctx != null &&
+            ((ctx.PlayerTeam != null && ctx.PlayerTeam.Contains(player)) ||
+             (ctx.BotTeam != null && ctx.BotTeam.Contains(player)));
+        if (!fieldPlayer) return false;
+        float goalSign = Mathf.Sign(attackingTeam.attackGoal.position.x);
+        if (goalSign == 0f) goalSign = 1f;
+        float targetX = goalSign * penaltySpotX - goalSign * behindSpotMargin;
+        float x = player.position.x;
+        if (goalSign * x > goalSign * targetX) x = targetX;
+        target = new Vector2(x, Mathf.Clamp(player.position.y, -PoolHalfHeight, PoolHalfHeight));
+        return true;
+    }
 
     // Direction from the active shooter toward the attacked goal's centre (the aim-cone axis).
     public Vector2 ShooterGoalDir()
@@ -70,7 +98,7 @@ public class PenaltyManager : MonoBehaviour
         this.shooter = shooter;
         this.attackingTeam = attackingTeam;
         this.humanShooter = (attackingTeam == ctx.PlayerTeam); // player-team victim → human takes it
-        this.startTime = Time.time;
+        this.activeElapsed = 0f;
         this.shotFired = false;
         this.active = true;
 
@@ -131,6 +159,12 @@ public class PenaltyManager : MonoBehaviour
         MatchContext ctx = MatchContext.Instance;
         if (ctx == null) { Resolve(null); return; }
 
+        // A timeout may be taken before this awarded penalty is released.  Preserve the shooter,
+        // ball parent and full-freeze owner, and do not let either AI delay or safety deadline burn
+        // while the official timeout clock is running.
+        if (ctx.WaterPoloStoppageActive) return;
+        activeElapsed += Time.deltaTime;
+
         // shot taken (ball released / no longer the shooter's) → resolve
         if (ctx.PossessingTeam == null || ctx.Ball == null || ctx.Ball.transform.parent != shooter)
         { Resolve(ctx); return; }
@@ -143,7 +177,7 @@ public class PenaltyManager : MonoBehaviour
         }
 
         // safety: never stall the match if the shooter never releases
-        if (Time.time - startTime >= maxPenaltySeconds)
+        if (activeElapsed >= maxPenaltySeconds)
         {
             ctx.ForceDropHeldBall();
             Resolve(ctx);
@@ -151,7 +185,7 @@ public class PenaltyManager : MonoBehaviour
         }
 
         // AI shooter auto-fires once, after the delay
-        if (!humanShooter && !shotFired && Time.time - startTime >= aiShootDelay)
+        if (!humanShooter && !shotFired && activeElapsed >= aiShootDelay)
             FireAIShot(ctx);
     }
 

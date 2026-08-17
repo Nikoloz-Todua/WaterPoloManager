@@ -189,6 +189,13 @@ public class ScoreManager : MonoBehaviour
         // The team that CONCEDED restarts with possession.
         TeamSide conceding = (scorer == playerTeam) ? botTeam : playerTeam;
 
+        // Close any half-completed flying exchange before the replay snapshots/reset formations,
+        // then authorize every temporary exclusion immediately on the awarded goal.
+        if (SubstitutionManager.Instance != null)
+            SubstitutionManager.Instance.ResolveForMatchStoppage();
+        if (ExclusionManager.Instance != null)
+            ExclusionManager.Instance.NotifyGoalAwarded();
+
         // Centre-goal tracking (Feature 3): if the scorer team's CENTRE released the
         // shot, the conceding team remembers it — feeds the bot's adaptive Drop defense.
         Transform shooter = MatchContext.Instance != null ? MatchContext.Instance.LastReleaser : null;
@@ -374,6 +381,11 @@ public class ScoreManager : MonoBehaviour
 
         // Phase 3 — silent restart pause: still frozen, ball held at centre, no UI, no countdown.
         yield return new WaitForSeconds(postGoalPauseSeconds);
+
+        // The conceding team may take a timeout once it owns this restart. Let that timeout
+        // finish before the existing goal-restart freeze releases play.
+        while (TimeoutManager.Instance != null && TimeoutManager.Instance.Active)
+            yield return null;
 
         // Phase 4 — resume play. The holder begins the attack: a bot relays the kickoff to its
         // deepest mate, a human is free to pass/move immediately (the pending flag clears on the

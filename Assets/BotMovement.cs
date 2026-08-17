@@ -46,7 +46,8 @@ public class BotMovement : MonoBehaviour, IAgentBody
         // Bot adaptive defense (Feature 3): poll the team evaluator on a slow timer.
         // EvaluateDefenseMode gates itself (isAI + interval + hysteresis), so all six
         // bots polling is safe and needs no extra wiring.
-        if (myTeam == null || Time.time < nextDefenseEvalTime) return;
+        if (myTeam == null || !MatchPlayerState.AllowsNormalControl(transform) ||
+            Time.time < nextDefenseEvalTime) return;
         nextDefenseEvalTime = Time.time + defenseEvalPoll;
         myTeam.EvaluateDefenseMode();
     }
@@ -56,7 +57,10 @@ public class BotMovement : MonoBehaviour, IAgentBody
         MatchContext ctx = MatchContext.Instance;
 
         // Play frozen (sprint duel / goal settle) → inert. Sprinters are moved by SprintDuel.
-        if (ctx != null && ctx.PlayFrozen) { rb.linearVelocity = Vector2.zero; return; }
+        if (ctx != null && ctx.CompetitivePlayStopped) { rb.linearVelocity = Vector2.zero; return; }
+
+        if (!MatchPlayerState.AllowsNormalControl(transform))
+        { rb.linearVelocity = Vector2.zero; return; }
 
         // Excluded → fully inert (frozen in the corner), brain does not run.
         if (ExclusionManager.Instance != null && ExclusionManager.Instance.IsExcluded(transform))

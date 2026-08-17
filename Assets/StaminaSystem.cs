@@ -146,8 +146,12 @@ public class StaminaSystem : MonoBehaviour
     // ---- field-swimmer core drain / recovery ----
     void UpdateStamina(float dt)
     {
-        bool excluded = ExclusionManager.Instance != null &&
-                        ExclusionManager.Instance.IsExcluded(transform);
+        MatchPlayerState matchPlayer = MatchPlayerState.For(transform);
+        if (matchPlayer != null && matchPlayer.MovePurpose == MatchMovePurpose.Q1Huddle)
+            return; // the pre-match presentation is not competitive exertion
+        bool excluded = matchPlayer != null
+            ? matchPlayer.IsRestingForStamina
+            : ExclusionManager.Instance != null && ExclusionManager.Instance.IsExcluded(transform);
         bool moving = rb != null && rb.linearVelocity.magnitude >= idleSpeed;
         bool holding = (pm != null && pm.IsHolding) || (agent != null && agent.IsHolding);
 

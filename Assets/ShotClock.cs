@@ -47,7 +47,7 @@ public class ShotClock : MonoBehaviour
 
         // Paused when the match is over, while play is frozen (sprint duel / goal settle /
         // penalty), or during a free throw.
-        if ((matchTimer != null && matchTimer.MatchOver) || ctx.PlayFrozen || ctx.FreeThrowActive)
+        if ((matchTimer != null && matchTimer.MatchOver) || ctx.ClocksStopped || ctx.FreeThrowActive)
         { UpdateDisplay(); return; }
 
         TeamSide cur = ctx.PossessingTeam;

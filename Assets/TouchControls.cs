@@ -117,6 +117,25 @@ public class TouchControls : MonoBehaviour
     // screen, then everything returns instantly. No-op on platforms where the UI never shows.
     public void SetGameplayVisible(bool visible)
     {
+        if (!visible)
+        {
+            joystick?.Clear();
+            topBtn?.Clear(); brBtn?.Clear(); blBtn?.Clear(); passOutBtn?.Clear(); lobBtn?.Clear();
+            prevTop = prevBR = prevBL = prevLob = false;
+            lobArmed = false;
+            PlayerMovement active = TeamManager.ActivePlayer;
+            if (active != null)
+                active.SetTouchInput(Vector2.zero, false, false, false,
+                                     false, false, false, false, false);
+            MatchContext context = MatchContext.Instance;
+            if (context != null && context.Ball != null && context.Ball.transform.parent != null)
+            {
+                Goalkeeper keeper = context.Ball.transform.parent.GetComponent<Goalkeeper>();
+                if (keeper != null)
+                    keeper.SetTouchInput(Vector2.zero, false, false, false,
+                                         false, false, false, false);
+            }
+        }
         if (canvasRoot != null) canvasRoot.SetActive(baseVisible && visible);
     }
 
@@ -445,7 +464,7 @@ public class TouchControls : MonoBehaviour
         {
             PlayerMovement act = TeamManager.ActivePlayer;
             pct = act != null ? Mathf.Clamp01(act.StaminaPercent01) : 1f;
-            label = "P" + (TeamManager.ActivePlayerIndex + 1);
+            label = "#" + TeamManager.ActiveCapNumber;
         }
 
         // label — updates instantly on a switch (only re-set when it changes)
@@ -654,6 +673,12 @@ class TouchJoystick : MonoBehaviour, IPointerDownHandler, IDragHandler, IPointer
         knob.anchoredPosition = Vector2.zero;
     }
 
+    public void Clear()
+    {
+        Axis = Vector2.zero;
+        if (knob != null) knob.anchoredPosition = Vector2.zero;
+    }
+
     void Move(PointerEventData e)
     {
         Vector2 local;
@@ -681,6 +706,7 @@ class TouchButton : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
 
     public void OnPointerDown(PointerEventData e) { Pressed = true; }
     public void OnPointerUp(PointerEventData e) { Pressed = false; }
+    public void Clear() { Pressed = false; }
 
     void Update()
     {

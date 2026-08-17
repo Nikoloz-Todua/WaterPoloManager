@@ -292,8 +292,9 @@ public class PlayerMovement : MonoBehaviour
     {
         if (indicator != null)
         {
-            indicator.enabled = IsActive;
-            if (IsActive) // gentle bounce above the head while controlled
+            bool showIndicator = IsActive && MatchPlayerState.IsGameplayEligible(transform);
+            indicator.enabled = showIndicator;
+            if (showIndicator) // gentle bounce above the head while controlled
                 indicator.transform.localPosition = new Vector3(
                     0f, IndicatorBaseY + Mathf.Sin(Time.time * IndicatorBobSpeed) * IndicatorBobAmount, 0f);
         }
@@ -306,7 +307,7 @@ public class PlayerMovement : MonoBehaviour
         //     keeper, so it can't linger into those states. (The sprint duel uses its own tap
         //     mechanic in SprintDuel — this is only regular gameplay.) ---
         MatchContext sctx = MatchContext.Instance;
-        bool sprintFrozen = sctx != null && sctx.PlayFrozen;
+        bool sprintFrozen = sctx != null && sctx.CompetitivePlayStopped;
         bool keeperHasHuman = sctx != null && sctx.KeeperHolding && sctx.KeeperHoldTeam == sctx.PlayerTeam;
         sprintHeld = IsActive && !sprintFrozen && !Excluded && !keeperHasHuman &&
                      (Input.GetKey(KeyCode.LeftShift) || touchSprintHeld);
@@ -321,11 +322,17 @@ public class PlayerMovement : MonoBehaviour
 
         // Play frozen (sprint duel / goal settle / penalty) → no control, charge, steal, or aim
         // — EXCEPT the active penalty shooter, who may only charge & shoot (Space), no moving.
-        if (MatchContext.Instance != null && MatchContext.Instance.PlayFrozen)
+        bool transitionBlocked = !MatchPlayerState.AllowsNormalControl(transform);
+        if (MatchContext.Instance != null && MatchContext.Instance.CompetitivePlayStopped ||
+            transitionBlocked)
         {
             IsLooseHold = false; // no sprinting while play is frozen
 
-            bool penaltyShooter = PenaltyManager.Instance != null &&
+            bool penaltyShooter = MatchContext.Instance != null &&
+                                  MatchContext.Instance.PlayFrozen &&
+                                  !MatchContext.Instance.WaterPoloStoppageActive &&
+                                  MatchPlayerState.IsGameplayEligible(transform) &&
+                                  PenaltyManager.Instance != null &&
                                   PenaltyManager.Instance.IsActiveShooter(transform);
             if (penaltyShooter && isHolding)
             {
@@ -520,8 +527,10 @@ public class PlayerMovement : MonoBehaviour
     void FixedUpdate()
     {
         if (rb == null) return; // no body → nothing to drive (defensive)
-        if (MatchContext.Instance != null && MatchContext.Instance.PlayFrozen)
+        if (MatchContext.Instance != null && MatchContext.Instance.CompetitivePlayStopped)
         { rb.linearVelocity = Vector2.zero; return; } // frozen during duel / goal settle
+        if (!MatchPlayerState.AllowsNormalControl(transform))
+        { rb.linearVelocity = Vector2.zero; return; }
         if (Excluded) { rb.linearVelocity = Vector2.zero; return; } // frozen in the corner
         if (FoulStun.IsStunned(transform)) { rb.linearVelocity = Vector2.zero; return; }
         if (!IsActive) return;
@@ -654,7 +663,9 @@ public class PlayerMovement : MonoBehaviour
         if (ball == null) return false;
 
         MatchContext ctx = MatchContext.Instance;
-        if (ctx == null || ctx.PlayFrozen || !ctx.BallIsLoose || !ctx.CanGrab(ctx.PlayerTeam))
+        if (ctx == null || ctx.CompetitivePlayStopped ||
+            !MatchPlayerState.IsGameplayEligible(transform) ||
+            !ctx.BallIsLoose || !ctx.CanGrab(ctx.PlayerTeam))
             return false;
         if (ctx.OutOfBoundsRestartActive) return false; // fetch first; no long-range one-touch restart
         if (ball.transform.parent != null || !ball.simulated) return false;

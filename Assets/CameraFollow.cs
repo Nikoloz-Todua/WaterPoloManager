@@ -127,7 +127,7 @@ public class CameraFollow : MonoBehaviour
         // ---- BEFORE the first touch (game start, after a goal, between quarters): hold the wide
         //      pool overview centred on (0,0) at maxSize 5.0 — no following — until someone grabs
         //      the ball (Task 1). The goal shake still plays over this recenter. ----
-        if (!ctx.BallTouchedSinceReset)
+        if (!ctx.BallTouchedSinceReset || ctx.WaterPoloStoppageActive)
         {
             Vector2 ov = Vector2.SmoothDamp(transform.position, Vector2.zero, ref followVelocity,
                                             SmoothTime(followSpeed), Mathf.Infinity, dt);

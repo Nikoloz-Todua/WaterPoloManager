@@ -167,6 +167,19 @@ public class Goalkeeper : MonoBehaviour
 
     void Update()
     {
+        MatchContext actionContext = MatchContext.Instance;
+        bool defendingPenalty = PenaltyManager.Instance != null && PenaltyManager.Instance.Active &&
+                                actionContext != null && actionContext.PlayFrozen &&
+                                !actionContext.WaterPoloStoppageActive;
+        if (actionContext != null && actionContext.CompetitivePlayStopped && !defendingPenalty)
+        {
+            chargingShot = false; currentPower = 0f;
+            chargingPass = false; passPower = 0f;
+            ClearKeeperTouch();
+            UpdateKeeperHud();
+            return;
+        }
+
         if (FoulStun.IsStunned(transform))
         {
             chargingShot = false; currentPower = 0f;
@@ -238,7 +251,10 @@ public class Goalkeeper : MonoBehaviour
         // keeper kept tracking/collecting through freezes; harmless before, but the goal
         // HANG TIME leaves the dead ball sitting in its net, and it would fish it straight
         // back out mid-celebration (stale keeper-hold state through the restart).
-        if (ctx != null && ctx.PlayFrozen) return;
+        bool defendingPenalty = PenaltyManager.Instance != null && PenaltyManager.Instance.Active &&
+                                ctx != null && ctx.PlayFrozen && !ctx.WaterPoloStoppageActive;
+        if (ctx != null && ctx.CompetitivePlayStopped && !defendingPenalty)
+        { rb.linearVelocity = Vector2.zero; return; }
         if (FoulStun.IsStunned(transform)) { rb.linearVelocity = Vector2.zero; return; }
 
         if (holding) { HoldTick(ctx); return; }

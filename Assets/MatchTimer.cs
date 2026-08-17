@@ -29,6 +29,21 @@ public class MatchTimer : MonoBehaviour
 
     // read-only access for other systems (shot clock pauses on this; event feed stamps with it)
     public bool MatchOver => matchOver;
+    public bool QuarterBreakActive => awaitingResume;
+    public int CurrentQuarter => currentQuarter;
+    public float QuarterRealLength => quarterLength;
+    public float QuarterDisplayLength => displayQuarterLength;
+    public float QuarterRealElapsed => Mathf.Clamp(quarterLength - quarter.RealRemaining, 0f, quarterLength);
+
+    // One central compression ratio for exclusions, timeouts and any later official game-time
+    // duration.  With the current 480 displayed / 90 real tuning: 18 -> 3.375, 60 -> 11.25.
+    public float RealSecondsForDisplayedSeconds(float displayedSeconds)
+        => Mathf.Max(0f, displayedSeconds) * quarterLength /
+           Mathf.Max(0.01f, displayQuarterLength);
+
+    public float DisplayedSecondsForRealSeconds(float realSeconds)
+        => Mathf.Max(0f, realSeconds) * displayQuarterLength /
+           Mathf.Max(0.01f, quarterLength);
 
     // Whole-match seconds remaining (rest of this quarter + all quarters still to play).
     // Used by the bot's adaptive defense ("protect a late lead").
@@ -51,8 +66,12 @@ public class MatchTimer : MonoBehaviour
         UpdateQuarterText();
         UpdateTimerText();
 
-        // Q1 begins with a sprint duel (the duel freezes play; the clock waits below).
-        if (SprintDuel.Instance != null) SprintDuel.Instance.StartDuel();
+        // Q1 alone gets the short huddle presentation; it hands back to the unchanged duel
+        // countdown/tap race after every body has physically returned to the duel's own positions.
+        if (Q1MatchIntro.Instance != null && SprintDuel.Instance != null)
+            Q1MatchIntro.Instance.StartIntro(() => SprintDuel.Instance.StartPreparedDuel());
+        else if (SprintDuel.Instance != null)
+            SprintDuel.Instance.StartDuel();
     }
 
     void Update()
@@ -63,7 +82,7 @@ public class MatchTimer : MonoBehaviour
         // The quarter clock is paused while play is frozen (sprint duel line-up/race,
         // post-goal settle), so the timer only drains during live play.
         MatchContext ctx = MatchContext.Instance;
-        if (ctx != null && ctx.PlayFrozen) { UpdateTimerText(); return; }
+        if (ctx != null && ctx.ClocksStopped) { UpdateTimerText(); return; }
 
         quarter.Tick(Time.deltaTime);
 
@@ -90,11 +109,13 @@ public class MatchTimer : MonoBehaviour
         MatchContext ctx = MatchContext.Instance;
         if (ctx != null) ctx.FreezeAll();
 
-        // The quarter boundary itself ends unfinished TEMPORARY exclusions. Do this as the
-        // break begins (not when RESUME is pressed) so the reset rule is immediate and the
-        // complete eligible roster is already restored for the next-quarter lineup.
+        if (SubstitutionManager.Instance != null)
+            SubstitutionManager.Instance.OnQuarterEnded();
         if (ExclusionManager.Instance != null)
-            ExclusionManager.Instance.EndTemporaryExclusionsForRestart();
+            ExclusionManager.Instance.OnQuarterEnded();
+
+        // A quarter boundary is not an exclusion-release condition. Timers stop during the
+        // break/duel and any unserved displayed seconds carry into the next period.
 
         if (TouchControls.Instance != null) TouchControls.Instance.SetGameplayVisible(false);
 
@@ -133,6 +154,7 @@ public class MatchTimer : MonoBehaviour
     void EndMatch()
     {
         matchOver = true;
+        ShutdownMatchTransitions();
         Time.timeScale = 0f; // freeze all movement + AI
 
         int you = scoreManager != null ? scoreManager.HomeScore : 0;
@@ -176,6 +198,7 @@ public class MatchTimer : MonoBehaviour
     {
         if (matchOver) return;
         matchOver = true;
+        ShutdownMatchTransitions();
         Time.timeScale = 0f;
 
         int you = scoreManager != null ? scoreManager.HomeScore : 0;
@@ -203,6 +226,13 @@ public class MatchTimer : MonoBehaviour
 
         resultText.gameObject.SetActive(true);
         resultText.text = "FORFEIT\n" + outcome + "\n" + you + " - " + bot;
+    }
+
+    void ShutdownMatchTransitions()
+    {
+        SubstitutionManager.Instance?.Shutdown();
+        TimeoutManager.Instance?.Shutdown();
+        Q1MatchIntro.Instance?.Shutdown();
     }
 
     void UpdateTimerText()

@@ -4,6 +4,13 @@ using UnityEngine;
 
 // The single shared "truth" about the match that every AI reads.
 // Knows where the ball is and which team currently has possession.
+public enum WaterPoloStoppageKind
+{
+    None,
+    Timeout
+}
+
+[DefaultExecutionOrder(-500)]
 public class MatchContext : MonoBehaviour
 {
     public static MatchContext Instance { get; private set; }
@@ -66,6 +73,15 @@ public class MatchContext : MonoBehaviour
 
     // While true, all swimmers freeze (sprint-duel line-up/race, goal settle, etc).
     public bool PlayFrozen { get; private set; }
+
+    // A rules stoppage is deliberately NOT a full freeze. Competitive actions and both clocks
+    // stop, while MatchPlayerState-owned swimmers may still travel for a timeout/substitution.
+    public WaterPoloStoppageKind WaterPoloStoppage { get; private set; }
+    public TeamSide StoppageRestartTeam { get; private set; }
+    public bool WaterPoloStoppageActive => WaterPoloStoppage != WaterPoloStoppageKind.None;
+    public bool CompetitivePlayStopped => PlayFrozen || WaterPoloStoppageActive;
+    public bool ClocksStopped => PlayFrozen || WaterPoloStoppageActive;
+    public bool BallLive => !CompetitivePlayStopped;
 
     // A team banned from grabbing the loose ball until the OTHER team touches it
     // (shot-clock turnover). null = no ban.
@@ -134,6 +150,14 @@ public class MatchContext : MonoBehaviour
         Instance = this;
         lastReleaseTime = -10f; // allow an immediate grab at kickoff
         LastReleaseUnscaledTime = -10f;
+
+        // These are match-local runtime owners.  Attaching them here keeps PoolB's scene wiring
+        // backwards-compatible and guarantees the roster exists before MatchTimer starts Q1.
+        MatchSquadManager.Ensure(this);
+        SubstitutionManager.Ensure(this);
+        TimeoutManager.Ensure(this);
+        Q1MatchIntro.Ensure(this);
+        MatchTeamManagementUI.Ensure(gameObject);
     }
 
     // called by a player/bot when it grabs (team) or releases (null) the ball
@@ -168,18 +192,56 @@ public class MatchContext : MonoBehaviour
 
         // counterattack: a real WIN (ball last touched by the OTHER team) inside our own
         // half starts a fast break — NOT a same-team pass reception.
-        if (team != null && prevTouch != null && prevTouch != team && !PlayFrozen && !KeeperHolding &&
+        if (team != null && prevTouch != null && prevTouch != team &&
+            !CompetitivePlayStopped && !KeeperHolding &&
             ball != null && team.defendGoal != null)
         {
             float sign = Mathf.Sign(team.defendGoal.position.x);
             if (sign * ball.position.x > 0f) StartCounter(team);
         }
+
+        if (ExclusionManager.Instance != null)
+            ExclusionManager.Instance.NotifyPossessionChanged(prev, team, prevTouch);
     }
 
     // ---- match-flow gates ----
 
     public void FreezeAll() { PlayFrozen = true; }
     public void Unfreeze()  { PlayFrozen = false; }
+
+    public bool BeginWaterPoloStoppage(WaterPoloStoppageKind kind, TeamSide restartTeam)
+    {
+        if (kind == WaterPoloStoppageKind.None || WaterPoloStoppageActive) return false;
+        WaterPoloStoppage = kind;
+        StoppageRestartTeam = restartTeam;
+        return true;
+    }
+
+    public void EndWaterPoloStoppage(WaterPoloStoppageKind kind)
+    {
+        if (WaterPoloStoppage != kind) return;
+        WaterPoloStoppage = WaterPoloStoppageKind.None;
+        StoppageRestartTeam = null;
+    }
+
+    // Time.time keeps advancing during a water-polo timeout. Shift gameplay-only windows so a
+    // free-throw hold, foul protection, kickoff instruction or counterattack never expires while
+    // competitive play is deliberately stopped.
+    public void DelayTimedGameplayWindows(float realSeconds)
+    {
+        float delay = Mathf.Max(0f, realSeconds);
+        if (delay <= 0f) return;
+        if (FreeThrowActive) FreeThrowStartTime += delay;
+        if (FoulProtectedCarrier != null)
+        {
+            FoulProtectionUntil += delay;
+            FoulProtectionIdleUntil += delay;
+            foulProtectionStartPosition = FoulProtectedCarrier.position;
+            foulProtectionMovementSeen = false;
+        }
+        if (KickoffPassPending) KickoffPassTime += delay;
+        if (CounterTeam != null) CounterUntilTime += delay;
+    }
 
     public void SetGrabBan(TeamSide team)
     {
@@ -336,6 +398,7 @@ public class MatchContext : MonoBehaviour
     private void RefreshFoulProtection()
     {
         if (FoulProtectedCarrier == null) return;
+        if (WaterPoloStoppageActive) return;
 
         if (ball == null || ball.transform.parent != FoulProtectedCarrier ||
             Time.time >= FoulProtectionUntil)
@@ -471,22 +534,42 @@ public class MatchContext : MonoBehaviour
     // seconds after release it expires and the same player can pick their own loose ball back up.
     // A HIGH BALL (arcing overhead, BallFlight) is untouchable for its whole flight — grabs,
     // steals, keeper saves and the goal-line loose rule all read this and wait for it to land.
-    public bool BallGrabbable =>
-        PossessingTeam == null &&
-        looseBallPickupClaimant == null &&
-        (!OutOfBoundsRestartActive || OutOfBoundsRestartReady) &&
-        (Time.time - lastReleaseTime) >= Mathf.Min(releaseGrabDelay, MaxReleaseGrabDelay) &&
-        (BallFlight.Instance == null || !BallFlight.Instance.HighBallActive);
+    public bool BallGrabbable => LooseBallPickupWindowOpen(false);
+
+    bool LooseBallPickupWindowOpen(bool allowDuringFullFreeze)
+    {
+        // Normal pickup is forbidden through either kind of stoppage. SprintDuel is the one
+        // deliberate exception: it keeps PlayFrozen set so every ordinary controller/brain stays
+        // inert while its two selected racers are moved directly. A timeout is never exempt.
+        if (WaterPoloStoppageActive || (PlayFrozen && !allowDuringFullFreeze)) return false;
+        return PossessingTeam == null &&
+               looseBallPickupClaimant == null &&
+               (!OutOfBoundsRestartActive || OutOfBoundsRestartReady) &&
+               (Time.time - lastReleaseTime) >= Mathf.Min(releaseGrabDelay, MaxReleaseGrabDelay) &&
+               (BallFlight.Instance == null || !BallFlight.Instance.HighBallActive);
+    }
 
     // Geometry + legality shared by human control, both field-AI wrappers, landed receptions,
     // live field-player restarts and the sprint duel. The point is in FRONT of the swimmer, not
     // at its root, so the swimmer reaches the ball rather than collecting from a large centre
     // circle. A fast loose ball gets an even smaller intersection zone.
     public bool CanBeginLooseBallPickup(Transform holder, TeamSide team, Vector2 facing)
+        => CanBeginLooseBallPickupInternal(holder, team, facing, false);
+
+    // SprintDuel-only contact path. Keeping this separate prevents a normal player, keeper or AI
+    // from opting through a full freeze while still restoring the duel's proven centre-ball catch.
+    public bool CanBeginSprintDuelPickup(Transform holder, TeamSide team, Vector2 facing)
+        => PlayFrozen && !WaterPoloStoppageActive &&
+           CanBeginLooseBallPickupInternal(holder, team, facing, true);
+
+    bool CanBeginLooseBallPickupInternal(Transform holder, TeamSide team, Vector2 facing,
+                                         bool allowDuringFullFreeze)
     {
         if (ball == null || holder == null || team == null || !holder.gameObject.activeInHierarchy)
             return false;
-        if (!BallGrabbable || !CanGrab(team) || ball.transform.parent != null || !ball.simulated)
+        if (!MatchPlayerState.IsGameplayEligible(holder)) return false;
+        if (!LooseBallPickupWindowOpen(allowDuringFullFreeze) || !CanGrab(team) ||
+            ball.transform.parent != null || !ball.simulated)
             return false;
         BallFlight flight = BallFlight.Instance;
         if (flight != null && flight.SkipActive && !flight.SkipBounced)
@@ -531,9 +614,25 @@ public class MatchContext : MonoBehaviour
     public bool TryBeginLooseBallPickup(Transform holder, TeamSide team, Vector2 facing,
                                         System.Func<Vector2> liveHoldWorldPosition,
                                         System.Action completeExistingGrab)
+        => TryBeginLooseBallPickupInternal(holder, team, facing, liveHoldWorldPosition,
+                                           completeExistingGrab, false);
+
+    public bool TryBeginSprintDuelPickup(Transform holder, TeamSide team, Vector2 facing,
+                                         System.Func<Vector2> liveHoldWorldPosition,
+                                         System.Action completeExistingGrab)
+    {
+        if (!PlayFrozen || WaterPoloStoppageActive) return false;
+        return TryBeginLooseBallPickupInternal(holder, team, facing, liveHoldWorldPosition,
+                                               completeExistingGrab, true);
+    }
+
+    bool TryBeginLooseBallPickupInternal(Transform holder, TeamSide team, Vector2 facing,
+                                          System.Func<Vector2> liveHoldWorldPosition,
+                                          System.Action completeExistingGrab,
+                                          bool allowDuringFullFreeze)
     {
         if (liveHoldWorldPosition == null || completeExistingGrab == null ||
-            !CanBeginLooseBallPickup(holder, team, facing))
+            !CanBeginLooseBallPickupInternal(holder, team, facing, allowDuringFullFreeze))
             return false;
 
         looseBallPickupClaimant = holder;
@@ -664,6 +763,12 @@ public class MatchContext : MonoBehaviour
         SwapGoals(playerTeam);
         SwapGoals(botTeam);
         if (ExclusionManager.Instance != null) ExclusionManager.Instance.OnEndsSwapped();
+        if (MatchSquadManager.Instance != null) MatchSquadManager.Instance.OnEndsSwapped();
+    }
+
+    void OnDestroy()
+    {
+        if (Instance == this) Instance = null;
     }
 
     static void SwapGoals(TeamSide t)

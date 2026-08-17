@@ -79,7 +79,7 @@ public class BallOutOfBounds : MonoBehaviour
         SyncFetcherBoundaryCollisions(ctx);
 
         Vector2 pos = ctx.BallPosition;
-        if (ctx.PlayFrozen || !ctx.BallIsLoose || !ctx.Ball.simulated ||
+        if (ctx.CompetitivePlayStopped || !ctx.BallIsLoose || !ctx.Ball.simulated ||
             ctx.OutOfBoundsRestartActive)
         {
             Remember(pos);
@@ -195,6 +195,8 @@ public class BallOutOfBounds : MonoBehaviour
 
         Transform fetcher = SelectFetcher(awarded, restartPoint);
         ctx.BeginOutOfBoundsRestart(awarded, offending, restartPoint, fetcher);
+        if (ExclusionManager.Instance != null)
+            ExclusionManager.Instance.ReleaseForAward(awarded, eventLabel + " awarded");
         SyncFetcherBoundaryCollisions(ctx);
 
         if (ShotClock.Instance != null) ShotClock.Instance.ResetClock();
@@ -285,7 +287,7 @@ public class BallOutOfBounds : MonoBehaviour
     static bool RestartStillOwned(MatchContext ctx, Rigidbody2D ball, TeamSide awarded)
         => ctx != null && ctx == MatchContext.Instance && ball != null && ctx.Ball == ball &&
            ctx.OutOfBoundsRestartActive && ctx.OutOfBoundsRestartTeam == awarded &&
-           ball.transform.parent == null && !ctx.PlayFrozen;
+           ball.transform.parent == null;
 
     void CancelExitAnimation(MatchContext ctx)
     {

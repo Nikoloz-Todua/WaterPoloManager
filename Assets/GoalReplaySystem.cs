@@ -149,7 +149,7 @@ public sealed class GoalReplaySystem : MonoBehaviour
 
         MatchContext ctx = MatchContext.Instance;
         if (!trackingReady || ctx == null) return;
-        if (ctx.PlayFrozen || Time.timeScale <= 0f)
+        if (ctx.CompetitivePlayStopped || Time.timeScale <= 0f)
         {
             recordingInterrupted = true;
             return;
@@ -321,7 +321,7 @@ public sealed class GoalReplaySystem : MonoBehaviour
         latestGoal.acceptingPostFrames = false;
 
         MatchContext ctx = MatchContext.Instance;
-        if (recordingInterrupted && ctx != null && !ctx.PlayFrozen && Time.timeScale > 0f)
+        if (recordingInterrupted && ctx != null && !ctx.CompetitivePlayStopped && Time.timeScale > 0f)
         {
             ClearHistory();
             recordingInterrupted = false;
